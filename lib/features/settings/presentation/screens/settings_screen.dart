@@ -19,15 +19,15 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         children: [
             ListTile(
-              title: Text('Gestures Setting', style: KotoTextStyles.body),
+              title: Text('Gestures', style: KotoTextStyles.body),
               subtitle: Text('Configure shortcut edge motions', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
               trailing: const Icon(Icons.chevron_right, color: KotoTheme.mutedText),
               onTap: () => context.push('/settings/gestures'),
             ),
             const Divider(color: KotoTheme.dividers),
             ListTile(
-              title: Text('Memory & Subject AI', style: KotoTextStyles.body),
-              subtitle: Text('Manage your AI agent configurations', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+              title: Text('AI Memory', style: KotoTextStyles.body),
+              subtitle: Text('Manage AI context and learning preferences', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
               trailing: const Icon(Icons.chevron_right, color: KotoTheme.mutedText),
               onTap: () => context.push('/settings/memory'),
             ),

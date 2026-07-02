@@ -84,6 +84,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         e.kind != PointerDeviceKind.invertedStylus) return;
 
     final tool = ref.read(activeCanvasToolProvider);
+    if (tool == CanvasTool.lasso) return;
     if (tool == CanvasTool.eraser) { _eraseAt(e.localPosition); return; }
 
     final stab = StrokeStabilizer()..start(e.localPosition);
@@ -107,6 +108,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final tool   = ref.read(activeCanvasToolProvider);
     final points = _activeStrokes[e.pointer];
     if (points == null) return;
+
+    if (tool == CanvasTool.lasso) return;
 
     if (tool == CanvasTool.eraser) { _eraseAt(e.localPosition); return; }
 
@@ -145,6 +148,11 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final style    = ref.read(strokeStyleProvider);
     final mod      = ref.read(strokeWidthModifierProvider);
     final settings = ref.read(penSettingsProvider);
+
+    if (tool == CanvasTool.lasso) {
+      _tick();
+      return;
+    }
 
     // If text tool and SHORT tap (not a drag) — let note_editor create text node, skip stroke
     if (tool == CanvasTool.text) {

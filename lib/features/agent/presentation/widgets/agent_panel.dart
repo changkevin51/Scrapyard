@@ -108,7 +108,7 @@ class _AgentPanelState extends ConsumerState<AgentPanel> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                          Text(
-                           'こと Agent',
+                           'Scrapyard AI',
                            style: KotoTextStyles.heading.copyWith(color: const Color(0xFF4A4A4A), fontSize: 18),
                          ),
                          IconButton(
@@ -178,7 +178,7 @@ class _AgentPanelState extends ConsumerState<AgentPanel> {
                 minLines: 1,
                 style: KotoTextStyles.body,
                 decoration: InputDecoration(
-                  hintText: 'Command the agent...',
+                  hintText: 'Ask Scrapyard AI...',
                   hintStyle: KotoTextStyles.body.copyWith(color: KotoTheme.mutedText),
                   border: InputBorder.none,
                   suffixIcon: IconButton(

@@ -28,7 +28,7 @@ class KotoApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'Koto',
+      title: 'Scrapyard',
       theme: KotoTheme.themeData,
       routerConfig: AppRouter.router,
       debugShowCheckedModeBanner: false,

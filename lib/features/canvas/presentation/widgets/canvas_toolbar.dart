@@ -24,7 +24,7 @@ const List<_ToolDef> _tools = [
   (icon: Icons.horizontal_rule,    kanji: '線', tip: 'Straight line', tool: CanvasTool.straightLine),
   (icon: Icons.text_fields_outlined, kanji: '文', tip: 'Text',       tool: CanvasTool.text),
   (icon: Icons.category_outlined,  kanji: '形', tip: 'Shape',        tool: CanvasTool.shape),
-  (icon: Icons.gesture,            kanji: '套', tip: 'Lasso',        tool: CanvasTool.lasso),
+  (icon: Icons.gesture,            kanji: '套', tip: 'AI Lasso',    tool: CanvasTool.lasso),
 ];
 
 const List<Color> _palette = [

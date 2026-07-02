@@ -74,7 +74,7 @@ class _LanguageSidebarPanelState extends ConsumerState<LanguageSidebarPanel> wit
                    Padding(
                       padding: const EdgeInsets.only(left: 24, right: 24, top: 24, bottom: 16),
                       child: Text(
-                         'こと語',
+                         'Scrap Language',
                          style: KotoTextStyles.caption.copyWith(
                             color: KotoTheme.accent, // Brown
                             letterSpacing: 1.2,

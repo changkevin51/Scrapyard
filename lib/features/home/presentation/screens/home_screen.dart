@@ -37,9 +37,9 @@ class HomeScreen extends ConsumerWidget {
                   child: Column(
                      crossAxisAlignment: CrossAxisAlignment.start,
                      children: [
-                        Text('Koto', style: KotoTextStyles.heading.copyWith(fontSize: 20, letterSpacing: 2.0)),
+                        Text('Scrapyard', style: KotoTextStyles.heading.copyWith(fontSize: 20, letterSpacing: 2.0)),
                         const SizedBox(height: 4),
-                        Text('こと', style: KotoTextStyles.caption.copyWith(fontSize: 16, letterSpacing: 2.0)),
+                        Text('scrap paper', style: KotoTextStyles.caption.copyWith(fontSize: 16, letterSpacing: 2.0)),
                      ],
                   ),
                 ),
@@ -166,9 +166,9 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
      String typeLabel;
-     if (node.type == NodeType.folder) typeLabel = '⟨ Folder ⟩';
+    if (node.type == NodeType.folder) typeLabel = '⟨ Pile ⟩';
      else if (node.type == NodeType.document) typeLabel = '⟨ Document ⟩';
-     else typeLabel = '⟨ Note ⟩';
+    else typeLabel = '⟨ Scrap ⟩';
 
      return MouseRegion(
        cursor: SystemMouseCursors.click,
@@ -217,10 +217,10 @@ class HomeScreen extends ConsumerWidget {
                         elevation: 1,
                         color: KotoTheme.cardSurface,
                         onSelected: (val) {
-                           if (val == 'delete') ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
+                          if (val == 'delete') ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
                         },
                         itemBuilder: (context) => [
-                           const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: Colors.redAccent))),
+                          const PopupMenuItem(value: 'delete', child: Text('Crush', style: TextStyle(color: Colors.redAccent))),
                         ]
                      ),
                   ]

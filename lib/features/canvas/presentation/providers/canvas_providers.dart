@@ -93,6 +93,26 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     _undoStack.add(List.from(state));
     state = state.map((s) => ids.contains(s.id) ? s.copyWith(isHidden: true) : s).toList();
   }
+
+  void updateStrokes(List<Stroke> updatedStrokes) {
+    if (updatedStrokes.isEmpty) return;
+
+    _undoStack.add(List.from(state));
+    state = state.map((stroke) {
+      final replacement = updatedStrokes.where((updated) => updated.id == stroke.id).toList();
+      return replacement.isNotEmpty ? replacement.first : stroke;
+    }).toList();
+
+    _repository.updateStrokes(_noteId, updatedStrokes);
+  }
+
+  void deleteStrokes(List<String> ids) {
+    if (ids.isEmpty) return;
+
+    _undoStack.add(List.from(state));
+    state = state.where((stroke) => !ids.contains(stroke.id)).toList();
+    _repository.deleteStrokes(ids);
+  }
 }
 
 final activeNoteIdProvider = StateProvider<String>((ref) => 'mock-note-id');

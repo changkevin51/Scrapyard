@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/koto_theme.dart';
 import '../providers/canvas_providers.dart';
@@ -36,8 +37,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   OverlayEntry? _raterEntry;
   Offset? _lastPopupPosition;
   Offset? _lassoStart;
-  Rect? _lassoRect;
-  Rect? _selectedStrokeBounds;
+  Rect? _lassoPreviewRect;
+  Rect? _selectionRect;
+  Set<String> _selectedStrokeIds = {};
+  bool _showSelectionMenu = false;
+  bool _isResizingSelection = false;
+  _CopiedSelection? _clipboardSelection;
+  Offset? _pasteMenuAnchor;
+  bool _showPasteMenu = false;
 
   @override
   void initState() {
@@ -65,6 +72,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _onCanvasTapDown(TapDownDetails details) {
+    if (_selectionRect != null && !_selectionRect!.contains(details.localPosition)) {
+      _clearSelectionState();
+      _hidePasteMenu();
+      return;
+    }
+
+    if (_showPasteMenu) {
+      setState(() {
+        _showPasteMenu = false;
+        _pasteMenuAnchor = null;
+      });
+    }
+
     if (ref.read(activeCanvasToolProvider) == CanvasTool.lasso) {
       return;
     }
@@ -107,39 +127,53 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _startLasso(DragStartDetails details) {
     if (ref.read(activeCanvasToolProvider) != CanvasTool.lasso) return;
+    _hideSelectionMenu();
     setState(() {
       _lassoStart = details.localPosition;
-      _lassoRect = Rect.fromPoints(details.localPosition, details.localPosition);
+      _lassoPreviewRect = Rect.fromPoints(details.localPosition, details.localPosition);
     });
   }
 
   void _updateLasso(DragUpdateDetails details) {
     if (_lassoStart == null || ref.read(activeCanvasToolProvider) != CanvasTool.lasso) return;
+
+    final draggedRect = _normalizedRect(Rect.fromPoints(_lassoStart!, details.localPosition));
+    final previewRect = draggedRect;
+    final strokes = ref.read(strokesProvider);
+    final selected = strokes
+        .where((stroke) => !stroke.isHidden && _strokeIntersectsSelection(stroke, draggedRect))
+        .toList();
+
     setState(() {
-      _lassoRect = Rect.fromPoints(_lassoStart!, details.localPosition);
+      _lassoPreviewRect = previewRect;
+      _selectionRect = selected.isEmpty
+          ? null
+          : _unionRects(selected.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
+      _selectedStrokeIds = selected.map((stroke) => stroke.id).toSet();
+      _showSelectionMenu = false;
     });
   }
 
   void _endLasso(DragEndDetails details) {
-    if (_lassoStart == null || _lassoRect == null) return;
+    if (_lassoStart == null) return;
 
-    final selection = _normalizedRect(_lassoRect!);
-    final strokes = ref.read(strokesProvider);
-    final selectedStrokes = strokes
-        .where((stroke) => !stroke.isHidden && _strokeIntersectsSelection(stroke, selection))
-        .toList();
+    if (_selectionRect == null || _selectedStrokeIds.isEmpty) {
+      setState(() {
+        _lassoStart = null;
+        _lassoPreviewRect = null;
+        _selectionRect = null;
+        _selectedStrokeIds = {};
+        _showSelectionMenu = false;
+      });
+      return;
+    }
 
-    setState(() {
-      _selectedStrokeBounds = selectedStrokes.isEmpty
-        ? null
-        : _unionRects(selectedStrokes.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
-    });
+    _refreshSelectionBounds(showMenu: true);
+    _hidePasteMenu();
 
     final ocrResults = ref.read(ocrResultsProvider);
-    final selected = ocrResults.where((result) {
-      return selection.overlaps(result.boundingBox);
-    }).toList();
-
+    final selection = _selectionRect!;
+    final selected = ocrResults.where((result) => selection.overlaps(result.boundingBox)).toList();
     if (selected.isNotEmpty) {
       final selectedText = selected.map((r) => r.text).join(' ');
       _showPopup(selectedText, selection.center);
@@ -149,7 +183,37 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     setState(() {
       _lassoStart = null;
-      _lassoRect = null;
+      _lassoPreviewRect = null;
+    });
+  }
+
+  void _hideSelectionMenu() {
+    if (!_showSelectionMenu && !_isResizingSelection) return;
+    setState(() {
+      _showSelectionMenu = false;
+    });
+  }
+
+  void _clearSelectionState() {
+    if (_selectionRect == null && _selectedStrokeIds.isEmpty && !_showSelectionMenu && !_isResizingSelection) {
+      return;
+    }
+
+    setState(() {
+      _lassoStart = null;
+      _lassoPreviewRect = null;
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _showSelectionMenu = false;
+      _isResizingSelection = false;
+    });
+  }
+
+  void _hidePasteMenu() {
+    if (!_showPasteMenu) return;
+    setState(() {
+      _showPasteMenu = false;
+      _pasteMenuAnchor = null;
     });
   }
 
@@ -190,14 +254,344 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   bool _strokeIntersectsSelection(Stroke stroke, Rect selection) {
-    final bounds = _strokeBounds(stroke);
-    if (bounds.overlaps(selection)) return true;
-
     for (final point in stroke.points) {
       if (selection.contains(Offset(point.x, point.y))) return true;
     }
 
+    for (var i = 1; i < stroke.points.length; i++) {
+      final previous = Offset(stroke.points[i - 1].x, stroke.points[i - 1].y);
+      final current = Offset(stroke.points[i].x, stroke.points[i].y);
+      if (_segmentIntersectsRect(previous, current, selection)) return true;
+    }
+
     return false;
+  }
+
+  bool _segmentIntersectsRect(Offset a, Offset b, Rect rect) {
+    if (rect.contains(a) || rect.contains(b)) return true;
+
+    final rectPoints = [
+      rect.topLeft,
+      rect.topRight,
+      rect.bottomRight,
+      rect.bottomLeft,
+    ];
+
+    for (var i = 0; i < rectPoints.length; i++) {
+      final start = rectPoints[i];
+      final end = rectPoints[(i + 1) % rectPoints.length];
+      if (_segmentsIntersect(a, b, start, end)) return true;
+    }
+
+    return false;
+  }
+
+  bool _segmentsIntersect(Offset a1, Offset a2, Offset b1, Offset b2) {
+    double direction(Offset p1, Offset p2, Offset p3) {
+      return (p3.dx - p1.dx) * (p2.dy - p1.dy) - (p2.dx - p1.dx) * (p3.dy - p1.dy);
+    }
+
+    bool onSegment(Offset p1, Offset p2, Offset p3) {
+      return p2.dx >= math.min(p1.dx, p3.dx) &&
+          p2.dx <= math.max(p1.dx, p3.dx) &&
+          p2.dy >= math.min(p1.dy, p3.dy) &&
+          p2.dy <= math.max(p1.dy, p3.dy);
+    }
+
+    final d1 = direction(a1, a2, b1);
+    final d2 = direction(a1, a2, b2);
+    final d3 = direction(b1, b2, a1);
+    final d4 = direction(b1, b2, a2);
+
+    if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+      return true;
+    }
+
+    if (d1 == 0 && onSegment(a1, b1, a2)) return true;
+    if (d2 == 0 && onSegment(a1, b2, a2)) return true;
+    if (d3 == 0 && onSegment(b1, a1, b2)) return true;
+    if (d4 == 0 && onSegment(b1, a2, b2)) return true;
+
+    return false;
+  }
+
+  void _moveSelection(Offset delta) {
+    if (_selectionRect == null) return;
+    if (_selectedStrokeIds.isEmpty) return;
+
+    _hideSelectionMenu();
+    _hidePasteMenu();
+
+    final strokes = ref.read(strokesProvider);
+    final movedStrokes = <Stroke>[];
+
+    for (final stroke in strokes) {
+      if (_selectedStrokeIds.contains(stroke.id)) {
+        movedStrokes.add(_translateStroke(stroke, delta));
+      }
+    }
+
+    ref.read(strokesProvider.notifier).updateStrokes(movedStrokes);
+    setState(() {
+      _selectionRect = _selectionRect!.shift(delta);
+    });
+  }
+
+  void _finishSelectionMove() {
+    if (_selectionRect == null) return;
+    _refreshSelectionBounds(showMenu: true);
+  }
+
+  void _beginResizeSelection() {
+    if (_selectionRect == null) return;
+    setState(() {
+      _isResizingSelection = true;
+      _showSelectionMenu = false;
+      _showPasteMenu = false;
+      _pasteMenuAnchor = null;
+    });
+  }
+
+  void _resizeSelection(int cornerIndex, Offset delta) {
+    if (_selectionRect == null) return;
+    if (_selectedStrokeIds.isEmpty) return;
+
+    final oldRect = _selectionRect!;
+    Rect updated;
+    switch (cornerIndex) {
+      case 0:
+        updated = Rect.fromLTRB(oldRect.left + delta.dx, oldRect.top + delta.dy, oldRect.right, oldRect.bottom);
+        break;
+      case 1:
+        updated = Rect.fromLTRB(oldRect.left, oldRect.top + delta.dy, oldRect.right + delta.dx, oldRect.bottom);
+        break;
+      case 2:
+        updated = Rect.fromLTRB(oldRect.left + delta.dx, oldRect.top, oldRect.right, oldRect.bottom + delta.dy);
+        break;
+      case 3:
+      default:
+        updated = Rect.fromLTRB(oldRect.left, oldRect.top, oldRect.right + delta.dx, oldRect.bottom + delta.dy);
+        break;
+    }
+
+    if (updated.width < 20 || updated.height < 20) return;
+
+    final scaleX = updated.width / oldRect.width;
+    final scaleY = updated.height / oldRect.height;
+    final strokes = ref.read(strokesProvider);
+    final transformed = <Stroke>[];
+
+    for (final stroke in strokes) {
+      if (_selectedStrokeIds.contains(stroke.id)) {
+        transformed.add(_scaleStroke(stroke, oldRect, updated, scaleX, scaleY));
+      }
+    }
+
+    ref.read(strokesProvider.notifier).updateStrokes(transformed);
+    setState(() {
+      _selectionRect = updated;
+    });
+  }
+
+  void _finishResizeSelection() {
+    if (_selectionRect == null) return;
+    _refreshSelectionBounds(showMenu: true);
+  }
+
+  void _smeltSelection() {
+    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
+    _hideSelectionMenu();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Smelt sent to AI later')),
+    );
+  }
+
+  void _deleteSelection() {
+    if (_selectedStrokeIds.isEmpty) return;
+    _hideSelectionMenu();
+    ref.read(strokesProvider.notifier).deleteStrokes(_selectedStrokeIds.toList());
+    setState(() {
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _isResizingSelection = false;
+      _showSelectionMenu = false;
+    });
+  }
+
+  void _copySelection() async {
+    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
+    _hideSelectionMenu();
+    await Clipboard.setData(const ClipboardData(text: 'Scrapyard selection copied'));
+    final strokes = ref.read(strokesProvider);
+    final copied = strokes
+        .where((stroke) => _selectedStrokeIds.contains(stroke.id))
+        .map((stroke) => _cloneStroke(stroke))
+        .toList();
+    setState(() {
+      _clipboardSelection = _CopiedSelection(
+        strokes: copied,
+        bounds: _selectionRect!,
+      );
+      _showSelectionMenu = false;
+    });
+  }
+
+  void _showPasteMenuAt(Offset position) {
+    if (_clipboardSelection == null) return;
+    setState(() {
+      _pasteMenuAnchor = position;
+      _showPasteMenu = true;
+      _showSelectionMenu = false;
+    });
+  }
+
+  void _pasteClipboard(Offset position) {
+    final clipboard = _clipboardSelection;
+    if (clipboard == null) return;
+
+    final delta = position - clipboard.bounds.center;
+    final notifier = ref.read(strokesProvider.notifier);
+    for (final stroke in clipboard.strokes) {
+      notifier.addStroke(_cloneStroke(stroke, offset: delta));
+    }
+
+    _hidePasteMenu();
+  }
+
+  Stroke _cloneStroke(Stroke stroke, {Offset offset = Offset.zero}) {
+    return Stroke(
+      id: DateTime.now().microsecondsSinceEpoch.toString() + stroke.id,
+      points: stroke.points
+          .map((point) => StrokePoint(
+                x: point.x + offset.dx,
+                y: point.y + offset.dy,
+                pressure: point.pressure,
+                timestamp: point.timestamp,
+              ))
+          .toList(),
+      color: stroke.color,
+      baseWidth: stroke.baseWidth,
+      isBrush: stroke.isBrush,
+      isHighlighter: stroke.isHighlighter,
+      isTape: stroke.isTape,
+      isHidden: stroke.isHidden,
+      isStraightLine: stroke.isStraightLine,
+      style: stroke.style,
+      shapeType: stroke.shapeType,
+      shapeVertices: stroke.shapeVertices,
+      isBeautified: stroke.isBeautified,
+      penStyle: stroke.penStyle,
+    );
+  }
+
+  Stroke _translateStroke(Stroke stroke, Offset delta) {
+    return Stroke(
+      id: stroke.id,
+      points: stroke.points
+          .map((point) => StrokePoint(
+                x: point.x + delta.dx,
+                y: point.y + delta.dy,
+                pressure: point.pressure,
+                timestamp: point.timestamp,
+              ))
+          .toList(),
+      color: stroke.color,
+      baseWidth: stroke.baseWidth,
+      isBrush: stroke.isBrush,
+      isHighlighter: stroke.isHighlighter,
+      isTape: stroke.isTape,
+      isHidden: stroke.isHidden,
+      isStraightLine: stroke.isStraightLine,
+      style: stroke.style,
+      shapeType: stroke.shapeType,
+      shapeVertices: _translateVertices(stroke.shapeVertices, delta),
+      isBeautified: stroke.isBeautified,
+      penStyle: stroke.penStyle,
+    );
+  }
+
+  Stroke _scaleStroke(Stroke stroke, Rect from, Rect to, double scaleX, double scaleY) {
+    return Stroke(
+      id: stroke.id,
+      points: stroke.points
+          .map((point) => StrokePoint(
+                x: to.left + ((point.x - from.left) * scaleX),
+                y: to.top + ((point.y - from.top) * scaleY),
+                pressure: point.pressure,
+                timestamp: point.timestamp,
+              ))
+          .toList(),
+      color: stroke.color,
+      baseWidth: stroke.baseWidth,
+      isBrush: stroke.isBrush,
+      isHighlighter: stroke.isHighlighter,
+      isTape: stroke.isTape,
+      isHidden: stroke.isHidden,
+      isStraightLine: stroke.isStraightLine,
+      style: stroke.style,
+      shapeType: stroke.shapeType,
+      shapeVertices: _scaleVertices(stroke.shapeVertices, from, to, scaleX, scaleY),
+      isBeautified: stroke.isBeautified,
+      penStyle: stroke.penStyle,
+    );
+  }
+
+  List<double> _translateVertices(List<double> vertices, Offset delta) {
+    if (vertices.isEmpty) return vertices;
+    final translated = <double>[];
+    for (var i = 0; i < vertices.length; i += 2) {
+      translated.add(vertices[i] + delta.dx);
+      translated.add(vertices[i + 1] + delta.dy);
+    }
+    return translated;
+  }
+
+  List<double> _scaleVertices(List<double> vertices, Rect from, Rect to, double scaleX, double scaleY) {
+    if (vertices.isEmpty) return vertices;
+    final scaled = <double>[];
+    for (var i = 0; i < vertices.length; i += 2) {
+      final x = vertices[i];
+      final y = vertices[i + 1];
+      scaled.add(to.left + ((x - from.left) * scaleX));
+      scaled.add(to.top + ((y - from.top) * scaleY));
+    }
+    return scaled;
+  }
+
+  void _refreshSelectionBounds({required bool showMenu}) {
+    if (_selectedStrokeIds.isEmpty) {
+      setState(() {
+        _selectionRect = null;
+        _showSelectionMenu = false;
+        _isResizingSelection = false;
+      });
+      return;
+    }
+
+    final strokes = ref.read(strokesProvider);
+    final selected = strokes.where((stroke) => _selectedStrokeIds.contains(stroke.id)).toList();
+    if (selected.isEmpty) {
+      setState(() {
+        _selectionRect = null;
+        _selectedStrokeIds = {};
+        _showSelectionMenu = false;
+        _isResizingSelection = false;
+      });
+      return;
+    }
+
+    final bounds = _unionRects(selected.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
+    setState(() {
+      _selectionRect = bounds;
+      _showSelectionMenu = showMenu;
+      _isResizingSelection = false;
+    });
+  }
+
+  void _handleCanvasLongPressStart(LongPressStartDetails details) {
+    if (_clipboardSelection == null) return;
+    _showPasteMenuAt(details.localPosition);
   }
 
   Rect _normalizedRect(Rect rect) {
@@ -270,6 +664,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       if (previous != null && next.length > previous.length) _triggerOcrRun();
     });
 
+    ref.listen<CanvasTool>(activeCanvasToolProvider, (previous, next) {
+      if (previous != next && next != CanvasTool.lasso) {
+        _clearSelectionState();
+        _hidePasteMenu();
+      }
+    });
+
     final isPenMode       = ref.watch(isPenModeActiveProvider);
     final isLassoMode     = ref.watch(activeCanvasToolProvider) == CanvasTool.lasso;
     final toolbarPosition = ref.watch(toolbarPositionProvider);
@@ -294,6 +695,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         children: [
           GestureDetector(
             onTapDown: _onCanvasTapDown,
+            onLongPressStart: _handleCanvasLongPressStart,
             onPanStart: _startLasso,
             onPanUpdate: _updateLasso,
             onPanEnd: _endLasso,
@@ -309,20 +711,82 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               ),
             ),
           ),
-          if (_lassoRect != null)
+          if (_lassoPreviewRect != null)
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
-                  painter: _LassoPainter(_lassoRect!),
+                  painter: _LassoPainter(_lassoPreviewRect!),
                 ),
               ),
             ),
-          if (_selectedStrokeBounds != null)
+          if (_selectionRect != null)
             Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _SelectedStrokeHighlightPainter(_selectedStrokeBounds!),
-                ),
+              child: Stack(
+                children: [
+                  CustomPaint(
+                    painter: _SelectedStrokeHighlightPainter(_selectionRect!),
+                  ),
+                  if (!_isResizingSelection)
+                    Positioned.fromRect(
+                      rect: _selectionRect!,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onPanStart: (_) {
+                          _hideSelectionMenu();
+                          _hidePasteMenu();
+                        },
+                        onPanUpdate: (details) => _moveSelection(details.delta),
+                        onPanEnd: (_) => _finishSelectionMove(),
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                  if (_isResizingSelection) ...[
+                    _SelectionCornerHandle(
+                      rect: _selectionRect!,
+                      cornerIndex: 0,
+                      onPanStart: _beginResizeSelection,
+                      onPanUpdate: (delta) => _resizeSelection(0, delta),
+                      onPanEnd: _finishResizeSelection,
+                    ),
+                    _SelectionCornerHandle(
+                      rect: _selectionRect!,
+                      cornerIndex: 1,
+                      onPanStart: _beginResizeSelection,
+                      onPanUpdate: (delta) => _resizeSelection(1, delta),
+                      onPanEnd: _finishResizeSelection,
+                    ),
+                    _SelectionCornerHandle(
+                      rect: _selectionRect!,
+                      cornerIndex: 2,
+                      onPanStart: _beginResizeSelection,
+                      onPanUpdate: (delta) => _resizeSelection(2, delta),
+                      onPanEnd: _finishResizeSelection,
+                    ),
+                    _SelectionCornerHandle(
+                      rect: _selectionRect!,
+                      cornerIndex: 3,
+                      onPanStart: _beginResizeSelection,
+                      onPanUpdate: (delta) => _resizeSelection(3, delta),
+                      onPanEnd: _finishResizeSelection,
+                    ),
+                  ],
+                  if (_showSelectionMenu)
+                    _SelectionActionMenu(
+                      rect: _selectionRect!,
+                      onSmelt: _smeltSelection,
+                      onResize: _beginResizeSelection,
+                      onDelete: _deleteSelection,
+                      onCopy: _copySelection,
+                    ),
+                ],
+              ),
+            ),
+          if (_showPasteMenu && _pasteMenuAnchor != null)
+            Positioned(
+              left: _pasteMenuAnchor!.dx,
+              top: _pasteMenuAnchor!.dy,
+              child: _PasteMenu(
+                onPaste: () => _pasteClipboard(_pasteMenuAnchor!),
               ),
             ),
           // Smart action FAB — bottom right
@@ -439,5 +903,182 @@ class _SelectedStrokeHighlightPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _SelectedStrokeHighlightPainter oldDelegate) {
     return oldDelegate.rect != rect;
+  }
+}
+
+class _CopiedSelection {
+  final List<Stroke> strokes;
+  final Rect bounds;
+
+  const _CopiedSelection({required this.strokes, required this.bounds});
+}
+
+class _SelectionActionMenu extends StatelessWidget {
+  final Rect rect;
+  final VoidCallback onSmelt;
+  final VoidCallback onResize;
+  final VoidCallback onDelete;
+  final VoidCallback onCopy;
+
+  const _SelectionActionMenu({
+    required this.rect,
+    required this.onSmelt,
+    required this.onResize,
+    required this.onDelete,
+    required this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final top = math.max(rect.top - 64, 12.0);
+    final left = math.max(rect.left, 12.0);
+
+    return Positioned(
+      top: top,
+      left: left,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: KotoTheme.dividers),
+            boxShadow: KotoTheme.subtleShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: onSmelt,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: KotoTheme.accent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Smelt',
+                    style: KotoTextStyles.body.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _MenuButton(label: 'Resize', onTap: onResize),
+              const SizedBox(width: 8),
+              _MenuButton(label: 'Delete', onTap: onDelete, danger: true),
+              const SizedBox(width: 8),
+              _MenuButton(label: 'Copy', onTap: onCopy),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _MenuButton({required this.label, required this.onTap, this.danger = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: danger ? const Color(0xFFF7E6E6) : const Color(0xFFF5F1EC),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          style: KotoTextStyles.caption.copyWith(
+            color: danger ? const Color(0xFFB84444) : KotoTheme.primaryText,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PasteMenu extends StatelessWidget {
+  final VoidCallback onPaste;
+
+  const _PasteMenu({required this.onPaste});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: GestureDetector(
+        onTap: onPaste,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: KotoTheme.dividers),
+            boxShadow: KotoTheme.subtleShadow,
+          ),
+          child: Text(
+            'Paste',
+            style: KotoTextStyles.caption.copyWith(
+              color: KotoTheme.accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectionCornerHandle extends StatelessWidget {
+  final Rect rect;
+  final int cornerIndex;
+  final VoidCallback onPanStart;
+  final ValueChanged<Offset> onPanUpdate;
+  final VoidCallback onPanEnd;
+
+  const _SelectionCornerHandle({
+    required this.rect,
+    required this.cornerIndex,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final offsets = [rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight];
+    final position = offsets[cornerIndex];
+
+    return Positioned(
+      left: position.dx - 7,
+      top: position.dy - 7,
+      child: GestureDetector(
+        onPanStart: (_) => onPanStart(),
+        onPanUpdate: (details) => onPanUpdate(details.delta),
+        onPanEnd: (_) => onPanEnd(),
+        child: Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: KotoTheme.accent, width: 1.5),
+            boxShadow: KotoTheme.subtleShadow,
+          ),
+        ),
+      ),
+    );
   }
 }

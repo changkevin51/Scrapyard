@@ -61,6 +61,10 @@ class StrokeRepository {
      await batch.commit(noResult: true);
   }
 
+  Future<void> updateStrokes(String noteId, List<Stroke> updatedStrokes) async {
+    await saveStrokes(noteId, updatedStrokes);
+  }
+
   Future<List<Stroke>> loadStrokes(String noteId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(

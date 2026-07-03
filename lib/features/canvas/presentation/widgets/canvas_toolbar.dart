@@ -83,7 +83,7 @@ class CanvasToolbar extends ConsumerWidget {
       _sep(isHorizontal),
 
       // ── Thickness dots ──────────────────────────────────
-      _ThicknessDots(),
+      const _ThicknessDots(),
       _sep(isHorizontal),
 
       // ── Display-mode toggle (icon ↔ kanji) ─────────────
@@ -91,7 +91,7 @@ class CanvasToolbar extends ConsumerWidget {
       _sep(isHorizontal),
 
       // ── Settings sheet ─────────────────────────────────
-      _SettingsButton(),
+      const _SettingsButton(),
     ];
 
     return Container(
@@ -236,7 +236,7 @@ class _ToolButton extends ConsumerWidget {
                   top: -4, right: -4,
                   child: Container(
                     width: 7, height: 7,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: KotoTheme.accent,
                       shape: BoxShape.circle,
                     ),
@@ -382,7 +382,7 @@ class _ThicknessDots extends ConsumerWidget {
           GestureDetector(
             onTap: () => ref.read(strokeWidthModifierProvider.notifier).state = val,
             child: Tooltip(
-              message: 'Thickness ${val}×',
+              message: 'Thickness $val×',
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 130),
                 margin: const EdgeInsets.symmetric(horizontal: 4),

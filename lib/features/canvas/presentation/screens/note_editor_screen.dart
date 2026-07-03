@@ -805,21 +805,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     switch (toolbarPosition) {
       case ToolbarPosition.top:
         toolSurface = Column(children: [
-          SafeArea(bottom: false, child: CanvasToolbar()),
-          canvasSurface,
+          // Removed SafeArea entirely
+          const CanvasToolbar(), 
+          Expanded(child: canvasSurface),
         ]);
         break;
       case ToolbarPosition.bottom:
         toolSurface = Column(children: [
           canvasSurface,
-          SafeArea(top: false, child: CanvasToolbar()),
+          const SafeArea(top: false, child: CanvasToolbar()),
         ]);
         break;
       case ToolbarPosition.left:
-        toolSurface = SafeArea(child: Row(children: [CanvasToolbar(), canvasSurface]));
+        toolSurface = SafeArea(child: Row(children: [const CanvasToolbar(), canvasSurface]));
         break;
       case ToolbarPosition.right:
-        toolSurface = SafeArea(child: Row(children: [canvasSurface, CanvasToolbar()]));
+        toolSurface = SafeArea(child: Row(children: [canvasSurface, const CanvasToolbar()]));
         break;
     }
 
@@ -827,7 +828,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       backgroundColor: KotoTheme.background,
       body: Column(
         children: [
-          SafeArea(bottom: false, child: const DocumentTabBar()),
+          const SafeArea(bottom: false, child: DocumentTabBar()),
           Expanded(child: toolSurface),
         ],
       ),

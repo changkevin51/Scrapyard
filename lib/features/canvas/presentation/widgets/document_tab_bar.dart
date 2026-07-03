@@ -136,8 +136,8 @@ class _TabChip extends StatelessWidget {
               color: isActive ? tab.accent : KotoTheme.dividers,
               width: isActive ? 2.5 : 1.5,
             ),
-            top: BorderSide(color: KotoTheme.dividers, width: 0.5),
-            right: BorderSide(color: KotoTheme.dividers, width: 0.5),
+            top: const BorderSide(color: KotoTheme.dividers, width: 0.5),
+            right: const BorderSide(color: KotoTheme.dividers, width: 0.5),
             bottom: BorderSide(
               color: isActive ? tab.accent.withValues(alpha: 0.4) : KotoTheme.dividers,
               width: 0.5,
@@ -174,7 +174,7 @@ class _TabChip extends StatelessWidget {
             if (groupName != null) ...[
               const SizedBox(width: 4),
               Text(
-                '${groupName![0]}',
+                groupName![0],
                 style: TextStyle(fontSize: 9, color: tab.accent),
               ),
             ],

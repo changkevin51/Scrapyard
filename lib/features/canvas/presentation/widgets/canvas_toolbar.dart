@@ -147,7 +147,14 @@ class _ModeToggle extends ConsumerWidget {
     return Tooltip(
       message: isPenMode ? 'Switch to scroll/read mode' : 'Switch to draw mode',
       child: GestureDetector(
-        onTap: () => ref.read(isPenModeActiveProvider.notifier).state = !isPenMode,
+        onTap: () {
+          final newMode = !isPenMode;
+          ref.read(isPenModeActiveProvider.notifier).state = newMode;
+          // When switching to touch/scroll mode, disable lasso tool
+          if (!newMode && ref.read(activeCanvasToolProvider) == CanvasTool.lasso) {
+            ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
+          }
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

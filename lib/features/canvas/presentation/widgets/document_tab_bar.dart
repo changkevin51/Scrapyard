@@ -31,6 +31,19 @@ class DocumentTabBar extends ConsumerWidget {
       ),
       child: Row(
         children: [
+          // Back button - navigate to home
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 36, height: 36,
+              margin: const EdgeInsets.only(left: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: KotoTheme.dividers),
+              ),
+              child: const Icon(Icons.arrow_back, size: 16, color: KotoTheme.mutedText),
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               scrollDirection: Axis.horizontal,

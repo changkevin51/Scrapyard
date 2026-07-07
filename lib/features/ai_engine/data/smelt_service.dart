@@ -24,7 +24,7 @@ class SmeltService {
   /// If imageBytes is null, sends a text-only request
   Future<SmeltResponse> analyzeSelection(Uint8List? imageBytes) async {
     // final apiKey = await _storage.read(key: _apiKeyKey);
-    final apiKey = '[GEMINI KEY HERE]';
+    final apiKey = '';
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception('Gemini API key not configured');
     }

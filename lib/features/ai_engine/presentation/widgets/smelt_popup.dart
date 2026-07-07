@@ -269,8 +269,37 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             ),
           ],
         ],
+        const SizedBox(height: 8),
+        _buildModelFinePrint(response.modelUsed),
       ],
     );
+  }
+
+  /// Build fine print showing which Gemini model was used
+  Widget _buildModelFinePrint(String modelUsed) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Text(
+        'Powered by ${_formatModelName(modelUsed)}',
+        style: KotoTextStyles.caption.copyWith(
+          color: KotoTheme.mutedText,
+          fontSize: 9,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  /// Format model name for display (e.g., "gemini-2.0-flash-exp" -> "Gemini 2.0 Flash")
+  String _formatModelName(String model) {
+    if (model.contains('gemini')) {
+      return model.split('-').map((part) {
+        if (RegExp(r'^\d').hasMatch(part)) return part; // Keep version numbers as-is
+        if (part.isEmpty) return '';
+        return part[0].toUpperCase() + part.substring(1);
+      }).where((part) => part.isNotEmpty).join(' ');
+    }
+    return model;
   }
 
   /// Clean the answer by removing stray characters like sigma

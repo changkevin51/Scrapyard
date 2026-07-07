@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/koto_theme.dart';
+import '../../../ai_engine/presentation/providers/smelt_provider.dart';
+import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../providers/canvas_providers.dart';
 import '../widgets/handwriting_canvas.dart';
 import '../widgets/canvas_toolbar.dart';
@@ -35,7 +39,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   Timer? _ocrDebounce;
   OverlayEntry? _popupEntry;
   OverlayEntry? _raterEntry;
+  OverlayEntry? _smeltOverlayEntry;
+  OverlayEntry? _smeltPopupEntry;
   Offset? _lastPopupPosition;
+  final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
   Rect? _lassoPreviewRect;
   Rect? _selectionRect;
@@ -68,6 +75,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _scrollController.dispose();
     _popupEntry?.remove();
     _raterEntry?.remove();
+    _smeltOverlayEntry?.remove();
+    _smeltPopupEntry?.remove();
     super.dispose();
   }
 
@@ -399,12 +408,168 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _refreshSelectionBounds(showMenu: true);
   }
 
-  void _smeltSelection() {
+  void _smeltSelection() async {
     if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
     _hideSelectionMenu();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Smelt sent to AI later')),
+
+    final rect = _selectionRect!;
+    
+    // Convert canvas-local coordinates to global screen coordinates
+    // Account for the scroll offset and the canvas position within the scaffold
+    final globalRect = _convertToGlobalRect(rect);
+
+    // Show thinking overlay on the bounding box
+    _smeltOverlayEntry?.remove();
+    _smeltOverlayEntry = OverlayEntry(
+      builder: (context) => SmeltThinkingOverlay(selectionRect: globalRect),
     );
+    Overlay.of(context).insert(_smeltOverlayEntry!);
+
+    // Start loading state
+    ref.read(smeltProvider.notifier).startLoading();
+
+    // Capture the canvas region as an image
+    Uint8List? imageBytes;
+    try {
+      imageBytes = await _captureCanvasRegion(rect);
+    } catch (_) {
+      // If capture fails, fall back to null (text-only mode)
+    }
+
+    // Send to AI
+    await ref.read(smeltProvider.notifier).smelt(imageBytes: imageBytes);
+
+    // Remove thinking overlay
+    _smeltOverlayEntry?.remove();
+    _smeltOverlayEntry = null;
+
+    // Show result popup
+    if (mounted) {
+      _showSmeltPopup(rect);
+    }
+  }
+
+  Future<Uint8List?> _captureCanvasRegion(Rect region) async {
+    final boundary = _canvasRepaintKey.currentContext?.findRenderObject()
+        as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+
+    final pixelRatio = 2.0;
+    final image = await boundary.toImage(pixelRatio: pixelRatio);
+
+    // Calculate crop rect in image pixel coordinates
+    final cropRect = Rect.fromLTWH(
+      region.left * pixelRatio,
+      region.top * pixelRatio,
+      region.width * pixelRatio,
+      region.height * pixelRatio,
+    );
+
+    // Clamp crop rect to image bounds
+    final clampedCropRect = Rect.fromLTWH(
+      cropRect.left.clamp(0.0, image.width.toDouble()).toDouble(),
+      cropRect.top.clamp(0.0, image.height.toDouble()).toDouble(),
+      math.min(cropRect.width, image.width - cropRect.left).round().toDouble(),
+      math.min(cropRect.height, image.height - cropRect.top).round().toDouble(),
+    );
+
+    // Create cropped image using PictureRecorder
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+
+    // Draw only the cropped portion from source to destination
+    canvas.drawImageRect(
+      image,
+      clampedCropRect,
+      Rect.fromLTWH(0, 0, clampedCropRect.width, clampedCropRect.height),
+      ui.Paint(),
+    );
+
+    final picture = recorder.endRecording();
+    final croppedImage = await picture.toImage(
+      clampedCropRect.width.round(),
+      clampedCropRect.height.round(),
+    );
+
+    final byteData = await croppedImage.toByteData(format: ui.ImageByteFormat.png);
+
+    image.dispose();
+    croppedImage.dispose();
+
+    if (byteData == null) return null;
+
+    Uint8List bytes = byteData.buffer.asUint8List();
+
+    // Compress if larger than 1MB
+    if (bytes.length > 1024 * 1024) {
+      final codec = await ui.instantiateImageCodec(
+        bytes,
+        targetWidth: (clampedCropRect.width * 0.5).round(),
+      );
+      final frame = await codec.getNextFrame();
+      final compressed = await frame.image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+      if (compressed != null) {
+        bytes = compressed.buffer.asUint8List();
+      }
+    }
+
+    return bytes;
+  }
+
+  /// Convert canvas-local rect to global screen coordinates
+  Rect _convertToGlobalRect(Rect localRect) {
+    // Get the scroll offset
+    final scrollOffset = _scrollController.offset;
+    
+    // Get the canvas position on screen
+    final renderBox = _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return localRect;
+    
+    // Get the global position of the canvas origin
+    final globalOffset = renderBox.localToGlobal(Offset.zero);
+    
+    // Convert: globalY = localY - scrollOffset + canvasGlobalY
+    // The scroll offset shifts content up, so we subtract it
+    return localRect.translate(
+      globalOffset.dx,
+      globalOffset.dy - scrollOffset,
+    );
+  }
+
+  void _showSmeltPopup(Rect selectionRect) {
+    _smeltPopupEntry?.remove();
+    
+    // Convert to global coordinates for the popup positioning
+    final globalRect = _convertToGlobalRect(selectionRect);
+
+    _smeltPopupEntry = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // Tap outside to dismiss
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _dismissSmeltPopup,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          SmeltPopup(
+            selectionRect: globalRect,
+            onDismiss: _dismissSmeltPopup,
+            screenSize: MediaQuery.of(context).size,
+          ),
+        ],
+      ),
+    );
+    Overlay.of(context).insert(_smeltPopupEntry!);
+  }
+
+  void _dismissSmeltPopup() {
+    _smeltPopupEntry?.remove();
+    _smeltPopupEntry = null;
+    ref.read(smeltProvider.notifier).clearState();
   }
 
   void _deleteSelection() {
@@ -675,19 +840,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final isLassoMode     = ref.watch(activeCanvasToolProvider) == CanvasTool.lasso;
     final toolbarPosition = ref.watch(toolbarPositionProvider);
 
-    final canvasStack = Stack(
-      children: [
-        const HandwritingCanvas(),
-        // Transparent text annotations — tap to edit, drag to move
-        ...ref.watch(canvasTextNodesProvider)
-            .map((node) => CanvasTextSticker(key: ValueKey(node.id), item: node)),
-        // Emoji / decorative stickers
-        ...ref.watch(canvasStickersProvider)
-            .map((s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s)),
-        // Table overlays
-        ...ref.watch(canvasTablesProvider)
-            .map((t) => CanvasTableOverlay(table: t)),
-      ],
+    final canvasStack = RepaintBoundary(
+      key: _canvasRepaintKey,
+      child: Stack(
+        children: [
+          const HandwritingCanvas(),
+          // Transparent text annotations — tap to edit, drag to move
+          ...ref.watch(canvasTextNodesProvider)
+              .map((node) => CanvasTextSticker(key: ValueKey(node.id), item: node)),
+          // Emoji / decorative stickers
+          ...ref.watch(canvasStickersProvider)
+              .map((s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s)),
+          // Table overlays
+          ...ref.watch(canvasTablesProvider)
+              .map((t) => CanvasTableOverlay(table: t)),
+        ],
+      ),
     );
 
     final canvasSurface = Expanded(

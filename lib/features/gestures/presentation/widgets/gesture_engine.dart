@@ -94,9 +94,7 @@ class _GestureEngineState extends ConsumerState<GestureEngine> {
         if (pointerCountBeforeUp == 1 && ref.read(edgeSwipesEnabledProvider)) {
            if (startEvent.position.dx < _edgeZone && velocityX > _velocityThreshold) {
               ref.read(gestureActionProvider.notifier).dispatch(GestureAction.openDocumentNavigator);
-           } else if (startEvent.position.dx > size.width - _edgeZone && velocityX < -_velocityThreshold) {
-              ref.read(gestureActionProvider.notifier).dispatch(GestureAction.openAiPanel);
-           } else if (startEvent.position.dy > size.height - _edgeZone && velocityY < -_velocityThreshold) {
+            } else if (startEvent.position.dy > size.height - _edgeZone && velocityY < -_velocityThreshold) {
               ref.read(gestureActionProvider.notifier).dispatch(GestureAction.openSettingsPanel);
            }
         }
@@ -108,12 +106,6 @@ class _GestureEngineState extends ConsumerState<GestureEngine> {
            } else if (velocityY > _velocityThreshold) {
               ref.read(gestureActionProvider.notifier).dispatch(GestureAction.focusModeExit);
            }
-        }
-
-        // --- Multi-finger Taps (3 pointers) ---
-        // Basic check: if moved very little, it's a tap
-        if (pointerCountBeforeUp == 3 && distance.distance < 20 && ref.read(multiFingerEnabledProvider)) {
-           ref.read(gestureActionProvider.notifier).dispatch(GestureAction.aiAgentOnSelection);
         }
 
         // --- 2-finger double tap ---

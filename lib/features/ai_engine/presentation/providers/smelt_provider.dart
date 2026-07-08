@@ -1,8 +1,10 @@
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
-import 'contextual_engine_provider.dart';
+
+final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
 
 final smeltServiceProvider = Provider((ref) {
   return SmeltService(ref.watch(secureStorageProvider));

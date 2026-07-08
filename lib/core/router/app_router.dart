@@ -5,7 +5,6 @@ import '../../features/canvas/presentation/screens/note_editor_screen.dart';
 import '../../features/pdf_viewer/presentation/screens/pdf_viewer_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/gestures/presentation/screens/gesture_settings_screen.dart';
-import '../../features/memory/presentation/screens/memory_settings_screen.dart';
 import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -39,11 +38,6 @@ class AppRouter {
              path: 'gestures',
              name: 'gesture_settings',
              builder: (context, state) => const GestureSettingsScreen(),
-           ),
-           GoRoute(
-             path: 'memory',
-             name: 'memory_settings',
-             builder: (context, state) => const MemorySettingsScreen(),
            ),
         ]
       ),

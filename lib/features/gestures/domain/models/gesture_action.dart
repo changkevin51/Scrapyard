@@ -1,15 +1,10 @@
 enum GestureAction {
   none,
   openDocumentNavigator,
-  openAiPanel,
   openSettingsPanel,
-  aiAgentOnSelection,
   focusModeEnter,
   focusModeExit,
   toggleAnnotationToolbar,
-  summarizeDocument,
-  contextualPopupOnLastWord,
-  toggleLanguageSidebar,
 }
 
 enum MorseSymbol { dot, dash }

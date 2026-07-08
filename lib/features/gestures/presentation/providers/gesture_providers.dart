@@ -21,10 +21,5 @@ final tapHoldExpandEnabledProvider = StateProvider<bool>((ref) => true);
 final multiFingerEnabledProvider = StateProvider<bool>((ref) => true);
 
 final morseMappingsProvider = StateProvider<Map<MorsePattern, GestureAction>>((ref) {
-  return {
-    const MorsePattern([MorseSymbol.dot, MorseSymbol.dot]): GestureAction.contextualPopupOnLastWord,
-    const MorsePattern([MorseSymbol.dot, MorseSymbol.dash]): GestureAction.toggleLanguageSidebar,
-    const MorsePattern([MorseSymbol.dash, MorseSymbol.dot]): GestureAction.summarizeDocument,
-    const MorsePattern([MorseSymbol.dash, MorseSymbol.dash]): GestureAction.openAiPanel,
-  };
+  return {};
 });

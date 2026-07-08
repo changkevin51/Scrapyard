@@ -25,13 +25,6 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => context.push('/settings/gestures'),
             ),
             const Divider(color: KotoTheme.dividers),
-            ListTile(
-              title: Text('AI Memory', style: KotoTextStyles.body),
-              subtitle: Text('Manage AI context and learning preferences', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
-              trailing: const Icon(Icons.chevron_right, color: KotoTheme.mutedText),
-              onTap: () => context.push('/settings/memory'),
-            ),
-            const Divider(color: KotoTheme.dividers),
         ]
       )
     );

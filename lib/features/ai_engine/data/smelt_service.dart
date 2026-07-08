@@ -27,6 +27,9 @@ class SmeltStreamResult {
 class SmeltService {
   final FlutterSecureStorage _storage;
   static const String _apiKeyKey = 'gemini_api_key';
+  // Temporary default — replace with your key for now.
+  // When user-key UI is added, remove this and write to storage instead.
+  static const String _defaultApiKey = '';
   
   // Gemini models in priority order (fallback chain)
   static const List<String> _models = [
@@ -48,7 +51,7 @@ class SmeltService {
     Uint8List? imageBytes, {
     SmeltProgressCallback? onProgress,
   }) async {
-    const apiKey = '';
+    final apiKey = (await _storage.read(key: _apiKeyKey) ?? _defaultApiKey);
     if (apiKey.isEmpty) {
       throw Exception('Gemini API key not configured');
     }
@@ -161,44 +164,30 @@ You MUST respond with ONLY a JSON object in this exact format:
     final response = await stream;
 
     if (response.statusCode == 200) {
-      // Stream the response body and accumulate chunks
+      // Accumulate the response body as chunks arrive
       final accumulated = StringBuffer();
       await for (final chunk in response.stream) {
         accumulated.write(String.fromCharCodes(chunk));
-        
-        // Try to parse what we have so far for progressive display
-        final content = _extractContentFromStreamResponse(accumulated.toString());
-        if (content != null && content.isNotEmpty) {
-          // Parse JSON progressively
-          final parsed = _tryParsePartialJson(content);
-          if (parsed != null) {
-            onProgress?.call(
-              partialAnswer: parsed['answer'] as String?,
-              partialSteps: parsed['steps'] as String?,
-              isComplete: false,
-            );
-          }
-        }
       }
 
+      // Parse the complete response
       final responseBody = accumulated.toString();
       final data = jsonDecode(responseBody);
       final candidates = data['candidates'] as List?;
       if (candidates == null || candidates.isEmpty) {
         throw Exception('No response from Gemini');
       }
-      
+
       final content = candidates[0]['content']['parts'][0]['text'] as String;
-      
+
       try {
         final jsonResponse = await compute(_parseJsonWorker, content);
-        // Signal completion with final values
         onProgress?.call(
           partialAnswer: jsonResponse['answer'] as String?,
           partialSteps: jsonResponse['steps'] as String?,
           isComplete: true,
         );
-        
+
         final responseModel = SmeltResponse.fromJson(jsonResponse, model);
         return SmeltStreamResult(
           response: responseModel,
@@ -210,17 +199,17 @@ You MUST respond with ONLY a JSON object in this exact format:
         print('Raw content from Gemini:');
         print(content);
         print('=== END GEMINI RESPONSE ===');
-        
+
         try {
           final fixedAndParsed = await compute(_fixAndParseJsonWorker, content);
           final jsonResponse = fixedAndParsed;
-          
+
           onProgress?.call(
             partialAnswer: jsonResponse['answer'] as String?,
             partialSteps: jsonResponse['steps'] as String?,
             isComplete: true,
           );
-          
+
           final responseModel = SmeltResponse.fromJson(jsonResponse, model);
           return SmeltStreamResult(
             response: responseModel,
@@ -237,76 +226,6 @@ You MUST respond with ONLY a JSON object in this exact format:
       throw Exception('Rate limit exceeded (429)');
     } else {
       throw Exception('Gemini API error: ${response.statusCode} - ${await response.stream.bytesToString()}');
-    }
-  }
-
-  /// Extract content from Gemini response (handles streaming format)
-  String? _extractContentFromStreamResponse(String responseBody) {
-    try {
-      final data = jsonDecode(responseBody);
-      final candidates = data['candidates'] as List?;
-      if (candidates != null && candidates.isNotEmpty) {
-        return candidates[0]['content']['parts'][0]['text'] as String?;
-      }
-    } catch (_) {
-      // Partial JSON may not parse yet
-    }
-    return null;
-  }
-
-  /// Try to parse partial/incomplete JSON for progressive display
-  Map<String, dynamic>? _tryParsePartialJson(String content) {
-    try {
-      // Ensure JSON is complete by adding closing braces if needed
-      var normalized = content.trim();
-      
-      // Count braces to check if complete
-      var braceCount = 0;
-      var bracketCount = 0;
-      var inString = false;
-      var escapeNext = false;
-      
-      for (var i = 0; i < normalized.length; i++) {
-        final char = normalized[i];
-        
-        if (escapeNext) {
-          escapeNext = false;
-          continue;
-        }
-        
-        if (char == '\\') {
-          escapeNext = true;
-          continue;
-        }
-        
-        if (char == '"') {
-          inString = !inString;
-          continue;
-        }
-        
-        if (inString) continue;
-        
-        if (char == '{') braceCount++;
-        if (char == '}') braceCount--;
-        if (char == '[') bracketCount++;
-        if (char == ']') bracketCount--;
-      }
-      
-      // Add missing closing braces if incomplete
-      while (braceCount > 0 || bracketCount > 0) {
-        if (braceCount > 0) {
-          normalized += '}';
-          braceCount--;
-        }
-        if (bracketCount > 0) {
-          normalized += ']';
-          bracketCount--;
-        }
-      }
-      
-      return jsonDecode(normalized) as Map<String, dynamic>?;
-    } catch (_) {
-      return null;
     }
   }
 

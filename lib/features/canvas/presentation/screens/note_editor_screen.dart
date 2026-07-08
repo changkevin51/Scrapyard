@@ -838,13 +838,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     final isPenMode       = ref.watch(isPenModeActiveProvider);
     final isLassoMode     = ref.watch(activeCanvasToolProvider) == CanvasTool.lasso;
+    final canvasZoom      = ref.watch(canvasZoomProvider);
     final toolbarPosition = ref.watch(toolbarPositionProvider);
 
     final canvasStack = RepaintBoundary(
       key: _canvasRepaintKey,
       child: Stack(
         children: [
-          const HandwritingCanvas(),
+          HandwritingCanvas(
+            scrollController: _scrollController,
+            zoomLevel: canvasZoom,
+            onZoomChanged: (v) => ref.read(canvasZoomProvider.notifier).state = v,
+          ),
           // Transparent text annotations — tap to edit, drag to move
           ...ref.watch(canvasTextNodesProvider)
               .map((node) => CanvasTextSticker(key: ValueKey(node.id), item: node)),
@@ -858,106 +863,143 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       ),
     );
 
+    // Lasso/selection/paste overlays live inside the transform so they stay
+    // in logical coordinates (matching stroke positions).
+    final List<Widget> contentOverlays = [];
+    if (_lassoPreviewRect != null) {
+      contentOverlays.add(
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: _LassoPainter(_lassoPreviewRect!),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_selectionRect != null) {
+      contentOverlays.add(
+        Positioned.fill(
+          child: Stack(
+            children: [
+              CustomPaint(
+                painter: _SelectedStrokeHighlightPainter(_selectionRect!),
+              ),
+              if (!_isResizingSelection)
+                Positioned.fromRect(
+                  rect: _selectionRect!,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onPanStart: (_) {
+                      _hideSelectionMenu();
+                      _hidePasteMenu();
+                    },
+                    onPanUpdate: (details) => _moveSelection(details.delta),
+                    onPanEnd: (_) => _finishSelectionMove(),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              if (_isResizingSelection) ...[
+                _SelectionCornerHandle(
+                  rect: _selectionRect!,
+                  cornerIndex: 0,
+                  onPanStart: _beginResizeSelection,
+                  onPanUpdate: (delta) => _resizeSelection(0, delta),
+                  onPanEnd: _finishResizeSelection,
+                ),
+                _SelectionCornerHandle(
+                  rect: _selectionRect!,
+                  cornerIndex: 1,
+                  onPanStart: _beginResizeSelection,
+                  onPanUpdate: (delta) => _resizeSelection(1, delta),
+                  onPanEnd: _finishResizeSelection,
+                ),
+                _SelectionCornerHandle(
+                  rect: _selectionRect!,
+                  cornerIndex: 2,
+                  onPanStart: _beginResizeSelection,
+                  onPanUpdate: (delta) => _resizeSelection(2, delta),
+                  onPanEnd: _finishResizeSelection,
+                ),
+                _SelectionCornerHandle(
+                  rect: _selectionRect!,
+                  cornerIndex: 3,
+                  onPanStart: _beginResizeSelection,
+                  onPanUpdate: (delta) => _resizeSelection(3, delta),
+                  onPanEnd: _finishResizeSelection,
+                ),
+              ],
+              if (_showSelectionMenu)
+                _SelectionActionMenu(
+                  rect: _selectionRect!,
+                  onSmelt: _smeltSelection,
+                  onResize: _beginResizeSelection,
+                  onDelete: _deleteSelection,
+                  onCopy: _copySelection,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_showPasteMenu && _pasteMenuAnchor != null) {
+      contentOverlays.add(
+        Positioned(
+          left: _pasteMenuAnchor!.dx,
+          top: _pasteMenuAnchor!.dy,
+          child: _PasteMenu(
+            onPaste: () => _pasteClipboard(_pasteMenuAnchor!),
+          ),
+        ),
+      );
+    }
+
     final canvasSurface = Expanded(
       child: Stack(
         children: [
-          GestureDetector(
-            onTapDown: _onCanvasTapDown,
-            onLongPressStart: _handleCanvasLongPressStart,
-            onPanStart: _startLasso,
-            onPanUpdate: _updateLasso,
-            onPanEnd: _endLasso,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              physics: (isPenMode || isLassoMode)
-                  ? const NeverScrollableScrollPhysics()
-                  : const AlwaysScrollableScrollPhysics(),
+          SingleChildScrollView(
+            controller: _scrollController,
+            // In pen mode (or lasso), the HandwritingCanvas Listener handles all
+            // pointer events — the scroll view must not compete.  When stylus-only
+            // is on, the canvas also handles touch scrolling manually via jumpTo(),
+            // so the scroll view must stay out of the way.
+            physics: (isLassoMode || isPenMode)
+                ? const NeverScrollableScrollPhysics()
+                : const ClampingScrollPhysics(),
+            child: ColoredBox(
+              color: canvasZoom <= 1.0
+                  ? KotoTheme.cardSurface
+                  : KotoTheme.background,
               child: SizedBox(
                 width: double.infinity,
-                height: 5000,
-                child: canvasStack,
-              ),
-            ),
-          ),
-          if (_lassoPreviewRect != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _LassoPainter(_lassoPreviewRect!),
+                height: 5000 * canvasZoom,
+                child: Transform.scale(
+                  scale: canvasZoom,
+                  alignment: canvasZoom <= 1.0
+                      ? const Alignment(0, -1)
+                      : Alignment.topLeft,
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 5000,
+                    child: GestureDetector(
+                      onTapDown: _onCanvasTapDown,
+                      onLongPressStart: _handleCanvasLongPressStart,
+                      onPanStart: isLassoMode ? _startLasso : null,
+                      onPanUpdate: isLassoMode ? _updateLasso : null,
+                      onPanEnd: isLassoMode ? _endLasso : null,
+                      child: Stack(
+                        children: [
+                          canvasStack,
+                          ...contentOverlays,
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          if (_selectionRect != null)
-            Positioned.fill(
-              child: Stack(
-                children: [
-                  CustomPaint(
-                    painter: _SelectedStrokeHighlightPainter(_selectionRect!),
-                  ),
-                  if (!_isResizingSelection)
-                    Positioned.fromRect(
-                      rect: _selectionRect!,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onPanStart: (_) {
-                          _hideSelectionMenu();
-                          _hidePasteMenu();
-                        },
-                        onPanUpdate: (details) => _moveSelection(details.delta),
-                        onPanEnd: (_) => _finishSelectionMove(),
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  if (_isResizingSelection) ...[
-                    _SelectionCornerHandle(
-                      rect: _selectionRect!,
-                      cornerIndex: 0,
-                      onPanStart: _beginResizeSelection,
-                      onPanUpdate: (delta) => _resizeSelection(0, delta),
-                      onPanEnd: _finishResizeSelection,
-                    ),
-                    _SelectionCornerHandle(
-                      rect: _selectionRect!,
-                      cornerIndex: 1,
-                      onPanStart: _beginResizeSelection,
-                      onPanUpdate: (delta) => _resizeSelection(1, delta),
-                      onPanEnd: _finishResizeSelection,
-                    ),
-                    _SelectionCornerHandle(
-                      rect: _selectionRect!,
-                      cornerIndex: 2,
-                      onPanStart: _beginResizeSelection,
-                      onPanUpdate: (delta) => _resizeSelection(2, delta),
-                      onPanEnd: _finishResizeSelection,
-                    ),
-                    _SelectionCornerHandle(
-                      rect: _selectionRect!,
-                      cornerIndex: 3,
-                      onPanStart: _beginResizeSelection,
-                      onPanUpdate: (delta) => _resizeSelection(3, delta),
-                      onPanEnd: _finishResizeSelection,
-                    ),
-                  ],
-                  if (_showSelectionMenu)
-                    _SelectionActionMenu(
-                      rect: _selectionRect!,
-                      onSmelt: _smeltSelection,
-                      onResize: _beginResizeSelection,
-                      onDelete: _deleteSelection,
-                      onCopy: _copySelection,
-                    ),
-                ],
-              ),
-            ),
-          if (_showPasteMenu && _pasteMenuAnchor != null)
-            Positioned(
-              left: _pasteMenuAnchor!.dx,
-              top: _pasteMenuAnchor!.dy,
-              child: _PasteMenu(
-                onPaste: () => _pasteClipboard(_pasteMenuAnchor!),
-              ),
-            ),
-          // Smart action FAB — bottom right
+          ),
+          // Smart action FAB — bottom right, always on screen
           Positioned(
             right: 16, bottom: 16,
             child: CanvasSmartBar(

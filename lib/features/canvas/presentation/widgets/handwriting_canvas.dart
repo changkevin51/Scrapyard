@@ -49,7 +49,16 @@ class _StrokeCache {
 // HandwritingCanvas
 // ══════════════════════════════════════════════════════════════════
 class HandwritingCanvas extends ConsumerStatefulWidget {
-  const HandwritingCanvas({super.key});
+  final ScrollController scrollController;
+  final double zoomLevel;
+  final ValueChanged<double> onZoomChanged;
+
+  const HandwritingCanvas({
+    super.key,
+    required this.scrollController,
+    required this.zoomLevel,
+    required this.onZoomChanged,
+  });
 
   @override
   ConsumerState<HandwritingCanvas> createState() => _HandwritingCanvasState();
@@ -69,6 +78,11 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   // Saved-stroke picture cache — rebuilt only when the stroke list changes.
   final _cache = _StrokeCache();
 
+  // Touch tracking for palm-rejection scroll/zoom
+  final _touchPointers = <int, Offset>{};
+  double? _pinchInitialDistance;
+  double? _pinchInitialZoom;
+
   final _uuid            = const Uuid();
   final _shapeRecognizer = SmartShapeRecognizer();
 
@@ -76,12 +90,32 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
   // ── Input handlers ─────────────────────────────────────────────
   void _onPointerDown(PointerDownEvent e) {
-    if (!ref.read(isPenModeActiveProvider)) return;
-
+    final isPenMode = ref.read(isPenModeActiveProvider);
     final stylusOnly = ref.read(stylusOnlyModeProvider);
+
+    // Track touch for zoom/scroll in touch mode or palm-rejection mode.
+    // In pen mode without palm-rejection, touch events draw — don't track.
+    if (e.kind == PointerDeviceKind.touch) {
+      if (!isPenMode || stylusOnly) {
+        _touchPointers[e.pointer] = e.position;
+        if (_touchPointers.length == 2) {
+          final positions = _touchPointers.values.toList();
+          final distance = (positions[0] - positions[1]).distance;
+          if (distance > 5.0) {
+            _pinchInitialDistance = distance;
+            _pinchInitialZoom = widget.zoomLevel;
+          }
+        }
+      }
+    }
+
+    if (!isPenMode) return;
+
     if (stylusOnly &&
         e.kind != PointerDeviceKind.stylus &&
-        e.kind != PointerDeviceKind.invertedStylus) return;
+        e.kind != PointerDeviceKind.invertedStylus) {
+      return;
+    }
 
     final tool = ref.read(activeCanvasToolProvider);
     if (tool == CanvasTool.lasso) return;
@@ -100,10 +134,18 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _onPointerMove(PointerMoveEvent e) {
+    // Tracked touch moves — handled for zoom/scroll in any mode
+    if (e.kind == PointerDeviceKind.touch && _touchPointers.containsKey(e.pointer)) {
+      _handleTouchMove(e);
+      return;
+    }
+
     final stylusOnly = ref.read(stylusOnlyModeProvider);
     if (stylusOnly &&
         e.kind != PointerDeviceKind.stylus &&
-        e.kind != PointerDeviceKind.invertedStylus) return;
+        e.kind != PointerDeviceKind.invertedStylus) {
+      return;
+    }
 
     final tool   = ref.read(activeCanvasToolProvider);
     final points = _activeStrokes[e.pointer];
@@ -139,6 +181,13 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _onPointerUp(PointerUpEvent e) {
+    if (_touchPointers.remove(e.pointer) != null) {
+      if (_touchPointers.length < 2) {
+        _pinchInitialDistance = null;
+        _pinchInitialZoom = null;
+      }
+      return;
+    }
     _stabilizers.remove(e.pointer)?.reset();
     final points = _activeStrokes.remove(e.pointer);
     if (points == null || points.length < 2) { _tick(); return; }
@@ -239,7 +288,37 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     return verts;
   }
 
+  void _handleTouchMove(PointerMoveEvent e) {
+    final previous = _touchPointers[e.pointer];
+    _touchPointers[e.pointer] = e.position;
+
+    if (_touchPointers.length == 2 && _pinchInitialDistance != null && _pinchInitialZoom != null) {
+      final positions = _touchPointers.values.toList();
+      final currentDistance = (positions[0] - positions[1]).distance;
+      if (currentDistance > 5.0) {
+        final newZoom = _pinchInitialZoom! * (currentDistance / _pinchInitialDistance!);
+        widget.onZoomChanged(newZoom.clamp(0.5, 3.0));
+      }
+    } else if (previous != null && widget.scrollController.hasClients) {
+      // Only scroll manually in pen mode — in touch mode the
+      // ScrollView's AlwaysScrollableScrollPhysics handles it.
+      if (ref.read(isPenModeActiveProvider)) {
+        final delta = e.position - previous;
+        final maxExtent = widget.scrollController.position.maxScrollExtent;
+        widget.scrollController.jumpTo(
+          (widget.scrollController.offset - delta.dy).clamp(0.0, maxExtent),
+        );
+      }
+    }
+  }
+
   void _onPointerCancel(PointerCancelEvent e) {
+    if (_touchPointers.remove(e.pointer) != null) {
+      if (_touchPointers.length < 2) {
+        _pinchInitialDistance = null;
+        _pinchInitialZoom = null;
+      }
+    }
     _stabilizers.remove(e.pointer)?.reset();
     _activeStrokes.remove(e.pointer);
     _tick();

@@ -124,7 +124,8 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
 });
 
 final isPenModeActiveProvider = StateProvider<bool>((ref) => true);
-final stylusOnlyModeProvider = StateProvider<bool>((ref) => false);
+final stylusOnlyModeProvider = StateProvider<bool>((ref) => true);
+final canvasZoomProvider = StateProvider<double>((ref) => 1.0);
 final strokeWidthModifierProvider = StateProvider<double>((ref) => 1.0);
 final strokeStyleProvider = StateProvider<StrokeStyle>((ref) => StrokeStyle.solid);
 final penSettingsProvider = StateProvider<PenSettings>((ref) => const PenSettings());

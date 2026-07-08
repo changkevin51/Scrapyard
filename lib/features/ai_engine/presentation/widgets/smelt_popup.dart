@@ -631,11 +631,8 @@ class _LatexStepsRenderer extends StatelessWidget {
   List<_TextSegment> _parseLatexSegments(String input) {
     final segments = <_TextSegment>[];
     
-    // First, preprocess the input to remove duplicate step descriptions
-    final cleanedInput = _removeDuplicateStepDescriptions(input);
-    
     // Split by lines first to handle multi-line content
-    final lines = cleanedInput.split('\n');
+    final lines = input.split('\n');
     
     for (var i = 0; i < lines.length; i++) {
       final line = lines[i];
@@ -696,49 +693,6 @@ class _LatexStepsRenderer extends StatelessWidget {
     return segments;
   }
 
-  /// Remove duplicate step descriptions that appear consecutively
-  /// This handles cases where the AI returns:
-  /// "3. Simplify the expression:\n3. Simplify the expression: $x = 5$"
-  /// Also handles exact duplicates like "5. Solve for x: x = 4 or x = -3\n5. Solve for x: x = 4 or x = -3"
-  String _removeDuplicateStepDescriptions(String input) {
-    final lines = input.split('\n');
-    final result = <String>[];
-    
-    for (var i = 0; i < lines.length; i++) {
-      final currentLine = lines[i].trim();
-      
-      // Skip empty lines at the start
-      if (currentLine.isEmpty && result.isEmpty) continue;
-      
-      // Check if this line is a step description (numbered or bulleted)
-      final stepMatch = RegExp(r'^(\d+)\.\s*(.*)').firstMatch(currentLine);
-      
-      if (stepMatch != null) {
-        final currentStepNum = stepMatch.group(1);
-        
-        // Look for a previous line with the same step number
-        var foundDuplicate = false;
-        for (var j = result.length - 1; j >= 0; j--) {
-          final prevLine = result[j].trim();
-          if (prevLine.isEmpty) continue;
-          
-          final prevMatch = RegExp(r'^(\d+)\.\s*(.*)').firstMatch(prevLine);
-          if (prevMatch != null && prevMatch.group(1) == currentStepNum) {
-            // Same step number means it's a duplicate - skip current line.
-            // The first occurrence is kept, subsequent ones are discarded.
-            foundDuplicate = true;
-            break;
-          }
-        }
-        
-        if (foundDuplicate) continue;
-      }
-      
-      result.add(lines[i]);
-    }
-    
-    return result.join('\n');
-  }
 }
 
 class _TextSegment {

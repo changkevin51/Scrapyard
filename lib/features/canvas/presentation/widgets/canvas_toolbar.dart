@@ -539,7 +539,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('PALM REJECTION', style: KotoTextStyles.label),
-                Text('Stylus input only',
+                Text('Touch = scroll/zoom, Stylus = write',
                     style: KotoTextStyles.caption
                         .copyWith(color: KotoTheme.mutedText)),
               ]),

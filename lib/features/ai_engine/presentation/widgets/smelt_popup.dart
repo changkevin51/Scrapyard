@@ -715,7 +715,6 @@ class _LatexStepsRenderer extends StatelessWidget {
       
       if (stepMatch != null) {
         final currentStepNum = stepMatch.group(1);
-        final currentStepText = stepMatch.group(2) ?? '';
         
         // Look for a previous line with the same step number
         var foundDuplicate = false;
@@ -725,30 +724,10 @@ class _LatexStepsRenderer extends StatelessWidget {
           
           final prevMatch = RegExp(r'^(\d+)\.\s*(.*)').firstMatch(prevLine);
           if (prevMatch != null && prevMatch.group(1) == currentStepNum) {
-            final prevStepText = prevMatch.group(2) ?? '';
-            
-            // If same step number and same text, it's a duplicate - skip current line
-            if (currentStepText.trim() == prevStepText.trim()) {
-              foundDuplicate = true;
-              break;
-            }
-            
-            // If same step number but current has more content (like LaTeX),
-            // remove the previous shorter version
-            if (currentStepText.trim().startsWith(prevStepText.trim()) ||
-                prevStepText.trim().startsWith(currentStepText.trim())) {
-              // Keep the longer/more complete version
-              if (currentStepText.length >= prevStepText.length) {
-                result.removeAt(j);
-                // Remove trailing empty lines
-                while (result.isNotEmpty && result.last.trim().isEmpty) {
-                  result.removeLast();
-                }
-              } else {
-                foundDuplicate = true; // Current is shorter, skip it
-              }
-              break;
-            }
+            // Same step number means it's a duplicate - skip current line.
+            // The first occurrence is kept, subsequent ones are discarded.
+            foundDuplicate = true;
+            break;
           }
         }
         

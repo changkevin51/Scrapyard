@@ -47,20 +47,36 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
     state = const SmeltState(isLoading: true);
   }
 
+  /// Streaming smelt that shows results as soon as they arrive
   Future<void> smelt({Uint8List? imageBytes}) async {
     try {
-      final response = await _smeltService.analyzeSelection(imageBytes);
-      state = SmeltState(isLoading: false, response: response);
-    } catch (e) {
-      state = SmeltState(isLoading: false, error: e.toString());
-    }
-  }
+      state = const SmeltState(isLoading: true);
+      
+      final result = await _smeltService.analyzeSelectionStream(
+        imageBytes,
+        onProgress: ({partialAnswer = '', partialSteps = '', isComplete = false, error}) {
+          if (isComplete && partialAnswer != null && partialAnswer.isNotEmpty) {
+            // Determine if it's math based on content patterns
+            final isMath = RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim|pi|theta').hasMatch(partialAnswer);
+            
+            final finalResponse = SmeltResponse(
+              answer: partialAnswer,
+              steps: partialSteps ?? '',
+              isMath: isMath,
+              modelUsed: 'gemini-3.5-flash',
+            );
+            state = SmeltState(
+              isLoading: false,
+              response: finalResponse,
+            );
+          }
+        },
+      );
 
-  Future<void> analyzeSelection(Uint8List imageBytes) async {
-    state = const SmeltState(isLoading: true);
-    try {
-      final response = await _smeltService.analyzeSelection(imageBytes);
-      state = SmeltState(isLoading: false, response: response);
+      // If we haven't updated state yet (no streaming progress), set final state
+      if (state.isLoading) {
+        state = SmeltState(isLoading: false, response: result.response);
+      }
     } catch (e) {
       state = SmeltState(isLoading: false, error: e.toString());
     }

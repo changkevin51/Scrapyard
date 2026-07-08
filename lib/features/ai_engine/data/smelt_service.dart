@@ -1,10 +1,27 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../domain/models/smelt_response.dart';
+
+/// Callback for streaming progress updates
+typedef SmeltProgressCallback = void Function({
+  String? partialAnswer,
+  String? partialSteps,
+  bool isComplete,
+  String? error,
+});
+
+/// Result from a streaming smelt operation
+class SmeltStreamResult {
+  final SmeltResponse response;
+  final String modelUsed;
+
+  const SmeltStreamResult({required this.response, required this.modelUsed});
+}
 
 /// Service for the Smelt AI feature using Gemini API with fallback chain
 class SmeltService {
@@ -21,35 +38,39 @@ class SmeltService {
   SmeltService(this._storage);
 
   /// Analyze the selected region image and return AI response
-  /// If imageBytes is null, sends a text-only request
   Future<SmeltResponse> analyzeSelection(Uint8List? imageBytes) async {
-    // final apiKey = await _storage.read(key: _apiKeyKey);
-    final apiKey = '';
-    if (apiKey == null || apiKey.isEmpty) {
+    final result = await analyzeSelectionStream(imageBytes);
+    return result.response;
+  }
+
+  /// Analyze with streaming support for faster perceived response time
+  Future<SmeltStreamResult> analyzeSelectionStream(
+    Uint8List? imageBytes, {
+    SmeltProgressCallback? onProgress,
+  }) async {
+    const apiKey = '';
+    if (apiKey.isEmpty) {
       throw Exception('Gemini API key not configured');
     }
 
     String? base64Image;
     if (imageBytes != null) {
-      // Compress image if needed (target ~500KB to save tokens)
-      final compressedImage = await _compressImageIfNeeded(imageBytes);
+      final compressedImage = await compute(_compressImageWorker, imageBytes);
       base64Image = base64Encode(compressedImage);
     }
 
     // Try each model in order until one succeeds
     for (final model in _models) {
       try {
-        final response = await _callGemini(apiKey, model, base64Image);
+        final response = await _callGemini(apiKey, model, base64Image, onProgress);
         return response;
       } catch (e) {
-        // If rate limited or unavailable, try next model
         if (e.toString().contains('429') || 
             e.toString().contains('RESOURCE_EXHAUSTED') ||
             e.toString().contains('rate') ||
             e.toString().contains('quota')) {
           continue;
         }
-        // For other errors, also try next model
         if (model == _models.last) {
           throw Exception('All Gemini models failed: $e');
         }
@@ -59,7 +80,12 @@ class SmeltService {
     throw Exception('All Gemini models are unavailable');
   }
 
-  Future<SmeltResponse> _callGemini(String apiKey, String model, String? base64Image) async {
+  Future<SmeltStreamResult> _callGemini(
+    String apiKey, 
+    String model, 
+    String? base64Image,
+    SmeltProgressCallback? onProgress,
+  ) async {
     final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
 
     const systemPrompt = '''
@@ -86,7 +112,6 @@ IMPORTANT RULES:
    - Use bullet points or numbered lists
    - Keep steps EXTREMELY CONCISE - 1-2 lines maximum per step.
    - NEVER put sentence punctuation (like periods or commas) on a new line after a latex expression. Omit trailing punctuation for display math entirely.
-
 
 4. Be concise and clear. The answer should be immediately useful to a student.
 
@@ -127,14 +152,37 @@ You MUST respond with ONLY a JSON object in this exact format:
       },
     };
 
-    final response = await http.post(
-      Uri.parse(url),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(requestBody),
-    ).timeout(const Duration(seconds: 30));
+    // Send request and stream the response body chunks
+    final request = http.Request('POST', Uri.parse(url))
+      ..headers['Content-Type'] = 'application/json'
+      ..body = jsonEncode(requestBody);
+
+    final stream = request.send().timeout(const Duration(seconds: 30));
+    final response = await stream;
 
     if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      // Stream the response body and accumulate chunks
+      final accumulated = StringBuffer();
+      await for (final chunk in response.stream) {
+        accumulated.write(String.fromCharCodes(chunk));
+        
+        // Try to parse what we have so far for progressive display
+        final content = _extractContentFromStreamResponse(accumulated.toString());
+        if (content != null && content.isNotEmpty) {
+          // Parse JSON progressively
+          final parsed = _tryParsePartialJson(content);
+          if (parsed != null) {
+            onProgress?.call(
+              partialAnswer: parsed['answer'] as String?,
+              partialSteps: parsed['steps'] as String?,
+              isComplete: false,
+            );
+          }
+        }
+      }
+
+      final responseBody = accumulated.toString();
+      final data = jsonDecode(responseBody);
       final candidates = data['candidates'] as List?;
       if (candidates == null || candidates.isEmpty) {
         throw Exception('No response from Gemini');
@@ -143,105 +191,187 @@ You MUST respond with ONLY a JSON object in this exact format:
       final content = candidates[0]['content']['parts'][0]['text'] as String;
       
       try {
-        final jsonResponse = jsonDecode(content);
-        return SmeltResponse.fromJson(jsonResponse, model);
+        final jsonResponse = await compute(_parseJsonWorker, content);
+        // Signal completion with final values
+        onProgress?.call(
+          partialAnswer: jsonResponse['answer'] as String?,
+          partialSteps: jsonResponse['steps'] as String?,
+          isComplete: true,
+        );
+        
+        final responseModel = SmeltResponse.fromJson(jsonResponse, model);
+        return SmeltStreamResult(
+          response: responseModel,
+          modelUsed: model,
+        );
       } on FormatException catch (e) {
-        // Log the full response for debugging
         print('=== GEMINI JSON PARSE ERROR ===');
         print('Error: $e');
         print('Raw content from Gemini:');
         print(content);
         print('=== END GEMINI RESPONSE ===');
         
-        // Try to fix common escape sequence issues
-        final fixedContent = _fixJsonEscapeSequences(content);
-        print('=== FIXED CONTENT ===');
-        print(fixedContent);
-        print('=== END FIXED CONTENT ===');
         try {
-          final jsonResponse = jsonDecode(fixedContent);
-          return SmeltResponse.fromJson(jsonResponse, model);
+          final fixedAndParsed = await compute(_fixAndParseJsonWorker, content);
+          final jsonResponse = fixedAndParsed;
+          
+          onProgress?.call(
+            partialAnswer: jsonResponse['answer'] as String?,
+            partialSteps: jsonResponse['steps'] as String?,
+            isComplete: true,
+          );
+          
+          final responseModel = SmeltResponse.fromJson(jsonResponse, model);
+          return SmeltStreamResult(
+            response: responseModel,
+            modelUsed: model,
+          );
         } catch (e2) {
           print('=== SECOND PARSE ERROR ===');
           print('Error: $e2');
           print('=== END SECOND PARSE ERROR ===');
-          throw Exception('Failed to parse Gemini response (even after fixing escapes): $e2\nRaw response: $content');
+          throw Exception('Failed to parse Gemini response: $e2\nRaw response: $content');
         }
       }
     } else if (response.statusCode == 429) {
       throw Exception('Rate limit exceeded (429)');
     } else {
-      throw Exception('Gemini API error: ${response.statusCode} - ${response.body}');
+      throw Exception('Gemini API error: ${response.statusCode} - ${await response.stream.bytesToString()}');
     }
   }
 
-  /// Fix common JSON escape sequence issues in Gemini responses
-  /// Gemini sometimes returns raw backslashes like `\(` which are invalid in JSON
-  String _fixJsonEscapeSequences(String json) {
-    // Process character by character to handle escape sequences properly
-    final buffer = StringBuffer();
-    var i = 0;
-    
-    while (i < json.length) {
-      if (json[i] == '\\' && i + 1 < json.length) {
-        final nextChar = json[i + 1];
-        
-        // Check if this is a valid JSON escape sequence
-        final isValidEscape = nextChar == '\\' || 
-                              nextChar == '"' || 
-                              nextChar == '/' ||
-                              nextChar == 'b' ||
-                              nextChar == 'f' ||
-                              nextChar == 'n' ||
-                              nextChar == 'r' ||
-                              nextChar == 't' ||
-                              nextChar == 'u';
-        
-        if (isValidEscape) {
-          // Keep valid escape sequences as-is
-          buffer.write('\\');
-          buffer.write(nextChar);
-          i += 2;
-          
-          // Handle \uXXXX sequences
-          if (nextChar == 'u' && i + 4 <= json.length) {
-            buffer.write(json.substring(i, i + 4));
-            i += 4;
-          }
-        } else {
-          // Invalid escape - double the backslash
-          buffer.write('\\\\');
-          buffer.write(nextChar);
-          i += 2;
-        }
-      } else {
-        buffer.write(json[i]);
-        i++;
+  /// Extract content from Gemini response (handles streaming format)
+  String? _extractContentFromStreamResponse(String responseBody) {
+    try {
+      final data = jsonDecode(responseBody);
+      final candidates = data['candidates'] as List?;
+      if (candidates != null && candidates.isNotEmpty) {
+        return candidates[0]['content']['parts'][0]['text'] as String?;
       }
+    } catch (_) {
+      // Partial JSON may not parse yet
     }
-    
-    return buffer.toString();
+    return null;
   }
 
-  /// Compress image if it's too large (target ~500KB)
-  Future<Uint8List> _compressImageIfNeeded(Uint8List imageBytes) async {
-    const targetSize = 500 * 1024; // 500KB
+  /// Try to parse partial/incomplete JSON for progressive display
+  Map<String, dynamic>? _tryParsePartialJson(String content) {
+    try {
+      // Ensure JSON is complete by adding closing braces if needed
+      var normalized = content.trim();
+      
+      // Count braces to check if complete
+      var braceCount = 0;
+      var bracketCount = 0;
+      var inString = false;
+      var escapeNext = false;
+      
+      for (var i = 0; i < normalized.length; i++) {
+        final char = normalized[i];
+        
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+        
+        if (char == '\\') {
+          escapeNext = true;
+          continue;
+        }
+        
+        if (char == '"') {
+          inString = !inString;
+          continue;
+        }
+        
+        if (inString) continue;
+        
+        if (char == '{') braceCount++;
+        if (char == '}') braceCount--;
+        if (char == '[') bracketCount++;
+        if (char == ']') bracketCount--;
+      }
+      
+      // Add missing closing braces if incomplete
+      while (braceCount > 0 || bracketCount > 0) {
+        if (braceCount > 0) {
+          normalized += '}';
+          braceCount--;
+        }
+        if (bracketCount > 0) {
+          normalized += ']';
+          bracketCount--;
+        }
+      }
+      
+      return jsonDecode(normalized) as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Worker function for JSON parsing in isolate
+  static Map<String, dynamic> _parseJsonWorker(String content) {
+    return jsonDecode(content) as Map<String, dynamic>;
+  }
+
+  /// Worker function for fixing and parsing JSON in isolate
+  static Map<String, dynamic> _fixAndParseJsonWorker(String content) {
+    final fixed = _fixJsonEscapeSequences(content);
+    return jsonDecode(fixed) as Map<String, dynamic>;
+  }
+
+  /// Optimized JSON escape sequence fixer using batched regex replacements
+  static String _fixJsonEscapeSequences(String json) {
+    const placeholderStart = '\x00PE\x00';
+    const placeholderEnd = '\x00PE_END\x00';
+    
+    final validEscapes = ['\\\\', '\\"', '\\/', '\\b', '\\f', '\\n', '\\r', '\\t'];
+    
+    var result = json;
+    
+    for (final escape in validEscapes) {
+      final placeholder = '$placeholderStart${escape.hashCode}$placeholderEnd';
+      result = result.replaceAll(escape, placeholder);
+    }
+    
+    result = result.replaceAllMapped(
+      RegExp(r'\\u([0-9a-fA-F]{4})'),
+      (match) => '\x00PE_UNICODE${match.group(1)!}\x00PE_END',
+    );
+    
+    result = result.replaceAll('\\', '\\\\');
+    
+    for (final escape in validEscapes) {
+      final placeholder = '$placeholderStart${escape.hashCode}$placeholderEnd';
+      result = result.replaceAll(placeholder, escape);
+    }
+    
+    result = result.replaceAllMapped(
+      RegExp(r'\x00PE_UNICODE([0-9a-fA-F]{4})\x00PE_END'),
+      (match) => '\\u${match.group(1)}',
+    );
+    
+    return result;
+  }
+
+  /// Image compression worker for background isolate
+  /// Uses a separate isolate with its own event loop to handle async image ops
+  static Future<Uint8List> _compressImageWorker(Uint8List imageBytes) async {
+    const targetSize = 200 * 1024; // 200KB
     
     if (imageBytes.length <= targetSize) {
       return imageBytes;
     }
 
-    // Decode the image
     final codec = await ui.instantiateImageCodec(imageBytes);
     final frame = await codec.getNextFrame();
     final image = frame.image;
 
-    // Calculate new dimensions to reduce size
     final scale = (targetSize / imageBytes.length).clamp(0.3, 0.9);
     final newWidth = (image.width * scale).round();
     final newHeight = (image.height * scale).round();
 
-    // Create a recorder to resize
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     
@@ -253,7 +383,6 @@ You MUST respond with ONLY a JSON object in this exact format:
     final picture = recorder.endRecording();
     final resizedImage = await picture.toImage(newWidth, newHeight);
     
-    // Convert back to bytes
     final byteData = await resizedImage.toByteData(format: ui.ImageByteFormat.png);
     image.dispose();
     resizedImage.dispose();

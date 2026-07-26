@@ -6,15 +6,88 @@ import '../../../../core/theme/koto_theme.dart';
 import '../../domain/models/home_node.dart';
 import '../providers/home_providers.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
+import '../../../ai_engine/presentation/providers/smelt_provider.dart';
+import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _bannerDismissed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybePromptForApiKey();
+    });
+  }
+
+  Future<void> _maybePromptForApiKey() async {
+    if (!mounted) return;
+    if (ref.read(apiKeySetupPromptedProvider)) return;
+
+    // Wait briefly for the key to finish loading from secure storage.
+    var keyState = ref.read(apiKeyProvider);
+    if (keyState.isLoading) {
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (!mounted) return;
+        keyState = ref.read(apiKeyProvider);
+        if (!keyState.isLoading) break;
+      }
+    }
+
+    if (!mounted) return;
+    ref.read(apiKeySetupPromptedProvider.notifier).state = true;
+
+    final key = keyState.valueOrNull;
+    if (key == null || key.isEmpty) {
+      final saved = await showApiKeyDialog(context, allowSkip: true);
+      if (saved == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'API key saved',
+              style: KotoTextStyles.body.copyWith(color: Colors.white),
+            ),
+            backgroundColor: KotoTheme.accent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openApiKeyDialog() async {
+    final saved = await showApiKeyDialog(context, allowSkip: true);
+    if (saved == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'API key saved',
+            style: KotoTextStyles.body.copyWith(color: Colors.white),
+          ),
+          backgroundColor: KotoTheme.accent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final nodesAsync = ref.watch(currentHomeNodesProvider);
     final currentFolder = ref.watch(currentFolderIdProvider);
     final folderPath = ref.watch(folderPathProvider);
+    final apiKeyAsync = ref.watch(apiKeyProvider);
+    final hasApiKey = (apiKeyAsync.valueOrNull ?? '').isNotEmpty;
+    final showBanner =
+        !hasApiKey && !_bannerDismissed && !apiKeyAsync.isLoading;
 
     return Scaffold(
       body: Row(
@@ -35,55 +108,102 @@ class HomeScreen extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32.0),
                   child: Column(
-                     crossAxisAlignment: CrossAxisAlignment.start,
-                     children: [
-                        Text('Scrapyard', style: KotoTextStyles.heading.copyWith(fontSize: 20, letterSpacing: 2.0)),
-                        const SizedBox(height: 4),
-                        Text('scrap paper', style: KotoTextStyles.caption.copyWith(fontSize: 16, letterSpacing: 2.0)),
-                     ],
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Scrapyard',
+                        style: KotoTextStyles.heading.copyWith(
+                          fontSize: 20,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'scrap paper',
+                        style: KotoTextStyles.caption.copyWith(
+                          fontSize: 16,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 48),
                 _SidebarItem(
-                  title: 'Home', 
-                  isSelected: currentFolder == 'root', 
+                  title: 'Home',
+                  isSelected: currentFolder == 'root',
                   onTap: () {
-                     ref.read(currentFolderIdProvider.notifier).state = 'root';
-                     ref.read(folderPathProvider.notifier).state = [];
-                  }
+                    ref.read(currentFolderIdProvider.notifier).state = 'root';
+                    ref.read(folderPathProvider.notifier).state = [];
+                  },
                 ),
                 _SidebarItem(
-                  title: 'Settings', 
-                  isSelected: false, 
-                  onTap: () => context.push('/settings')
+                  title: 'Settings',
+                  isSelected: false,
+                  onTap: () => context.push('/settings'),
                 ),
+                if (hasApiKey)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32, top: 8),
+                    child: Text(
+                      '⟨ AI key connected ⟩',
+                      style: KotoTextStyles.label.copyWith(
+                        color: KotoTheme.accent,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
                 const Spacer(),
                 Padding(
                   padding: const EdgeInsets.all(32.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                       GestureDetector(
-                         onTap: () => ref.read(currentHomeNodesProvider.notifier).createFolder('New Folder'),
-                         child: Padding(
-                           padding: const EdgeInsets.symmetric(vertical: 8.0),
-                           child: Text('+  New folder', style: KotoTextStyles.body.copyWith(color: KotoTheme.accent, fontWeight: FontWeight.w500)),
-                         ),
-                       ),
-                       GestureDetector(
-                         onTap: () => ref.read(currentHomeNodesProvider.notifier).createNote('New Note'),
-                         child: Padding(
-                           padding: const EdgeInsets.symmetric(vertical: 8.0),
-                           child: Text('+  New note', style: KotoTextStyles.body.copyWith(color: KotoTheme.accent, fontWeight: FontWeight.w500)),
-                         ),
-                       ),
-                       GestureDetector(
-                         onTap: () => ref.read(currentHomeNodesProvider.notifier).importDocument(),
-                         child: Padding(
-                           padding: const EdgeInsets.symmetric(vertical: 8.0),
-                           child: Text('↑  Import app/doc', style: KotoTextStyles.body.copyWith(color: KotoTheme.accent, fontWeight: FontWeight.w500)),
-                         ),
-                       ),
+                      GestureDetector(
+                        onTap: () => ref
+                            .read(currentHomeNodesProvider.notifier)
+                            .createFolder('New Folder'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            '+  New folder',
+                            style: KotoTextStyles.body.copyWith(
+                              color: KotoTheme.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => ref
+                            .read(currentHomeNodesProvider.notifier)
+                            .createNote('New Note'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            '+  New note',
+                            style: KotoTextStyles.body.copyWith(
+                              color: KotoTheme.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => ref
+                            .read(currentHomeNodesProvider.notifier)
+                            .importDocument(),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            '↑  Import app/doc',
+                            style: KotoTextStyles.body.copyWith(
+                              color: KotoTheme.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -91,7 +211,7 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
           ),
-          
+
           // Main Content
           Expanded(
             child: Container(
@@ -100,59 +220,86 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (showBanner) ...[
+                    _ApiKeyBanner(
+                      onSetup: _openApiKeyDialog,
+                      onDismiss: () => setState(() => _bannerDismissed = true),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
                   // Breadcrumb Navigation
                   Row(
                     children: [
-                       if (currentFolder != 'root') ...[
-                          IconButton(
-                             icon: const Icon(Icons.arrow_back, color: KotoTheme.primaryText),
-                             onPressed: () {
-                                final path = ref.read(folderPathProvider);
-                                if (path.length > 1) {
-                                   ref.read(currentFolderIdProvider.notifier).state = path[path.length - 2].id;
-                                   ref.read(folderPathProvider.notifier).state = path.sublist(0, path.length - 1);
-                                } else {
-                                   ref.read(currentFolderIdProvider.notifier).state = 'root';
-                                   ref.read(folderPathProvider.notifier).state = [];
-                                }
-                             }
+                      if (currentFolder != 'root') ...[
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: KotoTheme.primaryText,
                           ),
-                          const SizedBox(width: 16),
-                       ],
-                       Text(
-                          currentFolder == 'root' ? 'All Files' : folderPath.last.title, 
-                          style: KotoTextStyles.heading.copyWith(fontSize: 24)
-                       ),
+                          onPressed: () {
+                            final path = ref.read(folderPathProvider);
+                            if (path.length > 1) {
+                              ref.read(currentFolderIdProvider.notifier).state =
+                                  path[path.length - 2].id;
+                              ref.read(folderPathProvider.notifier).state =
+                                  path.sublist(0, path.length - 1);
+                            } else {
+                              ref.read(currentFolderIdProvider.notifier).state =
+                                  'root';
+                              ref.read(folderPathProvider.notifier).state = [];
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 16),
+                      ],
+                      Text(
+                        currentFolder == 'root'
+                            ? 'All Files'
+                            : folderPath.last.title,
+                        style: KotoTextStyles.heading.copyWith(fontSize: 24),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 32),
-                  
+
                   // Grid View of Nodes
                   Expanded(
                     child: nodesAsync.when(
-                      loading: () => const Center(child: CircularProgressIndicator(color: KotoTheme.accent)),
-                      error: (err, stack) => Center(child: Text('Error: $err')),
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(
+                          color: KotoTheme.accent,
+                        ),
+                      ),
+                      error: (err, stack) =>
+                          Center(child: Text('Error: $err')),
                       data: (nodes) {
-                         if (nodes.isEmpty) {
-                            return Center(
-                               child: Text("Empty folder. Create a note, or import a doc.", style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText))
-                            );
-                         }
+                        if (nodes.isEmpty) {
+                          return Center(
+                            child: Text(
+                              'Empty folder. Create a note, or import a doc.',
+                              style: KotoTextStyles.caption.copyWith(
+                                color: KotoTheme.mutedText,
+                              ),
+                            ),
+                          );
+                        }
 
-                         return GridView.builder(
-                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                             crossAxisCount: 3,
-                             crossAxisSpacing: 32,
-                             mainAxisSpacing: 32,
-                             childAspectRatio: 1.1,
-                           ),
-                           itemCount: nodes.length,
-                           itemBuilder: (context, index) {
-                             final node = nodes[index];
-                             return _buildNodeCard(context, ref, node);
-                           },
-                         );
-                      }
+                        return GridView.builder(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 32,
+                            mainAxisSpacing: 32,
+                            childAspectRatio: 1.1,
+                          ),
+                          itemCount: nodes.length,
+                          itemBuilder: (context, index) {
+                            final node = nodes[index];
+                            return _buildNodeCard(context, ref, node);
+                          },
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -165,83 +312,188 @@ class HomeScreen extends ConsumerWidget {
   }
 
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
-     String typeLabel;
-    if (node.type == NodeType.folder) typeLabel = '⟨ Pile ⟩';
-     else if (node.type == NodeType.document) typeLabel = '⟨ Document ⟩';
-    else typeLabel = '⟨ Scrap ⟩';
+    String typeLabel;
+    if (node.type == NodeType.folder) {
+      typeLabel = '⟨ Pile ⟩';
+    } else if (node.type == NodeType.document) {
+      typeLabel = '⟨ Document ⟩';
+    } else {
+      typeLabel = '⟨ Scrap ⟩';
+    }
 
-     return MouseRegion(
-       cursor: SystemMouseCursors.click,
-       child: GestureDetector(
-         onTap: () {
-            if (node.type == NodeType.folder) {
-               ref.read(currentFolderIdProvider.notifier).state = node.id;
-               ref.read(folderPathProvider.notifier).state = [...ref.read(folderPathProvider), node];
-            } else if (node.type == NodeType.document) {
-               if (node.externalPath != null && node.externalPath!.endsWith('.pdf')) {
-                  context.push('/pdf_viewer');
-               } else if (node.externalPath != null) {
-                  OpenFilex.open(node.externalPath!);
-               }
-            } else if (node.type == NodeType.note) {
-                // Set the active note ID BEFORE navigating so the editor
-                // loads this specific note's strokes.
-                ref.read(activeNoteIdProvider.notifier).state = node.id;
-                openNoteTab(ref, node.id, node.title);
-                context.push('/note_editor');
-             }
-         },
-         child: Container(
-           decoration: BoxDecoration(
-             color: KotoTheme.cardSurface,
-             borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
-             boxShadow: const [
-                BoxShadow(color: Color(0x05000000), offset: Offset(0, 4), blurRadius: 12)
-             ],
-           ),
-           padding: const EdgeInsets.all(28.0),
-           child: Column(
-             crossAxisAlignment: CrossAxisAlignment.start,
-             children: [
-               Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                     Text(typeLabel, style: KotoTextStyles.label.copyWith(
-                        color: node.type == NodeType.folder ? KotoTheme.accent : KotoTheme.mutedText, 
-                        letterSpacing: 1.2
-                     )),
-                     PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_horiz, color: KotoTheme.mutedText, size: 20),
-                        tooltip: 'Options',
-                        elevation: 1,
-                        color: KotoTheme.cardSurface,
-                        onSelected: (val) {
-                          if (val == 'delete') ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(value: 'delete', child: Text('Crush', style: TextStyle(color: Colors.redAccent))),
-                        ]
-                     ),
-                  ]
-               ),
-               const Spacer(),
-               Text(
-                 node.title,
-                 style: KotoTextStyles.heading.copyWith(fontSize: 18, fontWeight: FontWeight.w600),
-                 maxLines: 2,
-                 overflow: TextOverflow.ellipsis,
-               ),
-               const SizedBox(height: 8),
-               Text(
-                 'Updated \${node.updatedAt.month}/\${node.updatedAt.day}',
-                 style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText),
-               ),
-             ],
-           ),
-         ),
-       ),
-     );
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          if (node.type == NodeType.folder) {
+            ref.read(currentFolderIdProvider.notifier).state = node.id;
+            ref.read(folderPathProvider.notifier).state = [
+              ...ref.read(folderPathProvider),
+              node,
+            ];
+          } else if (node.type == NodeType.document) {
+            if (node.externalPath != null &&
+                node.externalPath!.endsWith('.pdf')) {
+              context.push('/pdf_viewer');
+            } else if (node.externalPath != null) {
+              OpenFilex.open(node.externalPath!);
+            }
+          } else if (node.type == NodeType.note) {
+            // Set the active note ID BEFORE navigating so the editor
+            // loads this specific note's strokes.
+            ref.read(activeNoteIdProvider.notifier).state = node.id;
+            openNoteTab(ref, node.id, node.title);
+            context.push('/note_editor');
+          }
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: KotoTheme.cardSurface,
+            borderRadius:
+                BorderRadius.circular(KotoTheme.borderRadiusDefault),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x05000000),
+                offset: Offset(0, 4),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(28.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    typeLabel,
+                    style: KotoTextStyles.label.copyWith(
+                      color: node.type == NodeType.folder
+                          ? KotoTheme.accent
+                          : KotoTheme.mutedText,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(
+                      Icons.more_horiz,
+                      color: KotoTheme.mutedText,
+                      size: 20,
+                    ),
+                    tooltip: 'Options',
+                    elevation: 1,
+                    color: KotoTheme.cardSurface,
+                    onSelected: (val) {
+                      if (val == 'delete') {
+                        ref
+                            .read(currentHomeNodesProvider.notifier)
+                            .deleteNode(node.id);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          'Crush',
+                          style: TextStyle(color: Colors.redAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                node.title,
+                style: KotoTextStyles.heading.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Updated ${node.updatedAt.month}/${node.updatedAt.day}',
+                style: KotoTextStyles.caption.copyWith(
+                  color: KotoTheme.mutedText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApiKeyBanner extends StatelessWidget {
+  final VoidCallback onSetup;
+  final VoidCallback onDismiss;
+
+  const _ApiKeyBanner({
+    required this.onSetup,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: KotoTheme.accentSurface,
+        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '⟨ Gemini ⟩',
+                  style: KotoTextStyles.label.copyWith(
+                    color: KotoTheme.accent,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Add your Gemini API key to use Smelt',
+                  style: KotoTextStyles.body.copyWith(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onSetup,
+            child: Text(
+              'Set up',
+              style: KotoTextStyles.body.copyWith(
+                color: KotoTheme.accent,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Dismiss',
+            onPressed: onDismiss,
+            icon: const Icon(
+              Icons.close,
+              size: 18,
+              color: KotoTheme.mutedText,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -266,19 +518,23 @@ class _SidebarItem extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 10.0),
         decoration: BoxDecoration(
-          color: isSelected ? KotoTheme.accent.withOpacity(0.08) : Colors.transparent,
+          color: isSelected
+              ? KotoTheme.accent.withValues(alpha: 0.08)
+              : Colors.transparent,
         ),
         child: Row(
           children: [
-             Text(
-               title,
-               style: KotoTextStyles.body.copyWith(
-                 color: isSelected ? KotoTheme.accent : KotoTheme.secondaryText,
-                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                 letterSpacing: 0.3,
-                 fontSize: 15,
-               ),
-             ),
+            Text(
+              title,
+              style: KotoTextStyles.body.copyWith(
+                color: isSelected
+                    ? KotoTheme.accent
+                    : KotoTheme.secondaryText,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                letterSpacing: 0.3,
+                fontSize: 15,
+              ),
+            ),
           ],
         ),
       ),

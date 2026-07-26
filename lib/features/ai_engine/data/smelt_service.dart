@@ -27,17 +27,23 @@ class SmeltStreamResult {
 /// Service for the Smelt AI feature using Gemini API with fallback chain
 class SmeltService {
   final FlutterSecureStorage _storage;
-  static const String _apiKeyKey = 'gemini_api_key';
-  // Temporary default — replace with your key for now.
-  // When user-key UI is added, remove this and write to storage instead.
-  static const String _defaultApiKey = '';
-  
+
+  /// Shared storage key used by [ApiKeyService] and Smelt.
+  static const String apiKeyStorageKey = 'gemini_api_key';
+
+  /// User-facing message when no API key is configured.
+  static const String missingApiKeyMessage =
+      'No Gemini API key set. Open Settings > Gemini API Key to add your free key.';
+
   // Gemini models in priority order (fallback chain)
   static const List<String> _models = [
     'gemini-3.5-flash',
     'gemini-3-flash-preview',
     'gemini-3.1-flash-lite',
   ];
+
+  /// Cheapest model in the fallback chain — used for API key testing.
+  static String get cheapestModel => _models.last;
 
   SmeltService(this._storage);
 
@@ -52,9 +58,10 @@ class SmeltService {
     Uint8List? imageBytes, {
     SmeltProgressCallback? onProgress,
   }) async {
-    final apiKey = (await _storage.read(key: _apiKeyKey) ?? _defaultApiKey);
-    if (apiKey.isEmpty) {
-      throw Exception('Gemini API key not configured');
+    final storedKey = await _storage.read(key: apiKeyStorageKey);
+    final apiKey = storedKey?.trim();
+    if (apiKey == null || apiKey.isEmpty) {
+      throw Exception(missingApiKeyMessage);
     }
 
     String? base64Image;

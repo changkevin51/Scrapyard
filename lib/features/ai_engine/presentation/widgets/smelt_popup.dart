@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../../../core/theme/koto_theme.dart';
 import '../../domain/models/smelt_response.dart';
+import '../../data/smelt_service.dart';
 import '../../_debug_log_helper.dart';
 import '../providers/smelt_provider.dart';
+import 'api_key_dialog.dart';
 
 /// Popup widget that displays the smelt AI response
 class SmeltPopup extends ConsumerStatefulWidget {
@@ -181,6 +183,14 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildErrorState(String error) {
+    final isMissingKey = error.contains(SmeltService.missingApiKeyMessage) ||
+        error.contains('No Gemini API key');
+
+    // Strip the "Exception: " prefix for display.
+    final displayError = error.startsWith('Exception: ')
+        ? error.substring('Exception: '.length)
+        : error;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -189,7 +199,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             Icon(Icons.error_outline, size: 18, color: Colors.redAccent.shade400),
             const SizedBox(width: 8),
             Text(
-              'Error',
+              isMissingKey ? 'API key needed' : 'Error',
               style: KotoTextStyles.body.copyWith(
                 color: Colors.redAccent.shade400,
                 fontWeight: FontWeight.w600,
@@ -199,9 +209,35 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
         ),
         const SizedBox(height: 8),
         Text(
-          error,
+          isMissingKey
+              ? SmeltService.missingApiKeyMessage
+              : displayError,
           style: KotoTextStyles.caption.copyWith(color: KotoTheme.secondaryText),
         ),
+        if (isMissingKey) ...[
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () async {
+              final saved = await showApiKeyDialog(context, allowSkip: false);
+              if (saved == true && mounted) {
+                ref.read(smeltProvider.notifier).clearState();
+              }
+            },
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Add key',
+              style: KotoTextStyles.body.copyWith(
+                color: KotoTheme.accent,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

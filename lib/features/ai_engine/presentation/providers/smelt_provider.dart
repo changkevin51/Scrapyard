@@ -4,12 +4,57 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
+import '../../data/api_key_service.dart';
 import '../../_debug_log_helper.dart';
 
 final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
 
 final smeltServiceProvider = Provider((ref) {
   return SmeltService(ref.watch(secureStorageProvider));
+});
+
+final apiKeyServiceProvider = Provider((ref) {
+  return ApiKeyService(ref.watch(secureStorageProvider));
+});
+
+/// True after we've auto-prompted for an API key this session.
+final apiKeySetupPromptedProvider = StateProvider<bool>((ref) => false);
+
+class ApiKeyNotifier extends StateNotifier<AsyncValue<String?>> {
+  final ApiKeyService _service;
+
+  ApiKeyNotifier(this._service) : super(const AsyncValue.loading()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    state = const AsyncValue.loading();
+    try {
+      final key = await _service.read();
+      state = AsyncValue.data(key);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> save(String key) async {
+    await _service.save(key);
+    state = AsyncValue.data(await _service.read());
+  }
+
+  Future<void> clear() async {
+    await _service.clear();
+    state = const AsyncValue.data(null);
+  }
+
+  Future<ApiKeyTestResult> test(String key) {
+    return _service.test(key);
+  }
+}
+
+final apiKeyProvider =
+    StateNotifierProvider<ApiKeyNotifier, AsyncValue<String?>>((ref) {
+  return ApiKeyNotifier(ref.watch(apiKeyServiceProvider));
 });
 
 class SmeltState {
@@ -88,7 +133,7 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   Future<void> smelt({Uint8List? imageBytes}) async {
     try {
       state = const SmeltState(isLoading: true);
-      
+
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
         onProgress: ({partialAnswer = '', partialSteps = '', isComplete = false, error}) {
@@ -105,8 +150,9 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
               });
           // #endregion
           if (isComplete && partialAnswer != null && partialAnswer.isNotEmpty) {
-            final isMath = RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim|pi|theta').hasMatch(partialAnswer);
-            
+            final isMath = RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim|pi|theta')
+                .hasMatch(partialAnswer);
+
             final finalResponse = SmeltResponse(
               answer: partialAnswer,
               steps: _cleanSteps(partialSteps ?? ''),

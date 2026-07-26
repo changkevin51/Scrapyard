@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
+import '../../_debug_log_helper.dart';
 
 final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
 
@@ -42,6 +44,7 @@ class SmeltState {
 
 class SmeltNotifier extends StateNotifier<SmeltState> {
   final SmeltService _smeltService;
+  int _onProgressCallCount = 0;
 
   SmeltNotifier(this._smeltService) : super(const SmeltState());
 
@@ -89,6 +92,18 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
         onProgress: ({partialAnswer = '', partialSteps = '', isComplete = false, error}) {
+          _onProgressCallCount++;
+          // #region agent log
+          dlog(
+              'H5_H2_onProgress_call',
+              'onProgress invoked - checking call count and raw partialSteps vs cleaned',
+              {
+                'callCount': _onProgressCallCount,
+                'isComplete': isComplete,
+                'partialStepsJsonEncoded': jsonEncode(partialSteps ?? ''),
+                'cleanedStepsJsonEncoded': jsonEncode(_cleanSteps(partialSteps ?? '')),
+              });
+          // #endregion
           if (isComplete && partialAnswer != null && partialAnswer.isNotEmpty) {
             final isMath = RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim|pi|theta').hasMatch(partialAnswer);
             

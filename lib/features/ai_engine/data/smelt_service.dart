@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../domain/models/smelt_response.dart';
+import '../_debug_log_helper.dart';
 
 /// Callback for streaming progress updates
 typedef SmeltProgressCallback = void Function({
@@ -96,7 +97,8 @@ You are Koto's AI smelt engine. Analyze the handwritten content in the image.
 
 IMPORTANT RULES:
 1. If this is a MATH question/problem:
-   - Put ONLY the final answer in the "answer" field (e.g., "x = 5", "42", "π/2")
+   - Put ONLY the final answer in the "answer" field as LaTeX using \\( ... \\)
+     (e.g., "\\(x = 5\\)", "\\(42\\)", "\\(\\frac{\\pi}{2}\\)", "\\(\\frac{x^4}{4} + x^2 + 5x + C\\)")
    - Put the step-by-step solution in the "steps" field
    - Set "isMath" to true
 
@@ -107,11 +109,20 @@ IMPORTANT RULES:
 
 3. For the "steps" field (when needed):
    - Use markdown formatting
-   - DO NOT use LaTeX for single letters, variables, numbers, or simple operations in sentences. Write them as plain text inline.
-     * Write variables simply as text (e.g., "solve for x", "coefficient of y").
+   - DO NOT use LaTeX for a single bare variable/letter alone in a sentence. Write those as plain text
+     (e.g., "solve for x", "coefficient of y").
+   - DO use inline LaTeX for ANY non-trivial math so it can stay on the same line as the sentence:
+     exponents, fractions, roots, integrals, sums, products, multi-term expressions, or equations.
+     Examples: \\(x^2\\), \\(\\frac{x^4}{4}\\), \\(2x + 5\\), \\(\\int x^2\\,dx\\)
+     NEVER write these as ascii/plain text like "x^4/4" or "x^(n+1)".
    - For LaTeX math, use these EXACT delimiters:
-     * Inline math: \\( ... \\)  (e.g., \\(x^2 + y^2 = r^2\\))
-     * Display math: \\[ ... \\]  (e.g., \\[\\int_0^1 x^2 dx = \\frac{1}{3}\\])
+     * Inline math (preferred): \\( ... \\)  — stays in the sentence
+     * Display math (rare): \\[ ... \\]  — ONLY for a final standalone result equation on its own line
+       (e.g., \\[\\frac{x^4}{4} + x^2 + 5x + C\\])
+   - Prefer inline \\( ... \\) over display math whenever the expression appears inside a sentence or bullet.
+   - CRITICAL: Bullet/list items that are ONLY an equation must put the math on the SAME line as the bullet.
+     Correct: "- \\(\\int x^3\\,dx = \\frac{x^4}{4}\\)"
+     Wrong: a bullet alone on one line and the equation on the next line.
    - Use bullet points or numbered lists
    - Keep steps EXTREMELY CONCISE - 1-2 lines maximum per step.
    - NEVER put sentence punctuation (like periods or commas) on a new line after a latex expression. Omit trailing punctuation for display math entirely.
@@ -180,8 +191,24 @@ You MUST respond with ONLY a JSON object in this exact format:
 
       final content = candidates[0]['content']['parts'][0]['text'] as String;
 
+      // #region agent log
+      dlog('H1_H4_raw_content', 'raw content from gemini before any parsing',
+          {'model': model, 'contentJsonEncoded': jsonEncode(content)});
+      // #endregion
+
       try {
         final jsonResponse = await compute(_parseJsonWorker, content);
+
+        // #region agent log
+        dlog(
+            'H1_H2_direct_parse_steps',
+            'steps field right after DIRECT jsonDecode succeeded (no repair needed)',
+            {
+              'model': model,
+              'stepsJsonEncoded': jsonEncode(jsonResponse['steps']),
+            });
+        // #endregion
+
         onProgress?.call(
           partialAnswer: jsonResponse['answer'] as String?,
           partialSteps: jsonResponse['steps'] as String?,
@@ -203,6 +230,16 @@ You MUST respond with ONLY a JSON object in this exact format:
         try {
           final fixedAndParsed = await compute(_fixAndParseJsonWorker, content);
           final jsonResponse = fixedAndParsed;
+
+          // #region agent log
+          dlog(
+              'H1_H2_repaired_parse_steps',
+              'steps field right after FALLBACK repair+parse succeeded',
+              {
+                'model': model,
+                'stepsJsonEncoded': jsonEncode(jsonResponse['steps']),
+              });
+          // #endregion
 
           onProgress?.call(
             partialAnswer: jsonResponse['answer'] as String?,
@@ -237,15 +274,39 @@ You MUST respond with ONLY a JSON object in this exact format:
   /// Worker function for fixing and parsing JSON in isolate
   static Map<String, dynamic> _fixAndParseJsonWorker(String content) {
     final fixed = _fixJsonEscapeSequences(content);
+
+    // #region agent log
+    dlog(
+        'H1_escape_fix_before_after',
+        'comparing raw content vs escape-fixed content around \\b \\f \\n \\r \\t sequences',
+        {
+          'beforeJsonEncoded': jsonEncode(content),
+          'afterJsonEncoded': jsonEncode(fixed),
+        });
+    // #endregion
+
     return jsonDecode(fixed) as Map<String, dynamic>;
   }
 
   /// Optimized JSON escape sequence fixer using batched regex replacements
+  ///
+  /// NOTE: We deliberately do NOT treat `\b`, `\f`, `\r`, `\t` as pre-existing
+  /// valid JSON escapes here, even though they technically are in the JSON
+  /// spec. This function only runs as a fallback when the model's response
+  /// failed to parse as JSON in the first place, which means the model wrote
+  /// raw, unescaped backslashes throughout (e.g. for LaTeX like `\frac`,
+  /// `\boxed`, `\right`, `\tan`, `\theta`). If we "protect" `\b`/`\f`/`\r`/`\t`
+  /// as already-valid escapes, we end up decoding `\f` in `\frac` as an actual
+  /// form-feed control character, silently eating the `f` and corrupting the
+  /// LaTeX (observed as `\frac` rendering as `<FF>rac`). `\n` is the one
+  /// exception: this app's prompt relies on the model emitting real `\n` for
+  /// line breaks between steps, and that usage is unambiguous in practice, so
+  /// it stays protected.
   static String _fixJsonEscapeSequences(String json) {
     const placeholderStart = '\x00PE\x00';
     const placeholderEnd = '\x00PE_END\x00';
     
-    final validEscapes = ['\\\\', '\\"', '\\/', '\\b', '\\f', '\\n', '\\r', '\\t'];
+    final validEscapes = ['\\\\', '\\"', '\\/', '\\n'];
     
     var result = json;
     

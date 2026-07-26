@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../../../core/theme/koto_theme.dart';
 import '../../domain/models/smelt_response.dart';
+import '../../_debug_log_helper.dart';
 import '../providers/smelt_provider.dart';
 
 /// Popup widget that displays the smelt AI response
@@ -51,10 +53,19 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
     super.dispose();
   }
 
+  /// Preferred popup width; grows for math, capped so it fits the screen.
+  double _popupWidth() {
+    const margin = 16.0;
+    const preferred = 420.0;
+    const maxWidth = 480.0;
+    final available = widget.screenSize.width - (margin * 2);
+    return math.min(maxWidth, math.min(preferred, available));
+  }
+
   Offset _calculatePopupPosition() {
     final rect = widget.selectionRect;
     final screenSize = widget.screenSize;
-    const popupWidth = 320.0;
+    final popupWidth = _popupWidth();
     const popupMinHeight = 100.0;
     const margin = 16.0;
 
@@ -101,7 +112,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
 
   Widget _buildCard(SmeltState state) {
     return Container(
-      width: 320,
+      width: _popupWidth(),
       constraints: const BoxConstraints(maxHeight: 400),
       decoration: BoxDecoration(
         color: KotoTheme.cardSurface,
@@ -209,16 +220,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               color: KotoTheme.accentSurface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.functions, size: 18, color: KotoTheme.accent),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: _buildMathAnswer(cleanedAnswer),
-                ),
-              ],
-            ),
+            child: _buildMathAnswer(cleanedAnswer),
           ),
         ] else ...[
           SelectableText(
@@ -304,66 +306,66 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
 
   /// Clean the answer by removing stray characters like sigma
   String _cleanAnswer(String answer) {
-    var cleaned = answer.trim();
-    // Remove leading sigma (Σ) or other stray symbols (including LaTeX forms)
-    cleaned = cleaned.replaceAll(RegExp(r'^[Σσ∑]\s*'), '');
-    // Remove LaTeX sigma at the start: $\Sigma$, \Sigma, etc.
-    cleaned = cleaned.replaceAll(RegExp(r'^\$?\\?[Ss]igma\$?\s*'), '');
-    cleaned = cleaned.replaceAll(RegExp(r'^\\Sigma\s*'), '');
-    // Remove any leading/trailing dollar signs
-    cleaned = cleaned.replaceAll(RegExp(r'^\$+|\$+$'), '');
-    // Trim again after all replacements
-    cleaned = cleaned.trim();
+    return _prepareAnswerLatex(answer);
+  }
+
+  /// Strip math delimiters and leading sigma, then normalize for KaTeX.
+  String _prepareAnswerLatex(String answer) {
+    var latex = answer.trim();
+    latex = _stripMathDelimiters(latex);
+    latex = _stripLeadingSigma(latex);
+    latex = latex.replaceAll(RegExp(r'^\$+|\$+$'), '').trim();
+    return _normalizeUnicodeMath(latex);
+  }
+
+  String _stripMathDelimiters(String text) {
+    var t = text.trim();
+    if (t.startsWith(r'$$') && t.endsWith(r'$$') && t.length > 4) {
+      return t.substring(2, t.length - 2).trim();
+    }
+    if (t.startsWith(r'\[') && t.endsWith(r'\]') && t.length > 4) {
+      return t.substring(2, t.length - 2).trim();
+    }
+    if (t.startsWith(r'\(') && t.endsWith(r'\)') && t.length > 4) {
+      return t.substring(2, t.length - 2).trim();
+    }
+    if (t.startsWith(r'$') && t.endsWith(r'$') && t.length > 2) {
+      return t.substring(1, t.length - 1).trim();
+    }
+    return t;
+  }
+
+  String _stripLeadingSigma(String text) {
+    var cleaned = text.trim();
+    while (true) {
+      final before = cleaned;
+      cleaned = cleaned.replaceAll(RegExp(r'^[Σσ∑]\s*'), '');
+      cleaned = cleaned.replaceAll(RegExp(r'^\$?\\?[Ss]igma\$?\s*'), '');
+      cleaned = cleaned.replaceAll(RegExp(r'^\\Sigma\s*'), '');
+      cleaned = cleaned.trim();
+      if (cleaned == before) break;
+    }
     return cleaned;
+  }
+
+  String _normalizeUnicodeMath(String text) {
+    return text
+        .replaceAll('π', r'\pi')
+        .replaceAll('θ', r'\theta')
+        .replaceAll('∞', r'\infty')
+        .replaceAll('±', r'\pm')
+        .replaceAll('×', r'\times')
+        .replaceAll('÷', r'\div');
   }
 
   /// Build math answer with LaTeX rendering
   Widget _buildMathAnswer(String answer) {
-    // Try to render as LaTeX if it contains math expressions
-    final latexContent = _extractLatex(answer);
-    
-    if (latexContent != null) {
-      return _LatexDisplay(latex: latexContent);
-    }
-    
-    // Fallback to plain text
-    return SelectableText(
-      answer,
-      style: KotoTextStyles.heading.copyWith(
-        fontSize: 18,
-        fontWeight: FontWeight.w700,
-        color: KotoTheme.accent,
-      ),
-    );
+    return _LatexDisplay(latex: answer);
   }
 
   /// Build math steps with LaTeX rendering
   Widget _buildMathSteps(String steps) {
     return _LatexStepsRenderer(text: steps);
-  }
-
-  /// Extract LaTeX content from answer string
-  String? _extractLatex(String text) {
-    // Check for display math: $$ ... $$ or \[ ... \]
-    var match = RegExp(r'\$\$(.+?)\$\$').firstMatch(text);
-    if (match != null) return match.group(1);
-    
-    match = RegExp(r'\\\[(.+?)\\\]').firstMatch(text);
-    if (match != null) return match.group(1);
-    
-    // Check for inline math: $ ... $ or \( ... \)
-    match = RegExp(r'\$(.+?)\$').firstMatch(text);
-    if (match != null) return match.group(1);
-    
-    match = RegExp(r'\\\((.+?)\\\)').firstMatch(text);
-    if (match != null) return match.group(1);
-    
-    // If the text looks like a math expression, treat it as LaTeX
-    if (RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim').hasMatch(text)) {
-      return text;
-    }
-    
-    return null;
   }
 }
 
@@ -373,6 +375,15 @@ class _LatexDisplay extends StatelessWidget {
 
   const _LatexDisplay({required this.latex});
 
+  /// [inherit: false] prevents DefaultTextStyle (Noto) from merging into KaTeX.
+  static const _mathTextStyle = TextStyle(
+    inherit: false,
+    fontSize: 18,
+    height: 1.2,
+    fontWeight: FontWeight.normal,
+    color: KotoTheme.accent,
+  );
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -380,19 +391,11 @@ class _LatexDisplay extends StatelessWidget {
       child: Math.tex(
         latex,
         mathStyle: MathStyle.display,
-        textStyle: KotoTextStyles.heading.copyWith(
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: KotoTheme.accent,
-        ),
+        textStyle: _mathTextStyle,
         onErrorFallback: (error) {
           return SelectableText(
             latex,
-            style: KotoTextStyles.heading.copyWith(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: KotoTheme.accent,
-            ),
+            style: _mathTextStyle,
           );
         },
       ),
@@ -400,313 +403,364 @@ class _LatexDisplay extends StatelessWidget {
   }
 }
 
-/// Renders steps with inline LaTeX support
+int _latexStepsBuildCount = 0;
+
+/// Renders steps with true inline LaTeX (WidgetSpan) and centered display math.
 class _LatexStepsRenderer extends StatelessWidget {
   final String text;
 
   const _LatexStepsRenderer({required this.text});
 
+  static final _baseTextStyle = TextStyle(
+    inherit: false,
+    fontSize: 13,
+    height: 1.5,
+    fontWeight: FontWeight.normal,
+    color: KotoTheme.bodyText,
+    // Prose uses the app caption font; math widgets use KaTeX via Math.tex.
+    fontFamily: KotoTextStyles.caption.fontFamily,
+  );
+
+  static const _mathOnlyStyle = TextStyle(
+    inherit: false,
+    fontSize: 13,
+    height: 1.2,
+    fontWeight: FontWeight.normal,
+    color: KotoTheme.bodyText,
+  );
+
   @override
   Widget build(BuildContext context) {
-    final segments = _parseLatexSegments(text);
-    
+    final lines = _coalesceOrphanBullets(text.split('\n'));
+
+    // #region agent log
+    _latexStepsBuildCount++;
+    dlog('H5_build_count', '_LatexStepsRenderer.build() invocation count', {
+      'buildCount': _latexStepsBuildCount,
+      'inputTextJsonEncoded': jsonEncode(text),
+      'lineCount': lines.length,
+    });
+    // #endregion
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: segments.map((segment) {
-        if (segment.isLatex) {
-          // Center all LaTeX equations
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Center(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Math.tex(
-                  segment.content,
-                  mathStyle: MathStyle.display,
-                  textStyle: KotoTextStyles.caption.copyWith(
-                    fontSize: 14,
-                    color: KotoTheme.bodyText,
-                  ),
-                  onErrorFallback: (error) {
-                    return Text(
-                      segment.content,
-                      style: KotoTextStyles.caption.copyWith(
-                        fontSize: 13,
-                        color: KotoTheme.accent,
-                        fontFamily: 'monospace',
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        } else {
-          // Regular text - could be markdown or plain text
-          return _buildTextSegment(segment.content);
-        }
-      }).toList(),
+      children: [
+        for (var i = 0; i < lines.length; i++) _buildLine(lines[i]),
+      ],
     );
   }
 
-  Widget _buildTextSegment(String text) {
-    final trimmed = text.trim();
-    
-    // Empty text = spacer
+  /// Merge `-` / `*` alone on a line with the following math-only line so
+  /// equations sit on the same row as the bullet.
+  List<String> _coalesceOrphanBullets(List<String> lines) {
+    final result = <String>[];
+    for (var i = 0; i < lines.length; i++) {
+      final trimmed = lines[i].trim();
+      final isOrphanBullet = RegExp(r'^[-*•]\s*$').hasMatch(trimmed);
+      if (isOrphanBullet && i + 1 < lines.length) {
+        final next = lines[i + 1].trim();
+        if (_isMathOnlyLine(next)) {
+          result.add('- ${_asInlineMathLine(next)}');
+          i++;
+          continue;
+        }
+      }
+      result.add(lines[i]);
+    }
+    return result;
+  }
+
+  bool _isMathOnlyLine(String line) {
+    final tokens = _parseLineTokens(line);
+    if (tokens.isEmpty) return false;
+    return tokens.every(
+      (t) =>
+          t.kind == _TokenKind.inlineMath ||
+          t.kind == _TokenKind.displayMath ||
+          (t.kind == _TokenKind.text && t.content.trim().isEmpty),
+    );
+  }
+
+  /// Prefer inline delimiters so bullet math stays on one line.
+  String _asInlineMathLine(String line) {
+    return line
+        .replaceAllMapped(
+          RegExp(r'\$\$(.+?)\$\$', dotAll: true),
+          (m) => '\\(${m.group(1)}\\)',
+        )
+        .replaceAllMapped(
+          RegExp(r'\\\[(.+?)\\\]', dotAll: true),
+          (m) => '\\(${m.group(1)}\\)',
+        );
+  }
+
+  Widget _buildLine(String line) {
+    final trimmed = line.trim();
     if (trimmed.isEmpty) {
       return const SizedBox(height: 8);
     }
-    
-    // Handle bullet points and numbered lists
-    if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
-      final content = trimmed.substring(1).trim();
-      return Padding(
-        padding: const EdgeInsets.only(left: 8, bottom: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('• ', style: KotoTextStyles.caption.copyWith(
-              fontSize: 13,
-              color: KotoTheme.bodyText,
-            )),
-            Expanded(
-              child: _buildRichTextWithItalicNumbers(content),
-            ),
-          ],
-        ),
-      );
+
+    final tokens = _parseLineTokens(trimmed);
+
+    // Standalone display math → scrollable block on its own line
+    final onlyDisplay = tokens.length == 1 &&
+        tokens.single.kind == _TokenKind.displayMath;
+    if (onlyDisplay) {
+      return _buildDisplayMath(tokens.single.content);
     }
-    
-    // Handle numbered lists
+
+    // Bullet list
+    if (trimmed.startsWith('-') ||
+        trimmed.startsWith('*') ||
+        trimmed.startsWith('•')) {
+      final body = trimmed.substring(1).trimLeft();
+      return _buildBulletRow(body);
+    }
+
+    // Numbered list
     final numberMatch = RegExp(r'^(\d+)\.\s*(.*)').firstMatch(trimmed);
     if (numberMatch != null) {
-      final content = numberMatch.group(2) ?? '';
+      final body = numberMatch.group(2) ?? '';
       return Padding(
         padding: const EdgeInsets.only(left: 8, bottom: 4),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${numberMatch.group(1)}. ', style: KotoTextStyles.caption.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: KotoTheme.primaryText,
-            )),
-            Expanded(
-              child: _buildRichTextWithItalicNumbers(content),
+            Text(
+              '${numberMatch.group(1)}. ',
+              style: _baseTextStyle.copyWith(
+                fontWeight: FontWeight.w600,
+                color: KotoTheme.primaryText,
+              ),
             ),
+            Expanded(child: _buildInlineOrMathOnly(body)),
           ],
         ),
       );
     }
-    
-    // Handle bold text
-    if (text.contains('**')) {
-      final parts = text.split('**');
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: RichText(
-          text: TextSpan(
-            style: KotoTextStyles.caption.copyWith(
-              fontSize: 13,
-              height: 1.5,
-              color: KotoTheme.bodyText,
-            ),
-            children: parts.asMap().entries.map((entry) {
-              if (entry.key % 2 == 1) {
-                return TextSpan(
-                  text: entry.value,
-                  style: KotoTextStyles.caption.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: KotoTheme.primaryText,
-                  ),
-                );
-              }
-              return TextSpan(text: entry.value);
-            }).toList(),
-          ),
-        ),
-      );
-    }
-    
-    // Plain text with italicized numbers
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: _buildRichTextWithItalicNumbers(text),
+      child: _buildInlineRich(tokens),
     );
   }
 
-  /// Build rich text with standalone numbers italicized
-  /// Numbers that are part of math expressions (inside $ or \() are NOT italicized
-  Widget _buildRichTextWithItalicNumbers(String text) {
-    // Split text into parts: math expressions and regular text
-    final parts = <_TextPart>[];
-    var remaining = text;
-    
-    while (remaining.isNotEmpty) {
-      // Find next math expression
-      final mathMatch = RegExp(r'\$\$[^$]+\$\$|\\\[.*?\\\]|\\\([^)]*\\\)|\$[^$]+\$').firstMatch(remaining);
-      
-      if (mathMatch == null) {
-        // No more math - rest is regular text
-        parts.add(_TextPart(content: remaining, isMath: false));
-        break;
-      }
-      
-      // Add text before math
-      if (mathMatch.start > 0) {
-        parts.add(_TextPart(content: remaining.substring(0, mathMatch.start), isMath: false));
-      }
-      // Add math expression
-      parts.add(_TextPart(content: mathMatch.group(0)!, isMath: true));
-      remaining = remaining.substring(mathMatch.end);
-    }
-    
-    if (parts.isEmpty) {
-      return Text(
-        text,
-        style: KotoTextStyles.caption.copyWith(
-          fontSize: 13,
-          height: 1.5,
-          color: KotoTheme.bodyText,
-        ),
-      );
-    }
-    
-    return RichText(
-      text: TextSpan(
-        style: KotoTextStyles.caption.copyWith(
-          fontSize: 13,
-          height: 1.5,
-          color: KotoTheme.bodyText,
-        ),
-        children: parts.map((part) {
-          if (part.isMath) {
-            // Keep math as-is (it will be rendered by LaTeX renderer separately)
-            return TextSpan(text: part.content);
-          } else {
-            // Italicize standalone numbers in regular text
-            return _italicizeNumbers(part.content);
-          }
-        }).toList(),
+  Widget _buildBulletRow(String body) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text('• ', style: _baseTextStyle),
+          Expanded(child: _buildInlineOrMathOnly(body)),
+        ],
       ),
     );
   }
 
-  /// Italicize standalone numbers in text (but not numbers that are part of words)
+  /// Math-only bodies sit in a Row (not WidgetSpan) so they stay beside the bullet.
+  Widget _buildInlineOrMathOnly(String body) {
+    final tokens = _parseLineTokens(body);
+    final mathTokens = tokens
+        .where((t) =>
+            t.kind == _TokenKind.inlineMath ||
+            t.kind == _TokenKind.displayMath)
+        .toList();
+    final hasProse = tokens.any(
+      (t) => t.kind == _TokenKind.text && t.content.trim().isNotEmpty,
+    );
+
+    if (!hasProse && mathTokens.length == 1) {
+      return _buildScrollableMath(mathTokens.single.content);
+    }
+    return _buildInlineRich(tokens);
+  }
+
+  Widget _buildScrollableMath(String latex) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Math.tex(
+        latex,
+        mathStyle: MathStyle.text,
+        textStyle: _mathOnlyStyle,
+        onErrorFallback: (_) => Text(
+          latex,
+          style: _mathOnlyStyle.copyWith(color: KotoTheme.accent),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDisplayMath(String latex) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Center(
+                child: Math.tex(
+                  latex,
+                  mathStyle: MathStyle.display,
+                  textStyle: _mathOnlyStyle.copyWith(fontSize: 14),
+                  onErrorFallback: (_) => Text(
+                    latex,
+                    style: _mathOnlyStyle.copyWith(
+                      fontSize: 14,
+                      color: KotoTheme.accent,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Mix of prose + inline (and mid-sentence display) math on one line.
+  Widget _buildInlineRich(List<_LineToken> tokens) {
+    if (tokens.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final spans = <InlineSpan>[];
+    for (final token in tokens) {
+      switch (token.kind) {
+        case _TokenKind.text:
+          spans.addAll(_textSpansWithBoldAndItalics(token.content));
+        case _TokenKind.inlineMath:
+        case _TokenKind.displayMath:
+          // Mid-sentence display delimiters still render inline so they
+          // don't break the line.
+          spans.add(
+            WidgetSpan(
+              alignment: PlaceholderAlignment.middle,
+              child: Math.tex(
+                token.content,
+                mathStyle: MathStyle.text,
+                textStyle: _mathOnlyStyle,
+                onErrorFallback: (_) => Text(
+                  token.content,
+                  style: _mathOnlyStyle.copyWith(color: KotoTheme.accent),
+                ),
+              ),
+            ),
+          );
+      }
+    }
+
+    return Text.rich(
+      TextSpan(style: _baseTextStyle, children: spans),
+    );
+  }
+
+  /// Split a line into text / inline-math / display-math tokens.
+  List<_LineToken> _parseLineTokens(String line) {
+    final tokens = <_LineToken>[];
+    // Order matters: $$ and \[ \] before $ and \( \)
+    final mathRegex = RegExp(
+      r'\$\$(.+?)\$\$|\\\[(.+?)\\\]|\\\((.+?)\\\)|\$(.+?)\$',
+      dotAll: true,
+    );
+
+    var start = 0;
+    for (final match in mathRegex.allMatches(line)) {
+      if (match.start > start) {
+        tokens.add(_LineToken(
+          content: line.substring(start, match.start),
+          kind: _TokenKind.text,
+        ));
+      }
+
+      final isDisplay =
+          match.group(1) != null || match.group(2) != null;
+      final latex =
+          match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4) ?? '';
+      tokens.add(_LineToken(
+        content: latex,
+        kind: isDisplay ? _TokenKind.displayMath : _TokenKind.inlineMath,
+      ));
+      start = match.end;
+    }
+
+    if (start < line.length) {
+      tokens.add(_LineToken(
+        content: line.substring(start),
+        kind: _TokenKind.text,
+      ));
+    }
+
+    return tokens;
+  }
+
+  /// Bold (`**...**`) + italicize standalone numbers in prose.
+  List<InlineSpan> _textSpansWithBoldAndItalics(String text) {
+    if (!text.contains('**')) {
+      return [_italicizeNumbers(text)];
+    }
+
+    final spans = <InlineSpan>[];
+    final parts = text.split('**');
+    for (var i = 0; i < parts.length; i++) {
+      final part = parts[i];
+      if (part.isEmpty) continue;
+      if (i.isOdd) {
+        spans.add(TextSpan(
+          style: _baseTextStyle.copyWith(
+            fontWeight: FontWeight.w600,
+            color: KotoTheme.primaryText,
+          ),
+          children: [_italicizeNumbers(part)],
+        ));
+      } else {
+        spans.add(_italicizeNumbers(part));
+      }
+    }
+    return spans;
+  }
+
+  /// Italicize standalone numbers (not part of words).
   TextSpan _italicizeNumbers(String text) {
-    // Match standalone numbers (including negative and decimals)
-    // A standalone number is preceded by space/start and followed by space/end/punctuation
     final numberRegex = RegExp(r'(?<!\w)(-?\d+\.?\d*)(?!\w)');
-    
     final spans = <TextSpan>[];
     var lastEnd = 0;
-    
+
     for (final match in numberRegex.allMatches(text)) {
-      // Add text before the number
       if (match.start > lastEnd) {
         spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
       }
-      // Add italicized number
       spans.add(TextSpan(
         text: match.group(0),
         style: const TextStyle(fontStyle: FontStyle.italic),
       ));
       lastEnd = match.end;
     }
-    
-    // Add remaining text
+
     if (lastEnd < text.length) {
       spans.add(TextSpan(text: text.substring(lastEnd)));
     }
-    
+
     if (spans.isEmpty) {
       return TextSpan(text: text);
     }
-    
+    if (spans.length == 1) {
+      return spans.single;
+    }
     return TextSpan(children: spans);
   }
-
-  /// Parse text into segments of regular text and LaTeX
-  List<_TextSegment> _parseLatexSegments(String input) {
-    final segments = <_TextSegment>[];
-    
-    // Split by lines first to handle multi-line content
-    final lines = input.split('\n');
-    
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      
-      // Check for display math: $$ ... $$ or \[ ... \]
-      final displayMathRegex = RegExp(r'\$\$(.+?)\$\$|\\\[(.+?)\\\]');
-      var displayMatch = displayMathRegex.firstMatch(line);
-      
-      if (displayMatch != null) {
-        final latex = displayMatch.group(1) ?? displayMatch.group(2) ?? '';
-        final before = line.substring(0, displayMatch.start);
-        final after = line.substring(displayMatch.end);
-        
-        if (before.isNotEmpty) {
-          segments.add(_TextSegment(content: before, isLatex: false));
-        }
-        segments.add(_TextSegment(content: latex, isLatex: true));
-        if (after.isNotEmpty) {
-          segments.add(_TextSegment(content: after, isLatex: false));
-        }
-      } else {
-        // Check for inline math: $ ... $ or \( ... \)
-        final inlineMathRegex = RegExp(r'\$(.+?)\$|\\\((.+?)\\\)');
-        var remaining = line;
-        var hasInlineMath = false;
-        
-        while (remaining.isNotEmpty) {
-          final match = inlineMathRegex.firstMatch(remaining);
-          if (match == null) {
-            if (remaining.isNotEmpty) {
-              segments.add(_TextSegment(content: remaining, isLatex: false));
-            }
-            break;
-          }
-          
-          hasInlineMath = true;
-          final latex = match.group(1) ?? match.group(2) ?? '';
-          final before = remaining.substring(0, match.start);
-          
-          if (before.isNotEmpty) {
-            segments.add(_TextSegment(content: before, isLatex: false));
-          }
-          segments.add(_TextSegment(content: latex, isLatex: true));
-          remaining = remaining.substring(match.end);
-        }
-        
-        if (!hasInlineMath) {
-          segments.add(_TextSegment(content: line, isLatex: false));
-        }
-      }
-      
-      // Add empty segment for line break (except last line)
-      if (i < lines.length - 1) {
-        segments.add(_TextSegment(content: '', isLatex: false));
-      }
-    }
-    
-    return segments;
-  }
-
 }
 
-class _TextSegment {
+enum _TokenKind { text, inlineMath, displayMath }
+
+class _LineToken {
   final String content;
-  final bool isLatex;
+  final _TokenKind kind;
 
-  _TextSegment({required this.content, required this.isLatex});
-}
-
-class _TextPart {
-  final String content;
-  final bool isMath;
-
-  _TextPart({required this.content, required this.isMath});
+  const _LineToken({required this.content, required this.kind});
 }
 
 /// Animated thinking dots for loading state

@@ -80,6 +80,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _createAndOpenScrap() async {
+    final node = await ref
+        .read(currentHomeNodesProvider.notifier)
+        .createNote('Untitled Scrap');
+    if (!mounted) return;
+    ref.read(activeNoteIdProvider.notifier).state = node.id;
+    openNoteTab(ref, node.id, node.title);
+    context.push('/note_editor').then((_) {
+      ref.invalidate(noteStrokesPreviewProvider(node.id));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final nodesAsync = ref.watch(currentHomeNodesProvider);
@@ -176,13 +188,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => ref
-                            .read(currentHomeNodesProvider.notifier)
-                            .createNote('New Note'),
+                        onTap: _createAndOpenScrap,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
-                            '+  New note',
+                            '+  New scrap',
                             style: KotoTextStyles.body.copyWith(
                               color: KotoTheme.accent,
                               fontWeight: FontWeight.w500,
@@ -228,6 +238,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                     const SizedBox(height: 24),
                   ],
+
+                  _NewScrapButton(onTap: _createAndOpenScrap),
+                  const SizedBox(height: 40),
 
                   // Breadcrumb Navigation
                   Row(
@@ -278,7 +291,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         if (nodes.isEmpty) {
                           return Center(
                             child: Text(
-                              'Empty folder. Create a note, or import a doc.',
+                              'Empty folder. Grab a scrap above, or import a doc.',
                               style: KotoTextStyles.caption.copyWith(
                                 color: KotoTheme.mutedText,
                               ),
@@ -667,6 +680,179 @@ class _PileStackGraphic extends StatelessWidget {
               ],
             )
           : null,
+    );
+  }
+}
+
+class _NewScrapButton extends StatefulWidget {
+  final VoidCallback onTap;
+
+  const _NewScrapButton({required this.onTap});
+
+  @override
+  State<_NewScrapButton> createState() => _NewScrapButtonState();
+}
+
+class _NewScrapButtonState extends State<_NewScrapButton> {
+  bool _hovered = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lift = _pressed ? 0.0 : (_hovered ? -2.0 : 0.0);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() {
+        _hovered = false;
+        _pressed = false;
+      }),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          transform: Matrix4.translationValues(0, lift, 0),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? const Color(0xFFFAF8F5)
+                : KotoTheme.cardSurface,
+            borderRadius:
+                BorderRadius.circular(KotoTheme.borderRadiusDefault),
+            border: Border.all(
+              color: _hovered
+                  ? KotoTheme.accent.withValues(alpha: 0.35)
+                  : KotoTheme.dividers,
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Color(_hovered ? 0x0C000000 : 0x06000000),
+                offset: Offset(0, _hovered ? 8 : 4),
+                blurRadius: _hovered ? 20 : 12,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Blank scrap glyph
+              SizedBox(
+                width: 56,
+                height: 68,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 6,
+                      top: 4,
+                      child: Transform.rotate(
+                        angle: 0.06,
+                        child: Container(
+                          width: 44,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: KotoTheme.dividers,
+                            borderRadius: BorderRadius.circular(
+                              KotoTheme.borderRadiusSmall,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: Transform.rotate(
+                        angle: -0.03,
+                        child: Container(
+                          width: 44,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: KotoTheme.background,
+                            borderRadius: BorderRadius.circular(
+                              KotoTheme.borderRadiusSmall,
+                            ),
+                            border: Border.all(
+                              color: KotoTheme.accent.withValues(alpha: 0.25),
+                              width: 1,
+                            ),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+                          child: Column(
+                            children: [
+                              Container(
+                                height: 2,
+                                color: KotoTheme.notebookLines,
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                height: 2,
+                                color: KotoTheme.notebookLines,
+                              ),
+                              const SizedBox(height: 6),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Container(
+                                  width: 16,
+                                  height: 2,
+                                  color: KotoTheme.notebookLines,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 28),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '⟨ Fresh sheet ⟩',
+                      style: KotoTextStyles.label.copyWith(
+                        color: KotoTheme.accent,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'New Scrap',
+                      style: KotoTextStyles.heading.copyWith(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Grab a blank scrap and start scribbling',
+                      style: KotoTextStyles.caption.copyWith(
+                        color: KotoTheme.mutedText,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '+',
+                style: KotoTextStyles.heading.copyWith(
+                  fontSize: 36,
+                  color: KotoTheme.accent.withValues(alpha: 0.7),
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

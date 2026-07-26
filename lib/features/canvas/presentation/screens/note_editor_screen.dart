@@ -53,9 +53,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   bool _manualHintVisible = false;
   Offset? _manualSelectMenuAnchor;
   Timer? _manualHintTimer;
-  int? _stylusSelectionPointerId;
-  Offset? _stylusSelectionDownPos;
-  bool _stylusSelectionDragStarted = false;
+  int? _selectionPointerId;
+  Offset? _selectionDownPos;
+  bool _selectionDragStarted = false;
+  bool _selectionPointerIsStylus = false;
 
   static const double _selectionDragSlop = 8.0;
 
@@ -180,25 +181,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _onSelectionPointerDown(PointerDownEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
     if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
-    if (!_isStylusPointer(event.kind)) return;
 
-    _stylusSelectionPointerId = event.pointer;
-    _stylusSelectionDownPos = event.localPosition;
-    _stylusSelectionDragStarted = false;
+    final isStylus = _isStylusPointer(event.kind);
+    final isTouchSmelt = event.kind == PointerDeviceKind.touch &&
+        ref.read(activeCanvasToolProvider) == CanvasTool.smelt;
+    if (!isStylus && !isTouchSmelt) return;
+
+    _selectionPointerId = event.pointer;
+    _selectionDownPos = event.localPosition;
+    _selectionDragStarted = false;
+    _selectionPointerIsStylus = isStylus;
   }
 
   void _onSelectionPointerMove(PointerMoveEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
-    if (_stylusSelectionPointerId != event.pointer) return;
-    if (_stylusSelectionDownPos == null) return;
+    if (_selectionPointerId != event.pointer) return;
+    if (_selectionDownPos == null) return;
 
-    if (!_stylusSelectionDragStarted) {
-      if ((event.localPosition - _stylusSelectionDownPos!).distance <
+    if (!_selectionDragStarted) {
+      if ((event.localPosition - _selectionDownPos!).distance <
           _selectionDragSlop) {
         return;
       }
-      _stylusSelectionDragStarted = true;
-      _startLassoAt(_stylusSelectionDownPos!);
+      _selectionDragStarted = true;
+      if (_selectionPointerIsStylus) {
+        _startLassoAt(_selectionDownPos!);
+      }
     }
 
     if (_lassoStart != null) {
@@ -208,22 +216,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _onSelectionPointerUp(PointerUpEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
-    if (_stylusSelectionPointerId != event.pointer) return;
+    if (_selectionPointerId != event.pointer) return;
 
-    if (_stylusSelectionDragStarted && _lassoStart != null) {
-      _finishLassoGesture();
-    } else if (!_stylusSelectionDragStarted &&
-        ref.read(activeCanvasToolProvider) == CanvasTool.smelt &&
-        _isStylusPointer(event.kind)) {
+    if (_selectionPointerIsStylus) {
+      if (_selectionDragStarted && _lassoStart != null) {
+        _finishLassoGesture();
+      } else if (!_selectionDragStarted &&
+          ref.read(activeCanvasToolProvider) == CanvasTool.smelt) {
+        _handleSmeltTapAt(event.localPosition);
+      }
+    } else if (!_selectionDragStarted &&
+        ref.read(activeCanvasToolProvider) == CanvasTool.smelt) {
       _handleSmeltTapAt(event.localPosition);
     }
 
-    _resetStylusSelectionPointer();
+    _resetSelectionPointer();
   }
 
   void _onSelectionPointerCancel(PointerCancelEvent event) {
-    if (_stylusSelectionPointerId != event.pointer) return;
-    _resetStylusSelectionPointer();
+    if (_selectionPointerId != event.pointer) return;
+    _resetSelectionPointer();
     if (_lassoStart != null) {
       setState(() {
         _lassoStart = null;
@@ -232,10 +244,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
   }
 
-  void _resetStylusSelectionPointer() {
-    _stylusSelectionPointerId = null;
-    _stylusSelectionDownPos = null;
-    _stylusSelectionDragStarted = false;
+  void _resetSelectionPointer() {
+    _selectionPointerId = null;
+    _selectionDownPos = null;
+    _selectionDragStarted = false;
+    _selectionPointerIsStylus = false;
   }
 
   void _startLasso(DragStartDetails details) {
@@ -938,7 +951,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     ref.listen<bool>(stylusOnlyModeProvider, (previous, next) {
       if (next && mounted) {
         _manualHintTimer?.cancel();
-        _resetStylusSelectionPointer();
+        _resetSelectionPointer();
         setState(() {
           _lassoStart = null;
           _lassoPreviewRect = null;

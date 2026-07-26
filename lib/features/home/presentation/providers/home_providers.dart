@@ -34,10 +34,11 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
      await _loadNodes();
   }
 
-  Future<void> createNote(String title) async {
+  Future<HomeNode> createNote(String title) async {
      final node = HomeNode.create(title: title, type: NodeType.note, parentId: _folderId);
      await _repository.insertNode(node);
      await _loadNodes();
+     return node;
   }
 
   Future<void> importDocument() async {

@@ -5,11 +5,18 @@ import '../../domain/models/canvas_smart_models.dart';
 import '../../data/stroke_repository.dart';
 import '../../data/pen_engine.dart';
 
-enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, text, undo, redo }
+enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
 enum StrokeStyle { solid, dotted, dashed }
 
 final canvasRepositoryProvider = Provider((ref) => StrokeRepository());
+
+/// Loads strokes for scrap thumbnails on the home / folder grid.
+final noteStrokesPreviewProvider =
+    FutureProvider.autoDispose.family<List<Stroke>, String>((ref, noteId) async {
+  final repo = ref.watch(canvasRepositoryProvider);
+  return repo.loadStrokes(noteId);
+});
 
 final activeCanvasToolProvider = StateProvider<CanvasTool>((ref) => CanvasTool.pen);
 // Default ink color: #1C1C1C

@@ -24,7 +24,8 @@ const List<_ToolDef> _tools = [
   (icon: Icons.horizontal_rule,    kanji: '線', tip: 'Straight line', tool: CanvasTool.straightLine),
   (icon: Icons.text_fields_outlined, kanji: '文', tip: 'Text',       tool: CanvasTool.text),
   (icon: Icons.category_outlined,  kanji: '形', tip: 'Shape',        tool: CanvasTool.shape),
-  (icon: Icons.gesture,            kanji: '套', tip: 'AI Lasso',    tool: CanvasTool.lasso),
+  (icon: Icons.gesture,            kanji: '套', tip: 'Lasso',       tool: CanvasTool.lasso),
+  (icon: Icons.auto_awesome,       kanji: '溶', tip: 'Smelt',       tool: CanvasTool.smelt),
 ];
 
 const List<Color> _palette = [
@@ -150,8 +151,9 @@ class _ModeToggle extends ConsumerWidget {
         onTap: () {
           final newMode = !isPenMode;
           ref.read(isPenModeActiveProvider.notifier).state = newMode;
-          // When switching to touch/scroll mode, disable lasso tool
-          if (!newMode && ref.read(activeCanvasToolProvider) == CanvasTool.lasso) {
+          // When switching to touch/scroll mode, disable selection tools
+          final tool = ref.read(activeCanvasToolProvider);
+          if (!newMode && (tool == CanvasTool.lasso || tool == CanvasTool.smelt)) {
             ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
           }
         },

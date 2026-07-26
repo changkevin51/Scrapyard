@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../../../core/theme/koto_theme.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../providers/canvas_providers.dart';
+import '../providers/smelt_detection_provider.dart';
 import '../widgets/handwriting_canvas.dart';
 import '../widgets/canvas_toolbar.dart';
 import '../widgets/canvas_smart_widgets.dart';
@@ -46,10 +48,31 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   _CopiedSelection? _clipboardSelection;
   Offset? _pasteMenuAnchor;
   bool _showPasteMenu = false;
+  String? _activeClusterId;
+  bool _selectionFromDetection = false;
+  bool _manualHintVisible = false;
+  Offset? _manualSelectMenuAnchor;
+  Timer? _manualHintTimer;
+  int? _stylusSelectionPointerId;
+  Offset? _stylusSelectionDownPos;
+  bool _stylusSelectionDragStarted = false;
+
+  static const double _selectionDragSlop = 8.0;
+
+  bool _isStylusPointer(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.stylus ||
+      kind == PointerDeviceKind.invertedStylus;
+
+  bool _isSelectionTool(CanvasTool tool) =>
+      tool == CanvasTool.lasso || tool == CanvasTool.smelt;
 
   @override
   void initState() {
     super.initState();
+    // Warm up background cluster detection without watching (no rebuilds).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(detectedClustersProvider);
+    });
   }
 
   void _triggerOcrRun() {
@@ -65,6 +88,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   @override
   void dispose() {
     _ocrDebounce?.cancel();
+    _manualHintTimer?.cancel();
     _ocrService.dispose();
     _scrollController.dispose();
     _smeltOverlayEntry?.remove();
@@ -86,11 +110,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       });
     }
 
-    if (ref.read(activeCanvasToolProvider) == CanvasTool.lasso) {
-      return;
-    }
+    final tool = ref.read(activeCanvasToolProvider);
+    if (_isSelectionTool(tool)) return;
 
-    if (ref.read(activeCanvasToolProvider) == CanvasTool.text) {
+    if (tool == CanvasTool.text) {
       final newText = CanvasTextItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         position: details.localPosition,
@@ -99,39 +122,174 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       return;
     }
 
-    if (ref.read(activeCanvasToolProvider) != CanvasTool.pen) return;
+    if (tool != CanvasTool.pen) return;
+  }
+
+  bool _tapHitsManualSelectMenu(Offset p) {
+    if (_manualSelectMenuAnchor == null) return false;
+    final left = math.max(_manualSelectMenuAnchor!.dx, 12.0);
+    final top = math.max(_manualSelectMenuAnchor!.dy - 52, 12.0);
+    const menuWidth = 148.0;
+    const menuHeight = 48.0;
+    return Rect.fromLTWH(left, top, menuWidth, menuHeight).contains(p);
+  }
+
+  void _onCanvasTapUp(TapUpDetails details) {
+    if (ref.read(activeCanvasToolProvider) != CanvasTool.smelt) return;
+    if (ref.read(stylusOnlyModeProvider)) return;
+    if (_lassoStart != null || _lassoPreviewRect != null) return;
+    if (_tapHitsManualSelectMenu(details.localPosition)) return;
+    _handleSmeltTapAt(details.localPosition);
+  }
+
+  void _handleSmeltTapAt(Offset position) {
+    if (_tapHitsManualSelectMenu(position)) return;
+
+    final cluster = ref
+        .read(detectedClustersProvider.notifier)
+        .hitTest(position);
+
+    if (cluster == null) {
+      if (ref.read(stylusOnlyModeProvider)) return;
+
+      _hidePasteMenu();
+      setState(() {
+        _selectionRect = null;
+        _selectedStrokeIds = {};
+        _activeClusterId = null;
+        _selectionFromDetection = false;
+        _showSelectionMenu = false;
+        _manualSelectMenuAnchor = position;
+      });
+      return;
+    }
+
+    _hidePasteMenu();
+    setState(() {
+      _selectionRect = cluster.bounds;
+      _selectedStrokeIds = Set<String>.from(cluster.strokeIds);
+      _activeClusterId = cluster.id;
+      _selectionFromDetection = true;
+      _showSelectionMenu = true;
+      _isResizingSelection = false;
+      _manualHintVisible = false;
+      _manualSelectMenuAnchor = null;
+    });
+  }
+
+  void _onSelectionPointerDown(PointerDownEvent event) {
+    if (!ref.read(stylusOnlyModeProvider)) return;
+    if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
+    if (!_isStylusPointer(event.kind)) return;
+
+    _stylusSelectionPointerId = event.pointer;
+    _stylusSelectionDownPos = event.localPosition;
+    _stylusSelectionDragStarted = false;
+  }
+
+  void _onSelectionPointerMove(PointerMoveEvent event) {
+    if (!ref.read(stylusOnlyModeProvider)) return;
+    if (_stylusSelectionPointerId != event.pointer) return;
+    if (_stylusSelectionDownPos == null) return;
+
+    if (!_stylusSelectionDragStarted) {
+      if ((event.localPosition - _stylusSelectionDownPos!).distance <
+          _selectionDragSlop) {
+        return;
+      }
+      _stylusSelectionDragStarted = true;
+      _startLassoAt(_stylusSelectionDownPos!);
+    }
+
+    if (_lassoStart != null) {
+      _updateLassoTo(event.localPosition);
+    }
+  }
+
+  void _onSelectionPointerUp(PointerUpEvent event) {
+    if (!ref.read(stylusOnlyModeProvider)) return;
+    if (_stylusSelectionPointerId != event.pointer) return;
+
+    if (_stylusSelectionDragStarted && _lassoStart != null) {
+      _finishLassoGesture();
+    } else if (!_stylusSelectionDragStarted &&
+        ref.read(activeCanvasToolProvider) == CanvasTool.smelt &&
+        _isStylusPointer(event.kind)) {
+      _handleSmeltTapAt(event.localPosition);
+    }
+
+    _resetStylusSelectionPointer();
+  }
+
+  void _onSelectionPointerCancel(PointerCancelEvent event) {
+    if (_stylusSelectionPointerId != event.pointer) return;
+    _resetStylusSelectionPointer();
+    if (_lassoStart != null) {
+      setState(() {
+        _lassoStart = null;
+        _lassoPreviewRect = null;
+      });
+    }
+  }
+
+  void _resetStylusSelectionPointer() {
+    _stylusSelectionPointerId = null;
+    _stylusSelectionDownPos = null;
+    _stylusSelectionDragStarted = false;
   }
 
   void _startLasso(DragStartDetails details) {
-    if (ref.read(activeCanvasToolProvider) != CanvasTool.lasso) return;
+    if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
+    if (ref.read(stylusOnlyModeProvider)) return;
+    _startLassoAt(details.localPosition);
+  }
+
+  void _startLassoAt(Offset position) {
+    if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
     _hideSelectionMenu();
     setState(() {
-      _lassoStart = details.localPosition;
-      _lassoPreviewRect = Rect.fromPoints(details.localPosition, details.localPosition);
+      _lassoStart = position;
+      _lassoPreviewRect = Rect.fromPoints(position, position);
+      _selectionFromDetection = false;
+      _activeClusterId = null;
+      _manualHintVisible = false;
+      _manualSelectMenuAnchor = null;
     });
   }
 
   void _updateLasso(DragUpdateDetails details) {
-    if (_lassoStart == null || ref.read(activeCanvasToolProvider) != CanvasTool.lasso) return;
+    if (ref.read(stylusOnlyModeProvider)) return;
+    _updateLassoTo(details.localPosition);
+  }
 
-    final draggedRect = _normalizedRect(Rect.fromPoints(_lassoStart!, details.localPosition));
-    final previewRect = draggedRect;
+  void _updateLassoTo(Offset position) {
+    if (_lassoStart == null || !_isSelectionTool(ref.read(activeCanvasToolProvider))) {
+      return;
+    }
+
+    final draggedRect = _normalizedRect(Rect.fromPoints(_lassoStart!, position));
     final strokes = ref.read(strokesProvider);
     final selected = strokes
         .where((stroke) => !stroke.isHidden && _strokeIntersectsSelection(stroke, draggedRect))
         .toList();
 
     setState(() {
-      _lassoPreviewRect = previewRect;
+      _lassoPreviewRect = draggedRect;
       _selectionRect = selected.isEmpty
           ? null
           : _unionRects(selected.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
       _selectedStrokeIds = selected.map((stroke) => stroke.id).toSet();
       _showSelectionMenu = false;
+      _selectionFromDetection = false;
     });
   }
 
   void _endLasso(DragEndDetails details) {
+    if (ref.read(stylusOnlyModeProvider)) return;
+    _finishLassoGesture();
+  }
+
+  void _finishLassoGesture() {
     if (_lassoStart == null) return;
 
     if (_selectionRect == null || _selectedStrokeIds.isEmpty) {
@@ -141,10 +299,16 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _selectionRect = null;
         _selectedStrokeIds = {};
         _showSelectionMenu = false;
+        _selectionFromDetection = false;
+        _activeClusterId = null;
       });
       return;
     }
 
+    setState(() {
+      _selectionFromDetection = false;
+      _activeClusterId = null;
+    });
     _refreshSelectionBounds(showMenu: true);
     _hidePasteMenu();
 
@@ -162,7 +326,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _clearSelectionState() {
-    if (_selectionRect == null && _selectedStrokeIds.isEmpty && !_showSelectionMenu && !_isResizingSelection) {
+    if (_selectionRect == null &&
+        _selectedStrokeIds.isEmpty &&
+        !_showSelectionMenu &&
+        !_isResizingSelection &&
+        _activeClusterId == null &&
+        !_selectionFromDetection &&
+        _manualSelectMenuAnchor == null) {
       return;
     }
 
@@ -173,6 +343,29 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _selectedStrokeIds = {};
       _showSelectionMenu = false;
       _isResizingSelection = false;
+      _activeClusterId = null;
+      _selectionFromDetection = false;
+      _manualSelectMenuAnchor = null;
+    });
+  }
+
+  void _beginManualSelect() {
+    _manualHintTimer?.cancel();
+    setState(() {
+      _lassoStart = null;
+      _lassoPreviewRect = null;
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _showSelectionMenu = false;
+      _isResizingSelection = false;
+      _activeClusterId = null;
+      _selectionFromDetection = false;
+      _manualSelectMenuAnchor = null;
+      _manualHintVisible = true;
+    });
+    _manualHintTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() => _manualHintVisible = false);
     });
   }
 
@@ -733,14 +926,35 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     });
 
     ref.listen<CanvasTool>(activeCanvasToolProvider, (previous, next) {
-      if (previous != next && next != CanvasTool.lasso) {
+      if (previous != next && next != CanvasTool.lasso && next != CanvasTool.smelt) {
         _clearSelectionState();
         _hidePasteMenu();
+        _manualHintTimer?.cancel();
+        if (_manualHintVisible) setState(() => _manualHintVisible = false);
+        if (_manualSelectMenuAnchor != null) setState(() => _manualSelectMenuAnchor = null);
+      }
+    });
+
+    ref.listen<bool>(stylusOnlyModeProvider, (previous, next) {
+      if (next && mounted) {
+        _manualHintTimer?.cancel();
+        _resetStylusSelectionPointer();
+        setState(() {
+          _lassoStart = null;
+          _lassoPreviewRect = null;
+          _manualHintVisible = false;
+          _manualSelectMenuAnchor = null;
+        });
       }
     });
 
     final isPenMode       = ref.watch(isPenModeActiveProvider);
-    final isLassoMode     = ref.watch(activeCanvasToolProvider) == CanvasTool.lasso;
+    final stylusOnly      = ref.watch(stylusOnlyModeProvider);
+    final activeTool      = ref.watch(activeCanvasToolProvider);
+    final isLassoMode     = activeTool == CanvasTool.lasso;
+    final isSmeltMode     = activeTool == CanvasTool.smelt;
+    final isSelectionMode = isLassoMode || isSmeltMode;
+    final allowSelectionDrag = isSelectionMode && !stylusOnly;
     final canvasZoom      = ref.watch(canvasZoomProvider);
     final toolbarPosition = ref.watch(toolbarPositionProvider);
 
@@ -785,9 +999,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         Positioned.fill(
           child: Stack(
             children: [
-              CustomPaint(
-                painter: _SelectedStrokeHighlightPainter(_selectionRect!),
-              ),
+              if (_selectionFromDetection)
+                TweenAnimationBuilder<double>(
+                  key: ValueKey(_activeClusterId ?? 'detected'),
+                  tween: Tween(begin: 0, end: 1),
+                  duration: const Duration(milliseconds: 160),
+                  builder: (context, value, child) =>
+                      Opacity(opacity: value, child: child),
+                  child: CustomPaint(
+                    painter: _DetectedBoxPainter(_selectionRect!),
+                  ),
+                )
+              else
+                CustomPaint(
+                  painter: _SelectedStrokeHighlightPainter(_selectionRect!),
+                ),
               if (!_isResizingSelection)
                 Positioned.fromRect(
                   rect: _selectionRect!,
@@ -832,16 +1058,61 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   onPanEnd: _finishResizeSelection,
                 ),
               ],
-              if (_showSelectionMenu)
+              if (_showSelectionMenu && isSmeltMode)
+                _SmeltActionMenu(
+                  rect: _selectionRect!,
+                  showManualSelect: _selectionFromDetection,
+                  onSmelt: _smeltSelection,
+                  onManualSelect: _beginManualSelect,
+                )
+              else if (_showSelectionMenu && !isSmeltMode)
                 _SelectionActionMenu(
                   rect: _selectionRect!,
-                  onSmelt: _smeltSelection,
                   onResize: _beginResizeSelection,
                   onDelete: _deleteSelection,
                   onCopy: _copySelection,
                 ),
             ],
           ),
+        ),
+      );
+    }
+    if (_manualHintVisible && isSmeltMode && !stylusOnly) {
+      contentOverlays.add(
+        Positioned(
+          top: 24,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: KotoTheme.dividers),
+                  boxShadow: KotoTheme.subtleShadow,
+                ),
+                child: Text(
+                  'Drag to select',
+                  style: KotoTextStyles.caption.copyWith(
+                    color: KotoTheme.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (_manualSelectMenuAnchor != null && isSmeltMode && !stylusOnly) {
+      contentOverlays.add(
+        Positioned(
+          left: math.max(_manualSelectMenuAnchor!.dx, 12.0),
+          top: math.max(_manualSelectMenuAnchor!.dy - 52, 12.0),
+          child: _ManualSelectActionMenu(onSelect: _beginManualSelect),
         ),
       );
     }
@@ -866,7 +1137,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             // pointer events — the scroll view must not compete.  When stylus-only
             // is on, the canvas also handles touch scrolling manually via jumpTo(),
             // so the scroll view must stay out of the way.
-            physics: (isLassoMode || isPenMode)
+            physics: (isSelectionMode || isPenMode)
                 ? const NeverScrollableScrollPhysics()
                 : const ClampingScrollPhysics(),
             child: ColoredBox(
@@ -884,17 +1155,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   child: SizedBox(
                     width: double.infinity,
                     height: 5000,
-                    child: GestureDetector(
-                      onTapDown: _onCanvasTapDown,
-                      onLongPressStart: _handleCanvasLongPressStart,
-                      onPanStart: isLassoMode ? _startLasso : null,
-                      onPanUpdate: isLassoMode ? _updateLasso : null,
-                      onPanEnd: isLassoMode ? _endLasso : null,
-                      child: Stack(
-                        children: [
-                          canvasStack,
-                          ...contentOverlays,
-                        ],
+                    child: Listener(
+                      onPointerDown: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerDown
+                          : null,
+                      onPointerMove: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerMove
+                          : null,
+                      onPointerUp: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerUp
+                          : null,
+                      onPointerCancel: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerCancel
+                          : null,
+                      child: GestureDetector(
+                        onTapDown: _onCanvasTapDown,
+                        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+                        onLongPressStart: _handleCanvasLongPressStart,
+                        onPanStart: allowSelectionDrag ? _startLasso : null,
+                        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
+                        onPanEnd: allowSelectionDrag ? _endLasso : null,
+                        child: Stack(
+                          children: [
+                            canvasStack,
+                            ...contentOverlays,
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -998,12 +1284,9 @@ class _SelectedStrokeHighlightPainter extends CustomPainter {
       final direction = (end - start) / totalLength;
       double distance = 0;
       while (distance < totalLength) {
-        final segmentEnd = math.min(distance + dashLength, totalLength);
-        canvas.drawLine(
-          start + direction * distance,
-          start + direction * segmentEnd,
-          paint,
-        );
+        final from = start + direction * distance;
+        final to = start + direction * math.min(distance + dashLength, totalLength);
+        canvas.drawLine(from, to, paint);
         distance += dashLength + gapLength;
       }
     }
@@ -1015,9 +1298,34 @@ class _SelectedStrokeHighlightPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SelectedStrokeHighlightPainter oldDelegate) {
-    return oldDelegate.rect != rect;
+  bool shouldRepaint(covariant _SelectedStrokeHighlightPainter oldDelegate) =>
+      oldDelegate.rect != rect;
+}
+
+class _DetectedBoxPainter extends CustomPainter {
+  final Rect rect;
+
+  _DetectedBoxPainter(this.rect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
+
+    final fill = Paint()
+      ..color = KotoTheme.accent.withValues(alpha: 0.08)
+      ..style = PaintingStyle.fill;
+    final border = Paint()
+      ..color = KotoTheme.accent.withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+
+    canvas.drawRRect(rrect, fill);
+    canvas.drawRRect(rrect, border);
   }
+
+  @override
+  bool shouldRepaint(covariant _DetectedBoxPainter oldDelegate) =>
+      oldDelegate.rect != rect;
 }
 
 class _CopiedSelection {
@@ -1029,14 +1337,12 @@ class _CopiedSelection {
 
 class _SelectionActionMenu extends StatelessWidget {
   final Rect rect;
-  final VoidCallback onSmelt;
   final VoidCallback onResize;
   final VoidCallback onDelete;
   final VoidCallback onCopy;
 
   const _SelectionActionMenu({
     required this.rect,
-    required this.onSmelt,
     required this.onResize,
     required this.onDelete,
     required this.onCopy,
@@ -1063,29 +1369,171 @@ class _SelectionActionMenu extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              GestureDetector(
-                onTap: onSmelt,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: KotoTheme.accent,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    'Smelt',
-                    style: KotoTextStyles.body.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
               _MenuButton(label: 'Resize', onTap: onResize),
               const SizedBox(width: 8),
               _MenuButton(label: 'Delete', onTap: onDelete, danger: true),
               const SizedBox(width: 8),
               _MenuButton(label: 'Copy', onTap: onCopy),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SmeltActionMenu extends StatelessWidget {
+  final Rect rect;
+  final bool showManualSelect;
+  final VoidCallback onSmelt;
+  final VoidCallback onManualSelect;
+
+  const _SmeltActionMenu({
+    required this.rect,
+    required this.showManualSelect,
+    required this.onSmelt,
+    required this.onManualSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final top = math.max(rect.top - 64, 12.0);
+    final left = math.max(rect.left, 12.0);
+
+    return Positioned(
+      top: top,
+      left: left,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: KotoTheme.dividers),
+            boxShadow: KotoTheme.subtleShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SmeltPillButton(onTap: onSmelt),
+              if (showManualSelect) ...[
+                const SizedBox(width: 8),
+                _ManualSelectButton(onTap: onManualSelect),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualSelectActionMenu extends StatelessWidget {
+  final VoidCallback onSelect;
+
+  const _ManualSelectActionMenu({required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: KotoTheme.dividers),
+          boxShadow: KotoTheme.subtleShadow,
+        ),
+        child: _ManualSelectButton(onTap: onSelect),
+      ),
+    );
+  }
+}
+
+class _ManualSelectButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ManualSelectButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: KotoTheme.dividers),
+        ),
+        child: Text(
+          'Select manually',
+          style: KotoTextStyles.caption.copyWith(
+            color: KotoTheme.secondaryText,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SmeltPillButton extends StatefulWidget {
+  final VoidCallback onTap;
+
+  const _SmeltPillButton({required this.onTap});
+
+  @override
+  State<_SmeltPillButton> createState() => _SmeltPillButtonState();
+}
+
+class _SmeltPillButtonState extends State<_SmeltPillButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [KotoTheme.accent, Color(0xFF8A6A55)],
+            ),
+            borderRadius: BorderRadius.circular(999),
+            boxShadow: [
+              BoxShadow(
+                color: KotoTheme.accent.withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
+              const SizedBox(width: 6),
+              Text(
+                'Smelt',
+                style: KotoTextStyles.body.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
             ],
           ),
         ),

@@ -118,7 +118,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     final tool = ref.read(activeCanvasToolProvider);
-    if (tool == CanvasTool.lasso) return;
+    if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) return;
     if (tool == CanvasTool.eraser) { _eraseAt(e.localPosition); return; }
 
     final stab = StrokeStabilizer()..start(e.localPosition);
@@ -151,7 +151,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final points = _activeStrokes[e.pointer];
     if (points == null) return;
 
-    if (tool == CanvasTool.lasso) return;
+    if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) return;
 
     if (tool == CanvasTool.eraser) { _eraseAt(e.localPosition); return; }
 
@@ -198,7 +198,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final mod      = ref.read(strokeWidthModifierProvider);
     final settings = ref.read(penSettingsProvider);
 
-    if (tool == CanvasTool.lasso) {
+    if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) {
       _tick();
       return;
     }

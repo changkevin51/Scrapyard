@@ -20,6 +20,7 @@ import '../widgets/scrap_thumbnail.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../splash/presentation/providers/splash_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -54,6 +55,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _maybePromptForApiKey() async {
     if (!mounted) return;
     if (ref.read(apiKeySetupPromptedProvider)) return;
+
+    // Wait until the splash overlay has fully exited so the dialog is visible.
+    if (!ref.read(appReadyProvider)) {
+      for (var i = 0; i < 120; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        if (!mounted) return;
+        if (ref.read(appReadyProvider)) break;
+      }
+      if (!mounted || !ref.read(appReadyProvider)) return;
+    }
 
     // Wait briefly for the key to finish loading from secure storage.
     var keyState = ref.read(apiKeyProvider);

@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:sqflite/sqflite.dart';
 import 'core/theme/scrapyard_theme.dart';
 import 'core/router/app_router.dart';
+import 'features/splash/presentation/widgets/splash_gate.dart';
 
 void main() {
   if (kIsWeb) {
@@ -32,6 +33,9 @@ class ScrapyardApp extends StatelessWidget {
       theme: ScrapTheme.themeData,
       routerConfig: AppRouter.router,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => SplashGate(
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }

@@ -149,29 +149,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 const SizedBox(height: 48),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Scrapyard',
-                        style: ScrapTextStyles.heading.copyWith(
-                          fontSize: 20,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'scrap paper',
-                        style: ScrapTextStyles.caption.copyWith(
-                          fontSize: 16,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.only(left: 24.0, right: 24.0, top: 16.0),
+                  child: Image.asset(
+                    'assets/images/HomeLogo.png',
+                    width: 184,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
                   ),
+             
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 38),
                 _SidebarItem(
                   title: 'Home',
                   isSelected: currentFolder == 'root',

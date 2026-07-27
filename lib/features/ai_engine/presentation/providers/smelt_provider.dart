@@ -57,6 +57,17 @@ final apiKeyProvider =
   return ApiKeyNotifier(ref.watch(apiKeyServiceProvider));
 });
 
+/// Cached Smelt result for one expression within the current app session.
+class SmeltCacheEntry {
+  final SmeltResponse response;
+  final Uint8List? imageBytes;
+
+  const SmeltCacheEntry({
+    required this.response,
+    this.imageBytes,
+  });
+}
+
 class SmeltState {
   final bool isLoading;
   final SmeltResponse? response;
@@ -64,6 +75,8 @@ class SmeltState {
   final bool showSteps;
   /// Last canvas capture used for smelt (for chat handoff).
   final Uint8List? lastImageBytes;
+  /// Session-cache key for the active popup (note + stroke set).
+  final String? cacheKey;
 
   const SmeltState({
     this.isLoading = false,
@@ -71,6 +84,7 @@ class SmeltState {
     this.error,
     this.showSteps = false,
     this.lastImageBytes,
+    this.cacheKey,
   });
 
   SmeltState copyWith({
@@ -81,6 +95,8 @@ class SmeltState {
     bool clearError = false,
     bool? showSteps,
     Uint8List? lastImageBytes,
+    String? cacheKey,
+    bool clearCacheKey = false,
   }) {
     return SmeltState(
       isLoading: isLoading ?? this.isLoading,
@@ -88,6 +104,7 @@ class SmeltState {
       error: clearError ? null : (error ?? this.error),
       showSteps: showSteps ?? this.showSteps,
       lastImageBytes: lastImageBytes ?? this.lastImageBytes,
+      cacheKey: clearCacheKey ? null : (cacheKey ?? this.cacheKey),
     );
   }
 }
@@ -96,10 +113,40 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   final SmeltService _smeltService;
   int _onProgressCallCount = 0;
 
+  /// In-memory cache for this app session (survives popup dismiss).
+  final Map<String, SmeltCacheEntry> _sessionCache = {};
+
   SmeltNotifier(this._smeltService) : super(const SmeltState());
 
-  void startLoading() {
-    state = const SmeltState(isLoading: true);
+  /// Stable cache key for a note + selected stroke set.
+  static String cacheKeyFor({
+    required String noteId,
+    required Iterable<String> strokeIds,
+  }) {
+    final sorted = strokeIds.toList()..sort();
+    return '$noteId:${sorted.join('|')}';
+  }
+
+  bool hasCached(String key) => _sessionCache.containsKey(key);
+
+  /// Restore a previously saved response into the popup state (no API call).
+  bool restoreCached(String key) {
+    final entry = _sessionCache[key];
+    if (entry == null) return false;
+    state = SmeltState(
+      response: entry.response,
+      lastImageBytes: entry.imageBytes,
+      cacheKey: key,
+    );
+    return true;
+  }
+
+  void startLoading({String? cacheKey}) {
+    state = SmeltState(
+      isLoading: true,
+      cacheKey: cacheKey ?? state.cacheKey,
+      lastImageBytes: state.lastImageBytes,
+    );
   }
 
   /// Remove duplicate steps from AI output
@@ -134,10 +181,19 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
     return result.join('\n');
   }
 
-  /// Streaming smelt that shows results as soon as they arrive
-  Future<void> smelt({Uint8List? imageBytes}) async {
+  /// Streaming smelt that shows results as soon as they arrive.
+  /// On success, stores the result under [cacheKey] for this session.
+  Future<void> smelt({
+    Uint8List? imageBytes,
+    String? cacheKey,
+  }) async {
+    final key = cacheKey ?? state.cacheKey;
     try {
-      state = SmeltState(isLoading: true, lastImageBytes: imageBytes);
+      state = SmeltState(
+        isLoading: true,
+        lastImageBytes: imageBytes,
+        cacheKey: key,
+      );
 
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
@@ -164,30 +220,50 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         },
       );
 
+      final response = SmeltResponse(
+        answer: result.response.answer,
+        steps: _cleanSteps(result.response.steps),
+        isMath: result.response.isMath,
+        modelUsed: result.response.modelUsed,
+        suggestions: result.response.suggestions,
+      );
+
+      if (key != null) {
+        _sessionCache[key] = SmeltCacheEntry(
+          response: response,
+          imageBytes: imageBytes,
+        );
+      }
+
       state = SmeltState(
         isLoading: false,
         lastImageBytes: imageBytes,
-        response: SmeltResponse(
-          answer: result.response.answer,
-          steps: _cleanSteps(result.response.steps),
-          isMath: result.response.isMath,
-          modelUsed: result.response.modelUsed,
-          suggestions: result.response.suggestions,
-        ),
+        response: response,
+        cacheKey: key,
       );
     } catch (e) {
       state = SmeltState(
         isLoading: false,
         error: e.toString(),
         lastImageBytes: imageBytes,
+        cacheKey: key,
       );
     }
+  }
+
+  /// Re-run Smelt with the last captured image (updates session cache).
+  Future<void> retry({Uint8List? imageBytes}) async {
+    await smelt(
+      imageBytes: imageBytes ?? state.lastImageBytes,
+      cacheKey: state.cacheKey,
+    );
   }
 
   void toggleSteps() {
     state = state.copyWith(showSteps: !state.showSteps);
   }
 
+  /// Clears the open popup UI state. Session cache is kept.
   void clearState() {
     state = const SmeltState();
   }

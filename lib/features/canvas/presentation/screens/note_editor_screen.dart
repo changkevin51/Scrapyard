@@ -169,16 +169,67 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     _hidePasteMenu();
+
+    final cacheKey = _smeltCacheKeyFor(cluster.strokeIds);
+    final hasCached = ref.read(smeltProvider.notifier).hasCached(cacheKey);
+
     setState(() {
       _selectionRect = cluster.bounds;
       _selectedStrokeIds = Set<String>.from(cluster.strokeIds);
       _activeClusterId = cluster.id;
       _selectionFromDetection = true;
-      _showSelectionMenu = true;
+      _showSelectionMenu = false;
       _isResizingSelection = false;
       _manualHintVisible = false;
       _manualSelectMenuAnchor = null;
     });
+
+    if (hasCached) {
+      // Reopen the saved popup for this expression — no API call / no action menu.
+      ref.read(smeltProvider.notifier).restoreCached(cacheKey);
+      _showSmeltPopup(cluster.bounds);
+      return;
+    }
+
+    // Keep action chips hidden while a response popup is already open.
+    if (_smeltPopupEntry != null) return;
+
+    setState(() => _showSelectionMenu = true);
+  }
+
+  String _smeltCacheKeyFor(Iterable<String> strokeIds) {
+    return SmeltNotifier.cacheKeyFor(
+      noteId: ref.read(activeNoteIdProvider),
+      strokeIds: strokeIds,
+    );
+  }
+
+  bool _selectionHasCachedSmelt() {
+    if (_selectedStrokeIds.isEmpty) return false;
+    return ref
+        .read(smeltProvider.notifier)
+        .hasCached(_smeltCacheKeyFor(_selectedStrokeIds));
+  }
+
+  /// Action chips stay hidden while a response popup is open or already cached.
+  bool get _smeltActionMenuAllowed =>
+      _smeltPopupEntry == null && !_selectionHasCachedSmelt();
+
+  /// Show the smelt action menu, or reopen a cached response instead.
+  void _revealSmeltSelectionOrCachedPopup() {
+    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
+    if (_smeltPopupEntry != null) return;
+
+    final key = _smeltCacheKeyFor(_selectedStrokeIds);
+    final notifier = ref.read(smeltProvider.notifier);
+    if (notifier.hasCached(key)) {
+      notifier.restoreCached(key);
+      setState(() => _showSelectionMenu = false);
+      _showSmeltPopup(_selectionRect!);
+      return;
+    }
+
+    setState(() => _showSelectionMenu = true);
   }
 
   void _onSelectionPointerDown(PointerDownEvent event) {
@@ -335,7 +386,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       return;
     }
 
-    _refreshSelectionBounds(showMenu: true);
+    _refreshSelectionBounds(showMenu: false);
+    if (ref.read(activeCanvasToolProvider) == CanvasTool.smelt) {
+      _revealSmeltSelectionOrCachedPopup();
+    } else {
+      setState(() => _showSelectionMenu = true);
+    }
   }
 
   void _hideSelectionMenu() {
@@ -581,14 +637,28 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _refreshSelectionBounds(showMenu: true);
   }
 
-  void _smeltSelection() async {
+  void _smeltSelection({bool forceRefresh = false}) async {
     if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
     _hideSelectionMenu();
 
     final rect = _selectionRect!;
+    final cacheKey = _smeltCacheKeyFor(_selectedStrokeIds);
+    final notifier = ref.read(smeltProvider.notifier);
+
+    // Reuse a session-cached response unless the user asked to retry.
+    if (!forceRefresh && notifier.hasCached(cacheKey)) {
+      notifier.restoreCached(cacheKey);
+      _showSmeltPopup(rect);
+      return;
+    }
 
     setState(() => _isSmelting = true);
-    ref.read(smeltProvider.notifier).startLoading();
+    notifier.startLoading(cacheKey: cacheKey);
+
+    // Show the popup immediately so loading / retry happens in-place.
+    if (_smeltPopupEntry == null) {
+      _showSmeltPopup(rect);
+    }
 
     // Capture the canvas region as an image
     Uint8List? imageBytes;
@@ -598,13 +668,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       // If capture fails, fall back to null (text-only mode)
     }
 
-    // Send to AI
-    await ref.read(smeltProvider.notifier).smelt(imageBytes: imageBytes);
+    // Send to AI (stores into session cache on success)
+    await notifier.smelt(imageBytes: imageBytes, cacheKey: cacheKey);
 
     if (mounted) {
       setState(() => _isSmelting = false);
-      _showSmeltPopup(rect);
+      // Don't reopen if the user dismissed mid-request — cache still saves.
+      _smeltPopupEntry?.markNeedsBuild();
     }
+  }
+
+  void _retrySmelt() {
+    if (_selectionRect != null && _selectedStrokeIds.isNotEmpty) {
+      _smeltSelection(forceRefresh: true);
+      return;
+    }
+    // Selection cleared — reuse the last captured image if we still have it.
+    ref.read(smeltProvider.notifier).retry();
   }
 
   /// Capture the current selection and stage it as a chat attachment.
@@ -746,7 +826,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _showSmeltPopup(Rect selectionRect) {
     _smeltPopupEntry?.remove();
-    
+    if (_showSelectionMenu) {
+      _showSelectionMenu = false;
+    }
+
     // Convert to global coordinates for the popup positioning
     final globalRect = _convertToGlobalRect(selectionRect);
 
@@ -764,18 +847,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           SmeltPopup(
             selectionRect: globalRect,
             onDismiss: _dismissSmeltPopup,
+            onRetry: _retrySmelt,
             screenSize: MediaQuery.of(context).size,
           ),
         ],
       ),
     );
     Overlay.of(context).insert(_smeltPopupEntry!);
+    // Rebuild canvas overlays so the action menu hides while popup is open.
+    if (mounted) setState(() {});
   }
 
   void _dismissSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
     ref.read(smeltProvider.notifier).clearState();
+    // Rebuild so action-menu gating re-evaluates after popup closes.
+    if (mounted) setState(() {});
   }
 
   void _deleteSelection() {
@@ -1165,7 +1253,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   onPanEnd: _finishResizeSelection,
                 ),
               ],
-              if (_showSelectionMenu && isSmeltMode)
+              if (_showSelectionMenu && isSmeltMode && _smeltActionMenuAllowed)
                 _SmeltActionMenu(
                   rect: _selectionRect!,
                   showManualSelect: _selectionFromDetection,

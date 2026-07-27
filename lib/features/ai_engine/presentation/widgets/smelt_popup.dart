@@ -17,6 +17,7 @@ import 'latex_markdown_view.dart';
 class SmeltPopup extends ConsumerStatefulWidget {
   final Rect selectionRect;
   final VoidCallback onDismiss;
+  final VoidCallback? onRetry;
   final Size screenSize;
 
   const SmeltPopup({
@@ -24,6 +25,7 @@ class SmeltPopup extends ConsumerStatefulWidget {
     required this.selectionRect,
     required this.onDismiss,
     required this.screenSize,
+    this.onRetry,
   });
 
   @override
@@ -271,7 +273,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             onPressed: () async {
               final saved = await showApiKeyDialog(context, allowSkip: false);
               if (saved == true && mounted) {
-                ref.read(smeltProvider.notifier).clearState();
+                widget.onRetry?.call();
               }
             },
             style: TextButton.styleFrom(
@@ -288,6 +290,9 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               ),
             ),
           ),
+        ] else if (widget.onRetry != null) ...[
+          const SizedBox(height: 12),
+          _buildRetryButton(),
         ],
       ],
     );
@@ -358,7 +363,45 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
         const SizedBox(height: 12),
         _buildChatHandoff(response),
         const SizedBox(height: 8),
-        _buildModelFinePrint(response.modelUsed),
+        _buildFooter(response.modelUsed),
+      ],
+    );
+  }
+
+  Widget _buildRetryButton() {
+    return GestureDetector(
+      onTap: widget.onRetry,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.refresh, size: 14, color: ScrapTheme.mutedText),
+          const SizedBox(width: 4),
+          Text(
+            'Retry',
+            style: ScrapTextStyles.caption.copyWith(
+              color: ScrapTheme.mutedText,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(String modelUsed) {
+    return Row(
+      children: [
+        if (widget.onRetry != null) _buildRetryButton(),
+        const Spacer(),
+        Text(
+          'Powered by ${_formatModelName(modelUsed)}',
+          style: ScrapTextStyles.stamp.copyWith(
+            color: ScrapTheme.mutedText,
+            fontSize: 9,
+            letterSpacing: 0.8,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
       ],
     );
   }
@@ -424,22 +467,6 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           ),
         ),
       ],
-    );
-  }
-
-  /// Build fine print showing which Gemini model was used
-  Widget _buildModelFinePrint(String modelUsed) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Text(
-        'Powered by ${_formatModelName(modelUsed)}',
-        style: ScrapTextStyles.stamp.copyWith(
-          color: ScrapTheme.mutedText,
-          fontSize: 9,
-          letterSpacing: 0.8,
-          fontWeight: FontWeight.w400,
-        ),
-      ),
     );
   }
 

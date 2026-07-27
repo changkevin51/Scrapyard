@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../domain/models/canvas_smart_models.dart';
@@ -145,14 +146,7 @@ void convertOcrToTextNode(
   );
   ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, node]);
   ref.read(strokesProvider.notifier).hideStrokes(ocrStrokeIds);
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text('Converted to text node', style: ScrapTextStyles.caption),
-      backgroundColor: ScrapTheme.accent,
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 2),
-    ),
-  );
+  showPaperToast(context, 'Converted to text node');
 }
 
 Future<void> showInsertTableDialog(BuildContext context) {

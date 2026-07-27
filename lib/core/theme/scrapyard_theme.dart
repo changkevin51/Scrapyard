@@ -16,6 +16,8 @@ class ScrapTheme {
   static const Color notebookLines = Color(0xFFEBE8E2); // Rule lines on canvas
   static const Color kraft = Color(0xFFD9CDBA); // Stacked sheet backs
   static const Color tape = Color(0xFFE8DCC8); // Stamp outlines / label chrome
+  static const Color inkRed = Color(0xFF9E4B3C); // Red pencil / danger ink
+  static const Color pressedSurface = Color(0xFFECE8E2); // Chit pressed flat
 
   // Border Radius
   static const double borderRadiusDefault = 4.0;
@@ -30,6 +32,15 @@ class ScrapTheme {
     )
   ];
 
+  /// Hard contact shadow — chit lifted slightly off the desk.
+  static const List<BoxShadow> deskShadow = [
+    BoxShadow(
+      color: Color(0x18000000),
+      offset: Offset(2, 2),
+      blurRadius: 0,
+    ),
+  ];
+
   // ThemeData
   static ThemeData get themeData {
     return ThemeData(
@@ -40,11 +51,88 @@ class ScrapTheme {
         primary: accent,
         surface: background,
         onSurface: primaryText,
+        error: inkRed,
       ),
       dividerTheme: const DividerThemeData(
         color: dividers,
         thickness: 1,
         space: 1,
+      ),
+      splashFactory: NoSplash.splashFactory,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      hoverColor: accent.withValues(alpha: 0.04),
+      tooltipTheme: TooltipThemeData(
+        waitDuration: const Duration(milliseconds: 400),
+        showDuration: const Duration(seconds: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: tape,
+          borderRadius: BorderRadius.circular(borderRadiusSmall),
+          border: Border.all(color: kraft.withValues(alpha: 0.85), width: 0.75),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14000000),
+              offset: Offset(1, 1),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        textStyle: ScrapTextStyles.stamp.copyWith(
+          color: primaryText,
+          fontSize: 10,
+          letterSpacing: 1.0,
+        ),
+      ),
+      sliderTheme: const SliderThemeData(
+        activeTrackColor: accent,
+        inactiveTrackColor: dividers,
+        thumbColor: cardSurface,
+        overlayColor: Colors.transparent,
+        trackHeight: 2,
+        thumbShape: RoundSliderThumbShape(
+          enabledThumbRadius: 7,
+          elevation: 0,
+          pressedElevation: 0,
+        ),
+        trackShape: RectangularSliderTrackShape(),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: accent,
+        contentTextStyle: ScrapTextStyles.stamp.copyWith(
+          color: cardSurface,
+          letterSpacing: 1.0,
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(borderRadiusSmall),
+        ),
+        elevation: 0,
+      ),
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: secondaryText,
+          highlightColor: Colors.transparent,
+          hoverColor: accent.withValues(alpha: 0.06),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(borderRadiusSmall),
+          ),
+          minimumSize: const Size(36, 36),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: accent,
+          backgroundColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(borderRadiusSmall),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: ScrapTextStyles.stamp,
+        ),
       ),
       useMaterial3: true,
     );

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/paper_controls.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../data/api_key_service.dart';
 import '../providers/smelt_provider.dart';
 
@@ -136,34 +140,26 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
     final busy = _testing || _saving;
     final canSave = _controller.text.trim().isNotEmpty && !busy;
 
-    return Dialog(
-      backgroundColor: ScrapTheme.cardSurface,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-      ),
+    return Material(
+      color: Colors.transparent,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 520),
-        decoration: BoxDecoration(
-          color: ScrapTheme.cardSurface,
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-          boxShadow: ScrapTheme.subtleShadow,
-        ),
-        padding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '⟨ Gemini ⟩',
-                style: ScrapTextStyles.label.copyWith(
-                  color: ScrapTheme.accent,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
+        child: TornSheet(
+          seed: 31,
+          edges: const {TornEdge.bottom},
+          amplitude: 4,
+          grain: true,
+          grainOpacity: 0.015,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 12, 28, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const TapeStrip(label: '⟨ Gemini ⟩'),
+                  const SizedBox(height: 8),
+                  Text(
                 'Connect your AI key',
                 style: ScrapTextStyles.heading.copyWith(fontSize: 22),
               ),
@@ -249,106 +245,47 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  OutlinedButton(
-                    onPressed: (_controller.text.trim().isEmpty || busy)
-                        ? null
-                        : _test,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: ScrapTheme.accent,
-                      side: BorderSide(
-                        color: (_controller.text.trim().isEmpty || busy)
-                            ? ScrapTheme.dividers
-                            : ScrapTheme.accent,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          ScrapTheme.borderRadiusDefault,
-                        ),
-                      ),
+                  if (_testing)
+                    const PaperDots()
+                  else
+                    PaperButton(
+                      label: 'Test connection',
+                      variant: PaperButtonVariant.secondary,
+                      onPressed: (_controller.text.trim().isEmpty || busy)
+                          ? null
+                          : _test,
                     ),
-                    child: _testing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: ScrapTheme.accent,
-                            ),
-                          )
-                        : Text(
-                            'Test connection',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: ScrapTheme.accent,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
-                            ),
-                          ),
-                  ),
                   const SizedBox(width: 10),
-                  FilledButton(
-                    onPressed: canSave ? _save : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: ScrapTheme.accent,
-                      disabledBackgroundColor:
-                          ScrapTheme.accent.withValues(alpha: 0.35),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          ScrapTheme.borderRadiusDefault,
-                        ),
-                      ),
+                  if (_saving)
+                    const PaperDots()
+                  else
+                    PaperButton(
+                      label: 'Save',
+                      variant: PaperButtonVariant.primary,
+                      torn: true,
+                      onPressed: canSave ? _save : null,
                     ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : Text(
-                            'Save',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                  ),
                   const Spacer(),
                   if (_hasExistingKey)
-                    TextButton(
+                    PaperButton(
+                      label: 'Remove key',
+                      variant: PaperButtonVariant.danger,
+                      compact: true,
                       onPressed: busy ? null : _remove,
-                      child: Text(
-                        'Remove key',
-                        style: ScrapTextStyles.caption.copyWith(
-                          color: Colors.redAccent,
-                        ),
-                      ),
                     ),
-                  TextButton(
+                  PaperButton(
+                    label: widget.allowSkip ? 'Not now' : 'Cancel',
+                    variant: PaperButtonVariant.ghost,
+                    compact: true,
                     onPressed: busy
                         ? null
                         : () => Navigator.of(context).pop(false),
-                    child: Text(
-                      widget.allowSkip ? 'Not now' : 'Cancel',
-                      style: ScrapTextStyles.caption.copyWith(
-                        color: ScrapTheme.secondaryText,
-                      ),
-                    ),
                   ),
                 ],
               ),
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -387,20 +324,11 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                         ),
                       ),
                     ),
-                    TextButton(
+                    PaperButton(
+                      label: _linkCopiedHint ?? 'Copy link',
+                      variant: PaperButtonVariant.ghost,
+                      compact: true,
                       onPressed: _copyLink,
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: Text(
-                        _linkCopiedHint ?? 'Copy link',
-                        style: ScrapTextStyles.label.copyWith(
-                          color: ScrapTheme.accent,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -454,7 +382,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: ScrapTheme.accent.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(2),
           ),
           child: Text(
             number,
@@ -473,10 +401,10 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
 
   Widget _buildResultStrip(ApiKeyTestResult result) {
     final ok = result.success;
-    final color = ok ? ScrapTheme.accent : Colors.redAccent;
+    final color = ok ? ScrapTheme.accent : ScrapTheme.inkRed;
     final bg = ok
         ? ScrapTheme.accent.withValues(alpha: 0.08)
-        : Colors.redAccent.withValues(alpha: 0.08);
+        : ScrapTheme.inkRed.withValues(alpha: 0.08);
 
     final detail = ok && result.modelReply != null && result.modelReply!.isNotEmpty
         ? '${result.message} Model said: “${result.modelReply}”'

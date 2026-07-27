@@ -9,8 +9,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
-import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../../ai_engine/data/smelt_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
@@ -197,63 +199,30 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
     final hasKey = apiKey != null && apiKey.isNotEmpty;
     final visible = chat.visibleMessages;
 
-    const tearSeed = 17;
-    const tearAmp = 5.5;
-
     return Material(
       color: Colors.transparent,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Soft shadow that follows the deckle (outside the clip).
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: TornEdgeShadowPainter(
-                  seed: tearSeed,
-                  amplitude: tearAmp,
-                  edge: TornEdge.left,
+          TornSheet(
+            seed: 17,
+            edges: const {TornEdge.left},
+            amplitude: 5.5,
+            grain: true,
+            grainOpacity: 0.018,
+            child: Column(
+              children: [
+                _buildHeader(modelLabel),
+                const Divider(height: 1, color: ScrapTheme.dividers),
+                Expanded(
+                  child: !hasKey
+                      ? _buildNoKeyState()
+                      : visible.isEmpty && !chat.isStreaming
+                          ? _buildEmptyState()
+                          : _buildMessageList(chat, visible),
                 ),
-              ),
-            ),
-          ),
-          // Paper sheet clipped to an organic left tear.
-          ClipPath(
-            clipper: const TornEdgeClipper(
-              edge: TornEdge.left,
-              seed: tearSeed,
-              amplitude: tearAmp,
-            ),
-            child: Container(
-              decoration: const BoxDecoration(
-                color: ScrapTheme.cardSurface,
-              ),
-              child: Column(
-                children: [
-                  _buildHeader(modelLabel),
-                  const Divider(height: 1, color: ScrapTheme.dividers),
-                  Expanded(
-                    child: !hasKey
-                        ? _buildNoKeyState()
-                        : visible.isEmpty && !chat.isStreaming
-                            ? _buildEmptyState()
-                            : _buildMessageList(chat, visible),
-                  ),
-                  if (hasKey) _buildComposer(chat.isStreaming),
-                ],
-              ),
-            ),
-          ),
-          // Hairline along the tear (above the sheet).
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: TornEdgeStrokePainter(
-                  seed: tearSeed,
-                  amplitude: tearAmp,
-                  edge: TornEdge.left,
-                ),
-              ),
+                if (hasKey) _buildComposer(chat.isStreaming),
+              ],
             ),
           ),
           // Drag handle for resize — sits on the torn edge.
@@ -284,23 +253,10 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
       child: Column(
         children: [
-          Transform.rotate(
-            angle: -1.2 * math.pi / 180,
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: ScrapTheme.tape,
-                borderRadius: BorderRadius.circular(2),
-                border: Border.all(
-                  color: ScrapTheme.kraft.withValues(alpha: 0.6),
-                  width: 0.5,
-                ),
-              ),
-              child: const Center(
-                child: ScrapStampLabel(text: '⟨ Ask ⟩', tiltDegrees: 0),
-              ),
-            ),
+          const TapeStrip(
+            label: '⟨ Ask ⟩',
+            tiltDegrees: -1.2,
+            margin: EdgeInsets.only(bottom: 10),
           ),
           Row(
             children: [
@@ -311,7 +267,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: ScrapTheme.accentSurface,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(3),
                     border: Border.all(color: ScrapTheme.dividers),
                   ),
                   child: Row(
@@ -333,9 +289,9 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                 ),
               ),
               const Spacer(),
-              IconButton(
+              PaperIconButton(
+                icon: Icons.history,
                 tooltip: 'History',
-                icon: const Icon(Icons.history, size: 20),
                 color: ScrapTheme.secondaryText,
                 onPressed: () {
                   showChatHistorySheet(
@@ -348,9 +304,10 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                   );
                 },
               ),
-              IconButton(
+              PaperIconButton(
+                icon: Icons.add,
                 tooltip: 'New chat',
-                icon: const Icon(Icons.add, size: 22),
+                iconSize: 22,
                 color: ScrapTheme.secondaryText,
                 onPressed: () {
                   final noteId = ref.read(activeNoteIdProvider);
@@ -368,9 +325,9 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                       );
                 },
               ),
-              IconButton(
+              PaperIconButton(
+                icon: Icons.close,
                 tooltip: 'Close',
-                icon: const Icon(Icons.close, size: 20),
                 color: ScrapTheme.mutedText,
                 onPressed: _close,
               ),

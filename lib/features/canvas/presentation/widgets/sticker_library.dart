@@ -159,17 +159,21 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                     decoration: BoxDecoration(
-                      color: isActive ? ScrapTheme.accent : ScrapTheme.background,
-                      borderRadius: BorderRadius.circular(100),
+                      color: isActive ? ScrapTheme.tape : ScrapTheme.kraft,
+                      borderRadius: BorderRadius.circular(3),
                       border: Border.all(
-                        color: isActive ? ScrapTheme.accent : ScrapTheme.dividers,
+                        color: isActive
+                            ? ScrapTheme.accent.withValues(alpha: 0.45)
+                            : ScrapTheme.dividers,
                       ),
                     ),
                     child: Text(
                       _stickerLibrary[i].category,
                       style: ScrapTextStyles.caption.copyWith(
                         fontSize: 11,
-                        color: isActive ? Colors.white : ScrapTheme.secondaryText,
+                        color: isActive
+                            ? ScrapTheme.accent
+                            : ScrapTheme.secondaryText,
                         fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),

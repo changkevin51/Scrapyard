@@ -5,6 +5,9 @@ import 'package:open_filex/open_filex.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/paper_controls.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_tilt.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
@@ -84,16 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (key == null || key.isEmpty) {
       final saved = await showApiKeyDialog(context, allowSkip: true);
       if (saved == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'API key saved',
-              style: ScrapTextStyles.body.copyWith(color: Colors.white),
-            ),
-            backgroundColor: ScrapTheme.accent,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        showPaperToast(context, 'API key saved');
       }
     }
   }
@@ -101,16 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _openApiKeyDialog() async {
     final saved = await showApiKeyDialog(context, allowSkip: true);
     if (saved == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'API key saved',
-            style: ScrapTextStyles.body.copyWith(color: Colors.white),
-          ),
-          backgroundColor: ScrapTheme.accent,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showPaperToast(context, 'API key saved');
     }
   }
 
@@ -406,9 +391,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: nodesAsync.when(
                             loading: () => const Center(
                               key: ValueKey('loading'),
-                              child: CircularProgressIndicator(
-                                color: ScrapTheme.accent,
-                              ),
+                              child: PaperDots(),
                             ),
                             error: (err, stack) => Center(
                               key: const ValueKey('error'),
@@ -790,7 +773,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               value: 'delete',
               child: Text(
                 'Crush',
-                style: TextStyle(color: Colors.redAccent),
+                style: TextStyle(color: ScrapTheme.inkRed),
               ),
             ),
           ],
@@ -1093,25 +1076,19 @@ class _ApiKeyBanner extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
+          PaperButton(
+            label: 'Set up',
+            variant: PaperButtonVariant.primary,
+            compact: true,
             onPressed: onSetup,
-            child: Text(
-              'Set up',
-              style: ScrapTextStyles.body.copyWith(
-                color: ScrapTheme.accent,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
           ),
-          IconButton(
+          PaperIconButton(
+            icon: Icons.close,
             tooltip: 'Dismiss',
+            color: ScrapTheme.mutedText,
+            iconSize: 18,
+            size: 32,
             onPressed: onDismiss,
-            icon: const Icon(
-              Icons.close,
-              size: 18,
-              color: ScrapTheme.mutedText,
-            ),
           ),
         ],
       ),

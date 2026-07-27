@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
@@ -38,7 +40,11 @@ class SettingsScreen extends ConsumerWidget {
         ),
         backgroundColor: ScrapTheme.background,
         elevation: 0,
+        scrolledUnderElevation: 0,
         iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
+        shape: const Border(
+          bottom: BorderSide(color: ScrapTheme.dividers, width: 1),
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
@@ -62,17 +68,11 @@ class SettingsScreen extends ConsumerWidget {
               if (saved == true && context.mounted) {
                 final nowHasKey =
                     (ref.read(apiKeyProvider).valueOrNull ?? '').isNotEmpty;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      nowHasKey
-                          ? (hasKey ? 'API key updated' : 'API key saved')
-                          : 'API key removed',
-                      style: ScrapTextStyles.body.copyWith(color: Colors.white),
-                    ),
-                    backgroundColor: ScrapTheme.accent,
-                    behavior: SnackBarBehavior.floating,
-                  ),
+                showPaperToast(
+                  context,
+                  nowHasKey
+                      ? (hasKey ? 'API key updated' : 'API key saved')
+                      : 'API key removed',
                 );
               }
             },
@@ -119,7 +119,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             title: Text(
               'Delete all chat history',
-              style: ScrapTextStyles.body.copyWith(color: Colors.redAccent),
+              style: ScrapTextStyles.body.copyWith(color: ScrapTheme.inkRed),
             ),
             subtitle: Text(
               'Crush every saved conversation',
@@ -142,17 +142,17 @@ class SettingsScreen extends ConsumerWidget {
                           style: ScrapTextStyles.body,
                         ),
                         actions: [
-                          TextButton(
+                          PaperButton(
+                            label: 'Cancel',
+                            variant: PaperButtonVariant.ghost,
+                            compact: true,
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: Text('Cancel',
-                                style: ScrapTextStyles.body
-                                    .copyWith(color: ScrapTheme.mutedText)),
                           ),
-                          TextButton(
+                          PaperButton(
+                            label: 'Crush all',
+                            variant: PaperButtonVariant.danger,
+                            compact: true,
                             onPressed: () => Navigator.pop(ctx, true),
-                            child: Text('Crush all',
-                                style: ScrapTextStyles.body
-                                    .copyWith(color: Colors.redAccent)),
                           ),
                         ],
                       ),
@@ -163,17 +163,7 @@ class SettingsScreen extends ConsumerWidget {
                           .deleteAll();
                       ref.read(activeChatProvider.notifier).clear();
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Chat history deleted',
-                              style: ScrapTextStyles.body
-                                  .copyWith(color: Colors.white),
-                            ),
-                            backgroundColor: ScrapTheme.accent,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                        showPaperToast(context, 'Chat history deleted');
                       }
                     }
                   },

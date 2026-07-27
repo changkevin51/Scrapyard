@@ -1,9 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/scrap_motion.dart';
 import '../theme/scrapyard_theme.dart';
+import 'paper_surfaces.dart';
+import 'torn_edge_clipper.dart';
 
-/// Scrap-styled dialog with a short scale + slide entrance.
+/// Scrap-styled dialog with a short scale + slide + settle-rotation entrance.
 Future<T?> showScrapDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -32,6 +36,9 @@ Future<T?> showScrapDialog<T>({
         barrierColor ?? Colors.black.withValues(alpha: 0.45),
         curved.value,
       )!;
+      final settle = Tween<double>(begin: 1.5 * math.pi / 180, end: 0).animate(
+        curved,
+      );
       return Stack(
         children: [
           Positioned.fill(
@@ -48,7 +55,14 @@ Future<T?> showScrapDialog<T>({
               ).animate(curved),
               child: ScaleTransition(
                 scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-                child: child,
+                child: AnimatedBuilder(
+                  animation: settle,
+                  builder: (context, child) => Transform.rotate(
+                    angle: settle.value,
+                    child: child,
+                  ),
+                  child: child,
+                ),
               ),
             ),
           ),
@@ -58,7 +72,7 @@ Future<T?> showScrapDialog<T>({
   );
 }
 
-/// Scrap-styled modal bottom sheet with a snappier transition.
+/// Scrap-styled modal bottom sheet with a torn top edge.
 ///
 /// Uses [sheetAnimationStyle] instead of a custom
 /// [AnimationController] so barrier-tap and drag-to-dismiss keep working.
@@ -71,6 +85,7 @@ Future<T?> showScrapSheet<T>({
   bool enableDrag = true,
   Color? backgroundColor,
   ShapeBorder? shape,
+  bool tornTop = true,
 }) {
   return showModalBottomSheet<T>(
     context: context,
@@ -78,17 +93,41 @@ Future<T?> showScrapSheet<T>({
     useSafeArea: useSafeArea,
     isDismissible: isDismissible,
     enableDrag: enableDrag,
-    backgroundColor: backgroundColor ?? ScrapTheme.cardSurface,
-    shape: shape ??
-        const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-    sheetAnimationStyle: AnimationStyle(
+    backgroundColor: tornTop
+        ? Colors.transparent
+        : (backgroundColor ?? ScrapTheme.cardSurface),
+    shape: tornTop
+        ? null
+        : (shape ??
+            const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
+            )),
+    sheetAnimationStyle: const AnimationStyle(
       duration: ScrapMotion.overlay,
       reverseDuration: ScrapMotion.overlay,
       curve: ScrapMotion.overlayCurve,
       reverseCurve: ScrapMotion.exitCurve,
     ),
-    builder: builder,
+    builder: (ctx) {
+      final content = builder(ctx);
+      if (!tornTop) return content;
+      final sheetColor = backgroundColor ?? ScrapTheme.cardSurface;
+      return Material(
+        color: Colors.transparent,
+        child: TornSheet(
+          seed: 61,
+          edges: const {TornEdge.top},
+          amplitude: 5.0,
+          color: sheetColor,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const PaperGrabber(),
+              content,
+            ],
+          ),
+        ),
+      );
+    },
   );
 }

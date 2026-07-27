@@ -105,6 +105,9 @@ class ChatModelNotifier extends StateNotifier<String> {
     final saved = prefs.getString(_prefsKey);
     if (saved != null && GeminiChatModel.byId(saved) != null) {
       state = saved;
+    } else if (saved != null) {
+      state = GeminiChatModel.defaultModel.id;
+      await prefs.setString(_prefsKey, state);
     }
   }
 
@@ -400,6 +403,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
           final text = r?.text ?? buffer.toString();
           final suggestions = r?.suggestions ?? const <String>[];
           final usedModel = r?.modelUsed ?? modelId;
+          String? fallbackNote;
+          if (r?.didFallback == true) {
+            fallbackNote = GeminiChatModel.fallbackMessage(
+              requestedModelId: r!.requestedModel!,
+              usedModelId: r.modelUsed,
+              reason: r.fallbackReason!,
+            );
+          }
 
           final assistantMsg = ChatMessage(
             id: assistantId,
@@ -408,6 +419,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
             content: text,
             suggestions: suggestions,
             modelUsed: usedModel,
+            modelFallbackNote: fallbackNote,
             createdAt: DateTime.now(),
           );
           await _repo.insertMessage(assistantMsg);

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../providers/pdf_providers.dart';
 
 class AnnotationToolbar extends ConsumerStatefulWidget {
@@ -37,73 +40,88 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
             _position += details.delta;
           });
         },
-        child: AnimatedContainer(
+        child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: ScrapTheme.cardSurface,
-            borderRadius: BorderRadius.circular(_isExpanded ? 20 : 25),
-            border: Border.all(color: ScrapTheme.dividers, width: 1.0),
-            boxShadow: ScrapTheme.subtleShadow,
-          ),
-          child: _isExpanded ? _buildExpandedToolbar() : _buildIdleDot(),
+          child: _isExpanded
+              ? TornSheet(
+                  key: const ValueKey('expanded'),
+                  seed: 29,
+                  edges: const {TornEdge.right},
+                  amplitude: 3.5,
+                  child: _buildExpandedToolbar(),
+                )
+              : _buildIdleTab(key: const ValueKey('idle')),
         ),
       ),
     );
   }
 
-  Widget _buildIdleDot() {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _isExpanded = true),
-        borderRadius: BorderRadius.circular(25),
-        child: Container(
-          width: 48,
-          height: 48,
+  Widget _buildIdleTab({Key? key}) {
+    return ScrapPressable(
+      key: key,
+      onTap: () => setState(() => _isExpanded = true),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: ScrapTheme.kraft,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: ScrapTheme.dividers, width: 0.75),
+          boxShadow: ScrapTheme.deskShadow,
+        ),
+        child: Stack(
           alignment: Alignment.center,
-          child: Container(
-            width: 12,
-            height: 12,
-            decoration: const BoxDecoration(
-              color: ScrapTheme.accent,
-              shape: BoxShape.circle,
+          children: [
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: ScrapTheme.accent,
+                  borderRadius: BorderRadius.circular(1),
+                  border: Border.all(
+                    color: ScrapTheme.kraft.withValues(alpha: 0.6),
+                    width: 0.5,
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildExpandedToolbar() {
-    return Material(
-      color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Column(
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildToolIcon(Icons.pan_tool_outlined, AnnotationTool.pan),
-                _buildToolIcon(Icons.highlight_outlined, AnnotationTool.highlight),
-                _buildToolIcon(Icons.edit_outlined, AnnotationTool.ink),
-                _buildToolIcon(Icons.chat_bubble_outline, AnnotationTool.comment),
-                _buildToolIcon(Icons.crop_square_outlined, AnnotationTool.shape),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20, color: ScrapTheme.mutedText),
-                  onPressed: () => setState(() => _isExpanded = false),
-                  splashRadius: 20,
-                )
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: _palette.map((color) => _buildColorCircle(color)).toList(),
-            ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildToolIcon(Icons.pan_tool_outlined, AnnotationTool.pan),
+              _buildToolIcon(Icons.highlight_outlined, AnnotationTool.highlight),
+              _buildToolIcon(Icons.edit_outlined, AnnotationTool.ink),
+              _buildToolIcon(Icons.chat_bubble_outline, AnnotationTool.comment),
+              _buildToolIcon(Icons.crop_square_outlined, AnnotationTool.shape),
+              const SizedBox(width: 8),
+              PaperIconButton(
+                icon: Icons.close,
+                color: ScrapTheme.mutedText,
+                iconSize: 20,
+                onPressed: () => setState(() => _isExpanded = false),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: _palette.map((color) => _buildColorCircle(color)).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -112,9 +130,8 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
     final activeTool = ref.watch(activeToolProvider);
     final isActive = activeTool == tool;
 
-    return InkWell(
+    return ScrapPressable(
       onTap: () => ref.read(activeToolProvider.notifier).state = tool,
-      borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: Column(
@@ -135,7 +152,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
                 ),
               ),
             ] else ...[
-              const SizedBox(height: 8), // Placeholder for dot
+              const SizedBox(height: 8),
             ]
           ],
         ),
@@ -156,7 +173,9 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: ScrapTheme.primaryText, width: 2.0) : Border.all(color: Colors.transparent),
+          border: isSelected
+              ? Border.all(color: ScrapTheme.primaryText, width: 2.0)
+              : Border.all(color: Colors.transparent),
         ),
       ),
     );

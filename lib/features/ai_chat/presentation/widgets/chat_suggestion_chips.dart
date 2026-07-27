@@ -30,9 +30,9 @@ class ChatSuggestionChips extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
-            color: ScrapTheme.accentSurface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: ScrapTheme.dividers),
+            color: ScrapTheme.tape,
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: ScrapTheme.kraft.withValues(alpha: 0.85)),
           ),
           child: Text(
             s,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_engine/presentation/widgets/latex_markdown_view.dart';
 import '../../domain/models/chat_message.dart';
@@ -88,6 +89,17 @@ class ChatMessageBubble extends StatelessWidget {
                     ),
                   if (!isUser && !isStreaming && !message.isError) ...[
                     const SizedBox(height: 6),
+                    if (message.modelFallbackNote != null) ...[
+                      Text(
+                        message.modelFallbackNote!,
+                        style: ScrapTextStyles.caption.copyWith(
+                          fontSize: 10,
+                          color: ScrapTheme.secondaryText,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -103,18 +115,7 @@ class ChatMessageBubble extends StatelessWidget {
                         GestureDetector(
                           onTap: () {
                             Clipboard.setData(ClipboardData(text: content));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Copied',
-                                  style: ScrapTextStyles.caption
-                                      .copyWith(color: Colors.white),
-                                ),
-                                backgroundColor: ScrapTheme.accent,
-                                behavior: SnackBarBehavior.floating,
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
+                            showPaperToast(context, 'Copied');
                           },
                           child: const Icon(
                             Icons.copy_outlined,

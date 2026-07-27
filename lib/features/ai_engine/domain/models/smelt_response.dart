@@ -1,3 +1,16 @@
+/// One code-execution turn from Gemini (source + optional stdout).
+class SmeltCodeRun {
+  final String language;
+  final String code;
+  final String output;
+
+  const SmeltCodeRun({
+    required this.language,
+    required this.code,
+    this.output = '',
+  });
+}
+
 /// Response model for the Smelt AI feature
 class SmeltResponse {
   /// The direct answer (for math questions, this is the final answer)
@@ -13,18 +26,32 @@ class SmeltResponse {
   /// The model that was used to generate this response
   final String modelUsed;
 
+  /// Set when a tiered fallback picked a different model than requested.
+  final String? modelFallbackNote;
+
   /// Short follow-up questions (2–3) for continuing in chat
   final List<String> suggestions;
+
+  /// Code execution runs captured from Gemini tool parts.
+  final List<SmeltCodeRun> codeRuns;
 
   const SmeltResponse({
     required this.answer,
     required this.steps,
     required this.isMath,
     required this.modelUsed,
+    this.modelFallbackNote,
     this.suggestions = const [],
+    this.codeRuns = const [],
   });
 
-  factory SmeltResponse.fromJson(Map<String, dynamic> json, String modelUsed) {
+  bool get usedCodeExecution => codeRuns.isNotEmpty;
+
+  factory SmeltResponse.fromJson(
+    Map<String, dynamic> json,
+    String modelUsed, {
+    List<SmeltCodeRun> codeRuns = const [],
+  }) {
     List<String> suggestions = const [];
     final raw = json['suggestions'];
     if (raw is List) {
@@ -40,6 +67,7 @@ class SmeltResponse {
       isMath: json['isMath'] as bool? ?? false,
       modelUsed: modelUsed,
       suggestions: suggestions,
+      codeRuns: codeRuns,
     );
   }
 }

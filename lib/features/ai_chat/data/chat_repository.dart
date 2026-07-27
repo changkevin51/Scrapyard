@@ -26,7 +26,7 @@ class ChatRepository {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_conversationsTable (
@@ -47,6 +47,7 @@ class ChatRepository {
             content TEXT NOT NULL,
             suggestions TEXT,
             model_used TEXT,
+            model_fallback_note TEXT,
             created_at TEXT NOT NULL,
             is_error INTEGER NOT NULL DEFAULT 0,
             hidden INTEGER NOT NULL DEFAULT 0,
@@ -61,6 +62,11 @@ class ChatRepository {
         if (oldVersion < 2) {
           await db.execute(
             'ALTER TABLE $_messagesTable ADD COLUMN image TEXT',
+          );
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE $_messagesTable ADD COLUMN model_fallback_note TEXT',
           );
         }
       },

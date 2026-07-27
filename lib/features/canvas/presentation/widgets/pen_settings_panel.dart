@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/paper_controls.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../data/pen_engine.dart';
@@ -202,11 +203,9 @@ class _ToggleRow extends StatelessWidget {
             ],
           ),
         ),
-        Switch(
+        PaperSwitch(
           value: value,
           onChanged: onChanged,
-          activeTrackColor: ScrapTheme.accent,
-          thumbColor: const WidgetStatePropertyAll(Colors.white),
         ),
       ],
     );
@@ -362,14 +361,11 @@ class _PenStyleSelector extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
                 color: isSelected ? ScrapTheme.accent : ScrapTheme.cardSurface,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
                 border: Border.all(
                   color: isSelected ? ScrapTheme.accent : ScrapTheme.dividers,
-                  width: 1.5,
+                  width: 1,
                 ),
-                boxShadow: isSelected
-                    ? [BoxShadow(color: ScrapTheme.accent.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
-                    : [],
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

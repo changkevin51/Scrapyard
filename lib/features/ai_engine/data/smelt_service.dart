@@ -22,8 +22,20 @@ typedef SmeltProgressCallback = void Function({
 class SmeltStreamResult {
   final SmeltResponse response;
   final String modelUsed;
+  final String? requestedModel;
+  final String? fallbackReason;
 
-  const SmeltStreamResult({required this.response, required this.modelUsed});
+  const SmeltStreamResult({
+    required this.response,
+    required this.modelUsed,
+    this.requestedModel,
+    this.fallbackReason,
+  });
+
+  bool get didFallback =>
+      requestedModel != null &&
+      fallbackReason != null &&
+      requestedModel != modelUsed;
 }
 
 /// Service for the Smelt AI feature using Gemini API with fallback chain
@@ -37,9 +49,6 @@ class SmeltService {
   static const String missingApiKeyMessage =
       'No Gemini API key set. Open Settings > Gemini API Key to add your free key.';
 
-  // Gemini models in priority order (fallback chain) — shared catalog
-  static List<String> get _models => GeminiChatModel.ids;
-
   /// Cheapest / default model — used for API key testing.
   static String get cheapestModel => GeminiChatModel.defaultModel.id;
 
@@ -51,9 +60,16 @@ class SmeltService {
     return result.response;
   }
 
-  /// Analyze with streaming support for faster perceived response time
+  /// Analyze with streaming support for faster perceived response time.
+  ///
+  /// Code execution is always enabled on the Gemini request. When
+  /// [forceCodeExecution] is true, the prompt also instructs the model to
+  /// verify its answer by running code.
   Future<SmeltStreamResult> analyzeSelectionStream(
     Uint8List? imageBytes, {
+    String? preferredModel,
+    bool singleModel = false,
+    bool forceCodeExecution = false,
     SmeltProgressCallback? onProgress,
   }) async {
     final storedKey = await _storage.read(key: apiKeyStorageKey);
@@ -68,37 +84,70 @@ class SmeltService {
       base64Image = base64Encode(compressedImage);
     }
 
-    // Try each model in order until one succeeds
-    final models = _models;
-    for (final model in models) {
+    final requested = preferredModel ?? GeminiChatModel.defaultModel.id;
+    final models = singleModel
+        ? [requested]
+        : GeminiChatModel.fallbackChain(requested);
+
+    Object? lastError;
+    String? lastRetryReason;
+    for (var i = 0; i < models.length; i++) {
+      final model = models[i];
       try {
-        final response = await _callGemini(apiKey, model, base64Image, onProgress);
-        return response;
+        final response = await _callGemini(
+          apiKey,
+          model,
+          base64Image,
+          onProgress,
+          forceCodeExecution: forceCodeExecution,
+        );
+        return SmeltStreamResult(
+          response: response.response,
+          modelUsed: model,
+          requestedModel: i > 0 ? requested : null,
+          fallbackReason: i > 0 ? lastRetryReason : null,
+        );
       } catch (e) {
-        if (e.toString().contains('429') || 
-            e.toString().contains('RESOURCE_EXHAUSTED') ||
-            e.toString().contains('rate') ||
-            e.toString().contains('quota')) {
-          continue;
+        lastError = e;
+        if (singleModel || i == models.length - 1) {
+          throw Exception('Gemini model failed: $e');
         }
-        if (model == models.last) {
-          throw Exception('All Gemini models failed: $e');
+        if (!GeminiChatModel.isRetryableError(e)) {
+          rethrow;
         }
+        lastRetryReason = GeminiChatModel.describeFallbackReason(e);
       }
     }
 
-    throw Exception('All Gemini models are unavailable');
+    throw Exception('All Gemini models are unavailable: $lastError');
   }
 
   Future<SmeltStreamResult> _callGemini(
-    String apiKey, 
-    String model, 
+    String apiKey,
+    String model,
     String? base64Image,
-    SmeltProgressCallback? onProgress,
-  ) async {
+    SmeltProgressCallback? onProgress, {
+    bool forceCodeExecution = false,
+  }) async {
     final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
 
-    const systemPrompt = '''
+    final forceCodeBlock = forceCodeExecution
+        ? '''
+
+6. CODE EXECUTION (REQUIRED):
+   - You MUST use the code_execution tool to verify your answer before responding.
+   - Write and run Python code that checks or computes the result.
+   - Base the final "answer" on the code execution output.
+   - Do not skip code execution even if the problem looks simple.
+'''
+        : '''
+
+6. CODE EXECUTION (OPTIONAL):
+   - You have access to a code_execution tool (Python sandbox).
+   - Use it when it would help verify calculations or reduce arithmetic mistakes.
+''';
+
+    final systemPrompt = '''
 You are Scrapyard's AI smelt engine. Analyze the handwritten content in the image.
 
 IMPORTANT RULES:
@@ -137,8 +186,8 @@ IMPORTANT RULES:
 
 5. Always include 2–3 short follow-up questions a student would ask next in "suggestions".
    Each question max 6 words. Examples: "Explain in more detail", "Why the chain rule?", "Show another example".
-
-You MUST respond with ONLY a JSON object in this exact format:
+$forceCodeBlock
+After any tool use, you MUST respond with ONLY a JSON object in this exact format (no markdown fences):
 {
   "answer": "The direct answer here",
   "steps": "Step-by-step in markdown with LaTeX (or empty string if not needed)",
@@ -150,7 +199,7 @@ You MUST respond with ONLY a JSON object in this exact format:
     final parts = <Map<String, dynamic>>[
       {'text': systemPrompt},
     ];
-    
+
     if (base64Image != null) {
       parts.add({
         'inline_data': {
@@ -158,7 +207,10 @@ You MUST respond with ONLY a JSON object in this exact format:
           'data': base64Image,
         },
       });
-      parts.add({'text': 'Analyze this handwritten content and provide the answer.'});
+      final userHint = forceCodeExecution
+          ? 'Analyze this handwritten content. You MUST use code execution to verify the answer, then provide the JSON response.'
+          : 'Analyze this handwritten content and provide the answer.';
+      parts.add({'text': userHint});
     } else {
       parts.add({'text': 'No image available. Please respond that the image could not be captured.'});
     }
@@ -169,10 +221,14 @@ You MUST respond with ONLY a JSON object in this exact format:
           'parts': parts,
         },
       ],
+      // Always enable code execution; the model may use it whenever helpful.
+      // JSON mime type is omitted because it is incompatible with tools.
+      'tools': [
+        {'code_execution': <String, dynamic>{}},
+      ],
       'generationConfig': {
         'temperature': 0.3,
-        'maxOutputTokens': 1024,
-        'responseMimeType': 'application/json',
+        'maxOutputTokens': 2048,
       },
     };
 
@@ -181,7 +237,7 @@ You MUST respond with ONLY a JSON object in this exact format:
       ..headers['Content-Type'] = 'application/json'
       ..body = jsonEncode(requestBody);
 
-    final stream = request.send().timeout(const Duration(seconds: 30));
+    final stream = request.send().timeout(const Duration(seconds: 60));
     final response = await stream;
 
     if (response.statusCode == 200) {
@@ -199,7 +255,11 @@ You MUST respond with ONLY a JSON object in this exact format:
         throw Exception('No response from Gemini');
       }
 
-      final content = candidates[0]['content']['parts'][0]['text'] as String;
+      final content = _extractTextFromCandidate(candidates[0]);
+      if (content.isEmpty) {
+        throw Exception('No text response from Gemini');
+      }
+      final codeRuns = _extractCodeRunsFromCandidate(candidates[0]);
 
       // #region agent log
       dlog('H1_H4_raw_content', 'raw content from gemini before any parsing',
@@ -226,7 +286,11 @@ You MUST respond with ONLY a JSON object in this exact format:
           isComplete: true,
         );
 
-        final responseModel = SmeltResponse.fromJson(jsonResponse, model);
+        final responseModel = SmeltResponse.fromJson(
+          jsonResponse,
+          model,
+          codeRuns: codeRuns,
+        );
         return SmeltStreamResult(
           response: responseModel,
           modelUsed: model,
@@ -259,7 +323,11 @@ You MUST respond with ONLY a JSON object in this exact format:
             isComplete: true,
           );
 
-          final responseModel = SmeltResponse.fromJson(jsonResponse, model);
+          final responseModel = SmeltResponse.fromJson(
+            jsonResponse,
+            model,
+            codeRuns: codeRuns,
+          );
           return SmeltStreamResult(
             response: responseModel,
             modelUsed: model,
@@ -278,9 +346,103 @@ You MUST respond with ONLY a JSON object in this exact format:
     }
   }
 
+  /// Pull all text parts from a candidate (code-execution responses have
+  /// executableCode / codeExecutionResult parts mixed in).
+  static String _extractTextFromCandidate(dynamic candidate) {
+    if (candidate is! Map) return '';
+    final content = candidate['content'];
+    if (content is! Map) return '';
+    final parts = content['parts'];
+    if (parts is! List) return '';
+
+    final buffer = StringBuffer();
+    for (final part in parts) {
+      if (part is Map && part['text'] is String) {
+        buffer.write(part['text'] as String);
+      }
+    }
+    return buffer.toString().trim();
+  }
+
+  /// Collect executable code + results from a candidate.
+  static List<SmeltCodeRun> _extractCodeRunsFromCandidate(dynamic candidate) {
+    if (candidate is! Map) return const [];
+    final content = candidate['content'];
+    if (content is! Map) return const [];
+    final parts = content['parts'];
+    if (parts is! List) return const [];
+
+    final runs = <SmeltCodeRun>[];
+    String? pendingLang;
+    String? pendingCode;
+
+    void flush({String output = ''}) {
+      final code = pendingCode?.trimRight() ?? '';
+      if (code.isEmpty && output.isEmpty) return;
+      runs.add(SmeltCodeRun(
+        language: pendingLang ?? 'python',
+        code: code,
+        output: output,
+      ));
+      pendingLang = null;
+      pendingCode = null;
+    }
+
+    for (final part in parts) {
+      if (part is! Map) continue;
+
+      final exec = part['executableCode'] ?? part['executable_code'];
+      if (exec is Map) {
+        // Start of a new run — flush any orphaned previous code first.
+        if (pendingCode != null) flush();
+        pendingLang = (exec['language'] as String? ?? 'PYTHON').toLowerCase();
+        pendingCode = exec['code'] as String? ?? '';
+      }
+
+      final result =
+          part['codeExecutionResult'] ?? part['code_execution_result'];
+      if (result is Map) {
+        final output = (result['output'] as String? ?? '').trimRight();
+        final outcome = result['outcome'] as String?;
+        final displayOutput = output.isNotEmpty
+            ? output
+            : (outcome != null &&
+                    outcome.isNotEmpty &&
+                    outcome != 'OUTCOME_OK'
+                ? 'Outcome: $outcome'
+                : '');
+        flush(output: displayOutput);
+      }
+    }
+
+    // Code without a following result part.
+    if (pendingCode != null) flush();
+
+    return runs;
+  }
+
+  /// Strip optional markdown fences and isolate the outermost JSON object.
+  static String _normalizeJsonContent(String content) {
+    var text = content.trim();
+    if (text.startsWith('```')) {
+      final firstNl = text.indexOf('\n');
+      if (firstNl >= 0) text = text.substring(firstNl + 1);
+      if (text.endsWith('```')) {
+        text = text.substring(0, text.length - 3);
+      }
+      text = text.trim();
+    }
+    final start = text.indexOf('{');
+    final end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return text.substring(start, end + 1);
+    }
+    return text;
+  }
+
   /// Worker function for JSON parsing in isolate
   static Map<String, dynamic> _parseJsonWorker(String content) {
-    return jsonDecode(content) as Map<String, dynamic>;
+    return jsonDecode(_normalizeJsonContent(content)) as Map<String, dynamic>;
   }
 
   static List<String>? _parseSuggestions(dynamic raw) {
@@ -295,7 +457,7 @@ You MUST respond with ONLY a JSON object in this exact format:
 
   /// Worker function for fixing and parsing JSON in isolate
   static Map<String, dynamic> _fixAndParseJsonWorker(String content) {
-    final fixed = _fixJsonEscapeSequences(content);
+    final fixed = _fixJsonEscapeSequences(_normalizeJsonContent(content));
 
     // #region agent log
     dlog(

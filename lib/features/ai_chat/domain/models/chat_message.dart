@@ -11,6 +11,7 @@ class ChatMessage {
   final String content;
   final List<String> suggestions;
   final String? modelUsed;
+  final String? modelFallbackNote;
   final DateTime createdAt;
   final bool isError;
   /// When true, the message is sent to the model but not shown in the UI
@@ -26,6 +27,7 @@ class ChatMessage {
     required this.content,
     this.suggestions = const [],
     this.modelUsed,
+    this.modelFallbackNote,
     required this.createdAt,
     this.isError = false,
     this.hidden = false,
@@ -40,6 +42,7 @@ class ChatMessage {
       'content': content,
       'suggestions': jsonEncode(suggestions),
       'model_used': modelUsed,
+      'model_fallback_note': modelFallbackNote,
       'created_at': createdAt.toIso8601String(),
       'is_error': isError ? 1 : 0,
       'hidden': hidden ? 1 : 0,
@@ -77,6 +80,7 @@ class ChatMessage {
       content: map['content'] as String? ?? '',
       suggestions: suggestions,
       modelUsed: map['model_used'] as String?,
+      modelFallbackNote: map['model_fallback_note'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       isError: (map['is_error'] as int? ?? 0) == 1,
       hidden: (map['hidden'] as int? ?? 0) == 1,
@@ -88,6 +92,7 @@ class ChatMessage {
     String? content,
     List<String>? suggestions,
     String? modelUsed,
+    String? modelFallbackNote,
     bool? isError,
     bool? hidden,
     Uint8List? image,
@@ -100,6 +105,7 @@ class ChatMessage {
       content: content ?? this.content,
       suggestions: suggestions ?? this.suggestions,
       modelUsed: modelUsed ?? this.modelUsed,
+      modelFallbackNote: modelFallbackNote ?? this.modelFallbackNote,
       createdAt: createdAt,
       isError: isError ?? this.isError,
       hidden: hidden ?? this.hidden,

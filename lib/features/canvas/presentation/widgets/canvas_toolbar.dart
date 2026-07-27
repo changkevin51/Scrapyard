@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/paper_controls.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../providers/canvas_providers.dart';
@@ -689,12 +690,10 @@ class _CanvasSettingsSheet extends ConsumerWidget {
                     style: ScrapTextStyles.caption
                         .copyWith(color: ScrapTheme.mutedText)),
               ]),
-              Switch(
+              PaperSwitch(
                 value: palmReject,
                 onChanged: (v) =>
                     ref.read(stylusOnlyModeProvider.notifier).state = v,
-                activeTrackColor: ScrapTheme.accent,
-                thumbColor: const WidgetStatePropertyAll(Colors.white),
               ),
             ],
           ),

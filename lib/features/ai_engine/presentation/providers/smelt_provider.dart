@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../../data/api_key_service.dart';
+import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../_debug_log_helper.dart';
 
 final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
@@ -73,18 +74,23 @@ class SmeltState {
   final SmeltResponse? response;
   final String? error;
   final bool showSteps;
+  final bool showCodeOutput;
   /// Last canvas capture used for smelt (for chat handoff).
   final Uint8List? lastImageBytes;
   /// Session-cache key for the active popup (note + stroke set).
   final String? cacheKey;
+  /// Whether this request prompted the model to verify via code execution.
+  final bool forceCodeExecution;
 
   const SmeltState({
     this.isLoading = false,
     this.response,
     this.error,
     this.showSteps = false,
+    this.showCodeOutput = false,
     this.lastImageBytes,
     this.cacheKey,
+    this.forceCodeExecution = false,
   });
 
   SmeltState copyWith({
@@ -94,17 +100,21 @@ class SmeltState {
     bool clearResponse = false,
     bool clearError = false,
     bool? showSteps,
+    bool? showCodeOutput,
     Uint8List? lastImageBytes,
     String? cacheKey,
     bool clearCacheKey = false,
+    bool? forceCodeExecution,
   }) {
     return SmeltState(
       isLoading: isLoading ?? this.isLoading,
       response: clearResponse ? null : (response ?? this.response),
       error: clearError ? null : (error ?? this.error),
       showSteps: showSteps ?? this.showSteps,
+      showCodeOutput: showCodeOutput ?? this.showCodeOutput,
       lastImageBytes: lastImageBytes ?? this.lastImageBytes,
       cacheKey: clearCacheKey ? null : (cacheKey ?? this.cacheKey),
+      forceCodeExecution: forceCodeExecution ?? this.forceCodeExecution,
     );
   }
 }
@@ -141,11 +151,12 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
     return true;
   }
 
-  void startLoading({String? cacheKey}) {
+  void startLoading({String? cacheKey, bool forceCodeExecution = false}) {
     state = SmeltState(
       isLoading: true,
       cacheKey: cacheKey ?? state.cacheKey,
       lastImageBytes: state.lastImageBytes,
+      forceCodeExecution: forceCodeExecution,
     );
   }
 
@@ -186,17 +197,28 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   Future<void> smelt({
     Uint8List? imageBytes,
     String? cacheKey,
+    String? preferredModel,
+    bool singleModel = false,
+    bool forceCodeExecution = false,
   }) async {
     final key = cacheKey ?? state.cacheKey;
     try {
+      if (singleModel && key != null) {
+        _sessionCache.remove(key);
+      }
+
       state = SmeltState(
         isLoading: true,
         lastImageBytes: imageBytes,
         cacheKey: key,
+        forceCodeExecution: forceCodeExecution,
       );
 
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
+        preferredModel: preferredModel,
+        singleModel: singleModel,
+        forceCodeExecution: forceCodeExecution,
         onProgress: ({
           partialAnswer = '',
           partialSteps = '',
@@ -220,12 +242,22 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         },
       );
 
+      final fallbackNote = result.didFallback
+          ? GeminiChatModel.fallbackMessage(
+              requestedModelId: result.requestedModel!,
+              usedModelId: result.modelUsed,
+              reason: result.fallbackReason!,
+            )
+          : null;
+
       final response = SmeltResponse(
         answer: result.response.answer,
         steps: _cleanSteps(result.response.steps),
         isMath: result.response.isMath,
-        modelUsed: result.response.modelUsed,
+        modelUsed: result.modelUsed,
+        modelFallbackNote: fallbackNote,
         suggestions: result.response.suggestions,
+        codeRuns: result.response.codeRuns,
       );
 
       if (key != null) {
@@ -240,6 +272,7 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         lastImageBytes: imageBytes,
         response: response,
         cacheKey: key,
+        forceCodeExecution: forceCodeExecution,
       );
     } catch (e) {
       state = SmeltState(
@@ -247,20 +280,33 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         error: e.toString(),
         lastImageBytes: imageBytes,
         cacheKey: key,
+        forceCodeExecution: forceCodeExecution,
       );
     }
   }
 
   /// Re-run Smelt with the last captured image (updates session cache).
-  Future<void> retry({Uint8List? imageBytes}) async {
+  Future<void> retry({
+    Uint8List? imageBytes,
+    String? preferredModel,
+    bool singleModel = false,
+    bool forceCodeExecution = false,
+  }) async {
     await smelt(
       imageBytes: imageBytes ?? state.lastImageBytes,
       cacheKey: state.cacheKey,
+      preferredModel: preferredModel,
+      singleModel: singleModel,
+      forceCodeExecution: forceCodeExecution,
     );
   }
 
   void toggleSteps() {
     state = state.copyWith(showSteps: !state.showSteps);
+  }
+
+  void toggleCodeOutput() {
+    state = state.copyWith(showCodeOutput: !state.showCodeOutput);
   }
 
   /// Clears the open popup UI state. Session cache is kept.

@@ -14,12 +14,21 @@ class ChatStreamResult {
   final String text;
   final List<String> suggestions;
   final String modelUsed;
+  final String? requestedModel;
+  final String? fallbackReason;
 
   const ChatStreamResult({
     required this.text,
     required this.suggestions,
     required this.modelUsed,
+    this.requestedModel,
+    this.fallbackReason,
   });
+
+  bool get didFallback =>
+      requestedModel != null &&
+      fallbackReason != null &&
+      requestedModel != modelUsed;
 }
 
 /// Multi-turn Gemini chat with SSE streaming and suggestion sentinel parsing.
@@ -71,43 +80,44 @@ Rules for that line:
   }) async* {
     final apiKey = await _requireApiKey();
 
-    final models = _fallbackOrder(preferredModel);
+    final models = GeminiChatModel.fallbackChain(preferredModel);
     Object? lastError;
+    String? lastRetryReason;
 
-    for (final model in models) {
+    for (var i = 0; i < models.length; i++) {
+      final model = models[i];
       try {
+        ChatStreamResult? completed;
         yield* _streamOnce(
           apiKey: apiKey,
           model: model,
           history: history,
           imageBytes: imageBytes,
-          onComplete: onComplete,
+          onComplete: (result) => completed = result,
         );
+        if (completed != null) {
+          final result = i > 0 && lastRetryReason != null
+              ? ChatStreamResult(
+                  text: completed!.text,
+                  suggestions: completed!.suggestions,
+                  modelUsed: completed!.modelUsed,
+                  requestedModel: preferredModel,
+                  fallbackReason: lastRetryReason,
+                )
+              : completed!;
+          onComplete?.call(result);
+        }
         return;
       } catch (e) {
         lastError = e;
-        final msg = e.toString().toLowerCase();
-        final retryable = msg.contains('429') ||
-            msg.contains('resource_exhausted') ||
-            msg.contains('rate') ||
-            msg.contains('quota') ||
-            msg.contains('unavailable') ||
-            msg.contains('not found') ||
-            msg.contains('404');
-        if (!retryable) rethrow;
-        // try next model
+        if (!GeminiChatModel.isRetryableError(e) || i == models.length - 1) {
+          rethrow;
+        }
+        lastRetryReason = GeminiChatModel.describeFallbackReason(e);
       }
     }
 
     throw Exception('All Gemini models failed: $lastError');
-  }
-
-  List<String> _fallbackOrder(String preferred) {
-    final ids = GeminiChatModel.ids;
-    if (!ids.contains(preferred)) {
-      return ids;
-    }
-    return [preferred, ...ids.where((id) => id != preferred)];
   }
 
   Stream<String> _streamOnce({

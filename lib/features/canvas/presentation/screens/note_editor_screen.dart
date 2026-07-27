@@ -14,6 +14,7 @@ import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
+import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/smelt_detection_provider.dart';
@@ -639,7 +640,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _refreshSelectionBounds(showMenu: true);
   }
 
-  void _smeltSelection({bool forceRefresh = false}) async {
+  void _smeltSelection({
+    bool forceRefresh = false,
+    bool forceCodeExecution = false,
+  }) async {
     if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
     _hideSelectionMenu();
 
@@ -647,15 +651,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final cacheKey = _smeltCacheKeyFor(_selectedStrokeIds);
     final notifier = ref.read(smeltProvider.notifier);
 
-    // Reuse a session-cached response unless the user asked to retry.
-    if (!forceRefresh && notifier.hasCached(cacheKey)) {
+    // Reuse a session-cached response unless the user asked to retry / verify.
+    if (!forceRefresh && !forceCodeExecution && notifier.hasCached(cacheKey)) {
       notifier.restoreCached(cacheKey);
       _showSmeltPopup(rect);
       return;
     }
 
     setState(() => _isSmelting = true);
-    notifier.startLoading(cacheKey: cacheKey);
+    notifier.startLoading(
+      cacheKey: cacheKey,
+      forceCodeExecution: forceCodeExecution,
+    );
 
     // Show the popup immediately so loading / retry happens in-place.
     if (_smeltPopupEntry == null) {
@@ -671,22 +678,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     // Send to AI (stores into session cache on success)
-    await notifier.smelt(imageBytes: imageBytes, cacheKey: cacheKey);
+    await notifier.smelt(
+      imageBytes: imageBytes,
+      cacheKey: cacheKey,
+      forceCodeExecution: forceCodeExecution,
+    );
 
     if (mounted) {
       setState(() => _isSmelting = false);
       // Don't reopen if the user dismissed mid-request — cache still saves.
       _smeltPopupEntry?.markNeedsBuild();
     }
-  }
-
-  void _retrySmelt() {
-    if (_selectionRect != null && _selectedStrokeIds.isNotEmpty) {
-      _smeltSelection(forceRefresh: true);
-      return;
-    }
-    // Selection cleared — reuse the last captured image if we still have it.
-    ref.read(smeltProvider.notifier).retry();
   }
 
   /// Capture the current selection and stage it as a chat attachment.
@@ -851,7 +853,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             key: _smeltPopupKey,
             selectionRect: globalRect,
             onDismiss: _removeSmeltPopup,
-            onRetry: _retrySmelt,
+            onCollapse: _collapseSmeltPopup,
+            onTryAnotherModel: _tryAnotherModelFromSmelt,
             screenSize: MediaQuery.of(context).size,
           ),
         ],
@@ -869,6 +872,63 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       return;
     }
     _removeSmeltPopup();
+  }
+
+  void _collapseSmeltPopup() {
+    _smeltPopupEntry?.remove();
+    _smeltPopupEntry = null;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _tryAnotherModelFromSmelt() async {
+    final rect = _selectionRect;
+    if (rect == null) return;
+
+    final smelt = ref.read(smeltProvider);
+    final currentModel =
+        smelt.response?.modelUsed ?? ref.read(chatModelProvider);
+
+    final popupState = _smeltPopupKey.currentState;
+    if (popupState != null) {
+      await popupState.collapse();
+    } else {
+      _collapseSmeltPopup();
+    }
+
+    if (!mounted) return;
+
+    final selected = await showModelPickerSheet(
+      context,
+      oneTime: true,
+      selectedModelId: currentModel,
+      showCodeOption: true,
+    );
+
+    if (!mounted) return;
+
+    if (selected == null) {
+      _showSmeltPopup(rect);
+      return;
+    }
+
+    final sameModel = selected.modelId == currentModel;
+    if (sameModel && !selected.forceCodeExecution) {
+      _showSmeltPopup(rect);
+      return;
+    }
+
+    ref.read(smeltProvider.notifier).startLoading(
+          forceCodeExecution: selected.forceCodeExecution,
+        );
+    _showSmeltPopup(rect);
+    await ref.read(smeltProvider.notifier).retry(
+          preferredModel: selected.modelId,
+          singleModel: true,
+          forceCodeExecution: selected.forceCodeExecution,
+        );
+    if (mounted) {
+      _smeltPopupEntry?.markNeedsBuild();
+    }
   }
 
   void _removeSmeltPopup() {
@@ -1270,7 +1330,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 _SmeltActionMenu(
                   rect: _selectionRect!,
                   showManualSelect: _selectionFromDetection,
-                  onSmelt: _smeltSelection,
+                  onSmelt: () => _smeltSelection(),
+                  onSmeltWithCode: () =>
+                      _smeltSelection(forceCodeExecution: true),
                   onAddToChat: _attachSelectionToChat,
                   onManualSelect: _beginManualSelect,
                 )
@@ -1982,6 +2044,7 @@ class _SmeltActionMenu extends StatelessWidget {
   final Rect rect;
   final bool showManualSelect;
   final VoidCallback onSmelt;
+  final VoidCallback onSmeltWithCode;
   final VoidCallback onAddToChat;
   final VoidCallback onManualSelect;
 
@@ -1989,6 +2052,7 @@ class _SmeltActionMenu extends StatelessWidget {
     required this.rect,
     required this.showManualSelect,
     required this.onSmelt,
+    required this.onSmeltWithCode,
     required this.onAddToChat,
     required this.onManualSelect,
   });
@@ -2006,6 +2070,8 @@ class _SmeltActionMenu extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _SmeltPillButton(onTap: onSmelt),
+            const SizedBox(width: 8),
+            _SmeltCodePillButton(onTap: onSmeltWithCode),
             const SizedBox(width: 8),
             _AddToChatButton(onTap: onAddToChat),
             if (showManualSelect) ...[
@@ -2161,6 +2227,64 @@ class _SmeltPillButton extends StatelessWidget {
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SmeltCodePillButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _SmeltCodePillButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return _MenuPressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: ScrapTheme.accentSurface,
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+          border: Border.all(
+            color: ScrapTheme.accent.withValues(alpha: 0.55),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.terminal, size: 14, color: ScrapTheme.accent),
+            const SizedBox(width: 6),
+            Text(
+              'Smelt + code',
+              style: ScrapTextStyles.body.copyWith(
+                color: ScrapTheme.accent,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0.1,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: ScrapTheme.cardSurface,
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(
+                  color: ScrapTheme.accent.withValues(alpha: 0.7),
+                ),
+              ),
+              child: Text(
+                'NEW',
+                style: ScrapTextStyles.stamp.copyWith(
+                  color: ScrapTheme.accent,
+                  fontSize: 7,
+                  letterSpacing: 0.8,
+                ),
               ),
             ),
           ],

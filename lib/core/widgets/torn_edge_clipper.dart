@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../theme/scrapyard_theme.dart';
+import 'paper_grain.dart';
 
 enum TornEdge { top, bottom, left, right }
 
@@ -439,3 +440,276 @@ class TornEdgeStrokePainter extends CustomPainter {
       oldDelegate.edge != edge ||
       oldDelegate.color != color;
 }
+
+int _edgeSalt(TornEdge edge) => switch (edge) {
+      TornEdge.top => 0,
+      TornEdge.right => 11,
+      TornEdge.bottom => 23,
+      TornEdge.left => 37,
+    };
+
+/// Closed path with optional deckle on each side of [size].
+///
+/// Edges not in [edges] stay straight. Each edge gets a distinct seed salt
+/// so adjacent tears don't look identical.
+Path buildMultiTornEdgePath({
+  required Size size,
+  required int seed,
+  required Set<TornEdge> edges,
+  double amplitude = 4.0,
+}) {
+  if (edges.isEmpty) {
+    return Path()..addRect(Offset.zero & size);
+  }
+  if (edges.length == 1) {
+    return buildTornEdgePath(
+      size: size,
+      seed: seed,
+      edge: edges.first,
+      amplitude: amplitude,
+    );
+  }
+
+  List<Offset> edgePts(TornEdge edge) {
+    final length = switch (edge) {
+      TornEdge.top || TornEdge.bottom => size.width,
+      TornEdge.left || TornEdge.right => size.height,
+    };
+    final samples = _deckleSamples(
+      length: length,
+      seed: seed + _edgeSalt(edge),
+      amplitude: amplitude,
+    );
+    final base = amplitude;
+    return switch (edge) {
+      TornEdge.top => _decklePoints(
+          samples: samples,
+          toPoint: (along, perp) => Offset(
+            along.clamp(0, size.width),
+            (base - perp).clamp(0, size.height),
+          ),
+        ),
+      TornEdge.right => _decklePoints(
+          samples: samples,
+          toPoint: (along, perp) => Offset(
+            (size.width - base - perp).clamp(0, size.width),
+            along.clamp(0, size.height),
+          ),
+        ),
+      TornEdge.bottom => _decklePoints(
+          samples: samples,
+          // Walk right→left so the path continues clockwise.
+          toPoint: (along, perp) => Offset(
+            (size.width - along).clamp(0, size.width),
+            (size.height - base + perp).clamp(0, size.height),
+          ),
+        ),
+      TornEdge.left => _decklePoints(
+          samples: samples,
+          // Walk bottom→top so the path continues clockwise.
+          toPoint: (along, perp) => Offset(
+            (base + perp).clamp(0, size.width),
+            (size.height - along).clamp(0, size.height),
+          ),
+        ),
+    };
+  }
+
+  Offset corner(TornEdge a, TornEdge b) {
+    final x = (a == TornEdge.left || b == TornEdge.left) ? 0.0 : size.width;
+    final y = (a == TornEdge.top || b == TornEdge.top) ? 0.0 : size.height;
+    // Nudge corners in slightly when adjacent edges are torn.
+    final inset = amplitude;
+    final nx = edges.contains(TornEdge.left) && x == 0
+        ? inset
+        : (edges.contains(TornEdge.right) && x == size.width
+            ? size.width - inset
+            : x);
+    final ny = edges.contains(TornEdge.top) && y == 0
+        ? inset
+        : (edges.contains(TornEdge.bottom) && y == size.height
+            ? size.height - inset
+            : y);
+    return Offset(nx, ny);
+  }
+
+  final path = Path();
+  // Walk clockwise: top → right → bottom → left.
+  final topStart = corner(TornEdge.top, TornEdge.left);
+  path.moveTo(topStart.dx, topStart.dy);
+
+  void appendSide(TornEdge edge, Offset endCorner) {
+    if (edges.contains(edge)) {
+      final pts = edgePts(edge);
+      if (pts.isNotEmpty) {
+        _appendSmooth(path, pts);
+      }
+    } else {
+      path.lineTo(endCorner.dx, endCorner.dy);
+    }
+  }
+
+  appendSide(TornEdge.top, corner(TornEdge.top, TornEdge.right));
+  appendSide(TornEdge.right, corner(TornEdge.right, TornEdge.bottom));
+  appendSide(TornEdge.bottom, corner(TornEdge.bottom, TornEdge.left));
+  appendSide(TornEdge.left, corner(TornEdge.left, TornEdge.top));
+  path.close();
+  return path;
+}
+
+/// Clips to a multi-edge deckle. Prefer single-edge [TornEdgeClipper] when
+/// only one side is torn.
+class MultiTornEdgeClipper extends CustomClipper<Path> {
+  final Set<TornEdge> edges;
+  final int seed;
+  final double amplitude;
+
+  const MultiTornEdgeClipper({
+    required this.edges,
+    required this.seed,
+    this.amplitude = 4.0,
+  });
+
+  @override
+  Path getClip(Size size) => buildMultiTornEdgePath(
+        size: size,
+        seed: seed,
+        edges: edges,
+        amplitude: amplitude,
+      );
+
+  @override
+  bool shouldReclip(covariant MultiTornEdgeClipper oldClipper) =>
+      oldClipper.seed != seed ||
+      oldClipper.amplitude != amplitude ||
+      !_sameEdges(oldClipper.edges, edges);
+}
+
+bool _sameEdges(Set<TornEdge> a, Set<TornEdge> b) =>
+    a.length == b.length && a.containsAll(b);
+
+/// Composite paper sheet: soft contact shadow → clipped body (+ optional
+/// grain) → hairline ink along each torn edge.
+///
+/// Prefer [paintNotches] when the sheet sits on a known solid background —
+/// that path uses [TornEdgePainter] (one drawPath, no ClipPath GPU layer).
+class TornSheet extends StatelessWidget {
+  final Widget child;
+  final int seed;
+  final Set<TornEdge> edges;
+  final double amplitude;
+  final Color color;
+  final bool grain;
+  final double grainOpacity;
+
+  /// When set, skip ClipPath and paint background-coloured notches instead.
+  /// Only valid for a single edge. Prefer this on cards over busy canvases.
+  final Color? paintNotches;
+
+  const TornSheet({
+    super.key,
+    required this.child,
+    required this.seed,
+    this.edges = const {TornEdge.bottom},
+    this.amplitude = 4.5,
+    this.color = ScrapTheme.cardSurface,
+    this.grain = false,
+    this.grainOpacity = 0.02,
+    this.paintNotches,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final edgeList = edges.toList(growable: false);
+    final useNotches = paintNotches != null && edgeList.length == 1;
+
+    if (useNotches) {
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ColoredBox(color: color, child: _body()),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: TornEdgePainter(
+                  seed: seed,
+                  amplitude: amplitude,
+                  fillColor: paintNotches!,
+                  edge: edgeList.first,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final clipper = edgeList.length == 1
+        ? TornEdgeClipper(
+            edge: edgeList.first,
+            seed: seed,
+            amplitude: amplitude,
+          )
+        : MultiTornEdgeClipper(
+            edges: edges,
+            seed: seed,
+            amplitude: amplitude,
+          );
+
+    int painterSeed(TornEdge edge) =>
+        edgeList.length == 1 ? seed : seed + _edgeSalt(edge);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final edge in edgeList)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: TornEdgeShadowPainter(
+                  seed: painterSeed(edge),
+                  amplitude: amplitude,
+                  edge: edge,
+                ),
+              ),
+            ),
+          ),
+        ClipPath(
+          clipper: clipper,
+          child: ColoredBox(
+            color: color,
+            child: _body(),
+          ),
+        ),
+        for (final edge in edgeList)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: TornEdgeStrokePainter(
+                  seed: painterSeed(edge),
+                  amplitude: amplitude,
+                  edge: edge,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _body() {
+    if (!grain) return child;
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: PaperGrain(opacity: grainOpacity, seed: seed),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+

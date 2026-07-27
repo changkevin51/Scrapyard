@@ -2,8 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
-import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/paper_button.dart';
+import '../../../../core/widgets/paper_controls.dart';
+import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
+import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/chat_suggestion_chips.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
@@ -17,15 +20,17 @@ import 'latex_markdown_view.dart';
 class SmeltPopup extends ConsumerStatefulWidget {
   final Rect selectionRect;
   final VoidCallback onDismiss;
-  final VoidCallback? onRetry;
+  final VoidCallback onCollapse;
+  final VoidCallback onTryAnotherModel;
   final Size screenSize;
 
   const SmeltPopup({
     super.key,
     required this.selectionRect,
     required this.onDismiss,
+    required this.onCollapse,
+    required this.onTryAnotherModel,
     required this.screenSize,
-    this.onRetry,
   });
 
   @override
@@ -65,6 +70,14 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     _closing = true;
     await _animController.reverse();
     if (mounted) widget.onDismiss();
+  }
+
+  /// Hide the popup without clearing smelt state (e.g. while picking a model).
+  Future<void> collapse() async {
+    if (_closing) return;
+    _closing = true;
+    await _animController.reverse();
+    if (mounted) widget.onCollapse();
   }
 
   @override
@@ -139,50 +152,21 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildCard(SmeltState state) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: _popupWidth(),
-          constraints: const BoxConstraints(maxHeight: 400),
-          decoration: BoxDecoration(
-            color: ScrapTheme.cardSurface,
-            borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-            border: Border.all(color: ScrapTheme.dividers, width: 1.0),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D000000), // ~5% black
-                offset: Offset(0, 4),
-                blurRadius: 12,
-              ),
-            ],
-          ),
+    return SizedBox(
+      width: _popupWidth(),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 400),
+        child: TornSheet(
+          seed: 42,
+          edges: const {TornEdge.bottom, TornEdge.right},
+          amplitude: 3.5,
+          grain: true,
+          grainOpacity: 0.018,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Tape strip header
-              Transform.rotate(
-                angle: -1.5 * math.pi / 180,
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: ScrapTheme.tape,
-                    borderRadius: BorderRadius.circular(2),
-                    border: Border.all(
-                      color: ScrapTheme.kraft.withValues(alpha: 0.6),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: const Center(
-                    child: ScrapStampLabel(
-                      text: '⟨ Smelt ⟩',
-                      tiltDegrees: 0,
-                    ),
-                  ),
-                ),
-              ),
+              const TapeStrip(label: '⟨ Smelt ⟩', tiltDegrees: -1.5),
               Flexible(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -192,29 +176,13 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             ],
           ),
         ),
-        // Torn bottom deckle — page colour notches so the slip looks torn
-        const Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: 10,
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: TornEdgePainter(
-                seed: 42,
-                amplitude: 3.5,
-                fillColor: Color(0xFFF5F4F0), // ScrapTheme.background
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildContent(SmeltState state) {
     if (state.isLoading) {
-      return _buildLoadingState();
+      return _SmeltLoadingRow(forceCodeExecution: state.forceCodeExecution);
     }
     if (state.error != null) {
       return _buildErrorState(state.error!);
@@ -222,25 +190,10 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     if (state.response == null) {
       return const SizedBox();
     }
-    return _buildResponseContent(state.response!, state.showSteps);
-  }
-
-  Widget _buildLoadingState() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          const _ThinkingDots(),
-          const SizedBox(width: 12),
-          Text(
-            'Smelting...',
-            style: ScrapTextStyles.body.copyWith(
-              color: ScrapTheme.mutedText,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
+    return _buildResponseContent(
+      state.response!,
+      showSteps: state.showSteps,
+      showCodeOutput: state.showCodeOutput,
     );
   }
 
@@ -258,12 +211,12 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
       children: [
         Row(
           children: [
-            Icon(Icons.error_outline, size: 18, color: Colors.redAccent.shade400),
+            const Icon(Icons.error_outline, size: 18, color: ScrapTheme.inkRed),
             const SizedBox(width: 8),
             Text(
               isMissingKey ? 'API key needed' : 'Error',
               style: ScrapTextStyles.body.copyWith(
-                color: Colors.redAccent.shade400,
+                color: ScrapTheme.inkRed,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -278,36 +231,31 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
         ),
         if (isMissingKey) ...[
           const SizedBox(height: 12),
-          TextButton(
+          PaperButton(
+            label: 'Add key',
+            variant: PaperButtonVariant.primary,
+            torn: true,
             onPressed: () async {
               final saved = await showApiKeyDialog(context, allowSkip: false);
               if (saved == true && mounted) {
-                widget.onRetry?.call();
+                ref.read(smeltProvider.notifier).startLoading();
+                await ref.read(smeltProvider.notifier).retry();
               }
             },
-            style: TextButton.styleFrom(
-              padding: EdgeInsets.zero,
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              'Add key',
-              style: ScrapTextStyles.body.copyWith(
-                color: ScrapTheme.accent,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
           ),
-        ] else if (widget.onRetry != null) ...[
+        ] else ...[
           const SizedBox(height: 12),
-          _buildRetryButton(),
+          _buildTryAnotherModelButton(),
         ],
       ],
     );
   }
 
-  Widget _buildResponseContent(SmeltResponse response, bool showSteps) {
+  Widget _buildResponseContent(
+    SmeltResponse response, {
+    required bool showSteps,
+    required bool showCodeOutput,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -316,7 +264,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: ScrapTheme.accentSurface,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
             ),
             child: _buildMathAnswer(response.answer),
           ),
@@ -328,33 +276,11 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
         ],
         if (response.steps.isNotEmpty) ...[
           const SizedBox(height: 12),
-          GestureDetector(
+          _buildExpandToggle(
+            expanded: showSteps,
+            expandedLabel: 'Hide steps',
+            collapsedLabel: 'Show steps',
             onTap: () => ref.read(smeltProvider.notifier).toggleSteps(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: ScrapTheme.dividers),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    showSteps ? Icons.expand_less : Icons.expand_more,
-                    size: 16,
-                    color: ScrapTheme.mutedText,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    showSteps ? 'Hide steps' : 'Show steps',
-                    style: ScrapTextStyles.caption.copyWith(
-                      color: ScrapTheme.mutedText,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
           if (showSteps) ...[
             const SizedBox(height: 12),
@@ -363,53 +289,113 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: ScrapTheme.codeSurface,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
               ),
               child: _buildMathSteps(response.steps),
+            ),
+          ],
+        ],
+        if (response.usedCodeExecution) ...[
+          const SizedBox(height: 12),
+          _buildExpandToggle(
+            expanded: showCodeOutput,
+            expandedLabel: 'Hide code',
+            collapsedLabel: 'Show code',
+            onTap: () => ref.read(smeltProvider.notifier).toggleCodeOutput(),
+          ),
+          if (showCodeOutput) ...[
+            const SizedBox(height: 12),
+            ...response.codeRuns.map(
+              (run) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _SmeltCodeRunView(run: run),
+              ),
             ),
           ],
         ],
         const SizedBox(height: 12),
         _buildChatHandoff(response),
         const SizedBox(height: 8),
-        _buildFooter(response.modelUsed),
+        _buildFooter(response),
       ],
     );
   }
 
-  Widget _buildRetryButton() {
+  Widget _buildExpandToggle({
+    required bool expanded,
+    required String expandedLabel,
+    required String collapsedLabel,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
-      onTap: widget.onRetry,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.refresh, size: 14, color: ScrapTheme.mutedText),
-          const SizedBox(width: 4),
-          Text(
-            'Retry',
-            style: ScrapTextStyles.caption.copyWith(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+          border: Border.all(color: ScrapTheme.dividers),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              expanded ? Icons.expand_less : Icons.expand_more,
+              size: 16,
               color: ScrapTheme.mutedText,
-              fontWeight: FontWeight.w500,
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Text(
+              expanded ? expandedLabel : collapsedLabel,
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFooter(String modelUsed) {
-    return Row(
+  Widget _buildTryAnotherModelButton() {
+    return PaperButton(
+      label: 'Try another model',
+      icon: Icons.swap_horiz,
+      variant: PaperButtonVariant.ghost,
+      compact: true,
+      onPressed: widget.onTryAnotherModel,
+    );
+  }
+
+  Widget _buildFooter(SmeltResponse response) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.onRetry != null) _buildRetryButton(),
-        const Spacer(),
-        Text(
-          'Powered by ${_formatModelName(modelUsed)}',
-          style: ScrapTextStyles.stamp.copyWith(
-            color: ScrapTheme.mutedText,
-            fontSize: 9,
-            letterSpacing: 0.8,
-            fontWeight: FontWeight.w400,
+        if (response.modelFallbackNote != null) ...[
+          Text(
+            response.modelFallbackNote!,
+            style: ScrapTextStyles.caption.copyWith(
+              color: ScrapTheme.secondaryText,
+              fontSize: 10,
+              fontStyle: FontStyle.italic,
+            ),
           ),
+          const SizedBox(height: 6),
+        ],
+        Row(
+          children: [
+            _buildTryAnotherModelButton(),
+            const Spacer(),
+            Text(
+              'Powered by Gemini ${GeminiChatModel.displayLabel(response.modelUsed)}',
+              style: ScrapTextStyles.stamp.copyWith(
+                color: ScrapTheme.mutedText,
+                fontSize: 9,
+                letterSpacing: 0.8,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -479,18 +465,6 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     );
   }
 
-  /// Format model name for display (e.g., "gemini-2.0-flash-exp" -> "Gemini 2.0 Flash")
-  String _formatModelName(String model) {
-    if (model.contains('gemini')) {
-      return model.split('-').map((part) {
-        if (RegExp(r'^\d').hasMatch(part)) return part; // Keep version numbers as-is
-        if (part.isEmpty) return '';
-        return part[0].toUpperCase() + part.substring(1);
-      }).where((part) => part.isNotEmpty).join(' ');
-    }
-    return model;
-  }
-
   /// Build math answer — uses the same delimiter-aware renderer as steps,
   /// because answers often look like `\(x=1\) or \(x=2\)` (not a single Math.tex blob).
   Widget _buildMathAnswer(String answer) {
@@ -511,60 +485,178 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 }
 
-/// Animated thinking dots for loading state
-class _ThinkingDots extends StatefulWidget {
-  const _ThinkingDots();
+/// Loading row that swaps "Smelting..." → "Verifying with code..." after 1s
+/// when forced code execution is requested.
+class _SmeltLoadingRow extends StatefulWidget {
+  final bool forceCodeExecution;
+
+  const _SmeltLoadingRow({required this.forceCodeExecution});
 
   @override
-  State<_ThinkingDots> createState() => _ThinkingDotsState();
+  State<_SmeltLoadingRow> createState() => _SmeltLoadingRowState();
 }
 
-class _ThinkingDotsState extends State<_ThinkingDots>
-    with TickerProviderStateMixin {
-  late AnimationController _controller;
+class _SmeltLoadingRowState extends State<_SmeltLoadingRow> {
+  bool _showCodeMessage = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
+    _maybeSchedule();
   }
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void didUpdateWidget(covariant _SmeltLoadingRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.forceCodeExecution != widget.forceCodeExecution) {
+      _showCodeMessage = false;
+      _maybeSchedule();
+    }
+  }
+
+  void _maybeSchedule() {
+    if (!widget.forceCodeExecution) return;
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted || !widget.forceCodeExecution) return;
+      setState(() => _showCodeMessage = true);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    const ember = Color(0xFF8A6A55);
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (index) {
-            final delay = index * 0.2;
-            final progress = (_controller.value - delay).clamp(0.0, 1.0);
-            final opacity =
-                progress < 0.5 ? progress * 2 : 2 - progress * 2;
-            // Stagger accent → ember for a furnace glow
-            final color = Color.lerp(ScrapTheme.accent, ember, index / 2)!;
-            return Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.3 + opacity * 0.7),
-                shape: BoxShape.circle,
+    final message = widget.forceCodeExecution && _showCodeMessage
+        ? 'Verifying with code...'
+        : 'Smelting...';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const PaperDots(),
+          const SizedBox(width: 12),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(
+              message,
+              key: ValueKey(message),
+              style: ScrapTextStyles.body.copyWith(
+                color: ScrapTheme.mutedText,
+                fontStyle: FontStyle.italic,
               ),
-            );
-          }),
-        );
-      },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Styled code + output panel for a single Gemini code-execution run.
+class _SmeltCodeRunView extends StatelessWidget {
+  final SmeltCodeRun run;
+
+  const _SmeltCodeRunView({required this.run});
+
+  static TextStyle get _mono => ScrapTextStyles.stamp.copyWith(
+        fontSize: 12,
+        height: 1.45,
+        letterSpacing: 0,
+        fontWeight: FontWeight.w400,
+        color: ScrapTheme.primaryText,
+        decoration: TextDecoration.none,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = run.language.trim().isEmpty
+        ? 'python'
+        : run.language.trim().toLowerCase();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (run.code.trim().isNotEmpty)
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: const Color(0xFF2F2C29),
+              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              border: Border.all(color: ScrapTheme.kraft.withValues(alpha: 0.5)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.06),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(ScrapTheme.borderRadiusDefault - 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.terminal, size: 13, color: Color(0xFFC9B8A4)),
+                      const SizedBox(width: 6),
+                      Text(
+                        lang.toUpperCase(),
+                        style: ScrapTextStyles.stamp.copyWith(
+                          color: const Color(0xFFC9B8A4),
+                          fontSize: 10,
+                          letterSpacing: 1.0,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: SelectableText(
+                    run.code.trimRight(),
+                    style: _mono.copyWith(color: const Color(0xFFEDE6DC)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (run.output.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: ScrapTheme.accentSurface,
+              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              border: Border.all(color: ScrapTheme.dividers),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Text(
+                    'Output',
+                    style: ScrapTextStyles.stamp.copyWith(
+                      color: ScrapTheme.accent,
+                      fontSize: 10,
+                      letterSpacing: 1.0,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+                  child: SelectableText(
+                    run.output.trimRight(),
+                    style: _mono.copyWith(color: ScrapTheme.bodyText),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

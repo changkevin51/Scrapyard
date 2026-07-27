@@ -1937,16 +1937,19 @@ class _PaperChit extends StatelessWidget {
         child: child,
       ),
       child: Transform.rotate(
-        angle: -0.6 * math.pi / 180,
+        angle: -0.8 * math.pi / 180,
         child: Material(
           color: Colors.transparent,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
             decoration: BoxDecoration(
               color: ScrapTheme.cardSurface,
-              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-              border: Border.all(color: ScrapTheme.dividers),
-              boxShadow: ScrapTheme.subtleShadow,
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(
+                color: ScrapTheme.kraft.withValues(alpha: 0.75),
+                width: 0.85,
+              ),
+              boxShadow: ScrapTheme.deskShadow,
             ),
             child: child,
           ),
@@ -2117,14 +2120,93 @@ class _MenuPressableState extends State<_MenuPressable> {
       onTapDown: (_) => setState(() => _pressed = true),
       onTapUp: (_) {
         setState(() => _pressed = false);
+        ScrapFeedback.tap();
         widget.onTap();
       },
       onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.93 : 1.0,
+      child: AnimatedContainer(
         duration: ScrapMotion.press,
-        curve: ScrapMotion.pressCurve,
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(
+          _pressed ? 1.5 : 0.0,
+          _pressed ? 1.5 : 0.0,
+          0,
+        ),
+        transformAlignment: Alignment.center,
         child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Compact stamp-style chip for floating selection menus.
+enum _PaperMenuChipTone { primary, secondary, ghost, danger }
+
+class _PaperMenuChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final IconData? icon;
+  final _PaperMenuChipTone tone;
+
+  const _PaperMenuChip({
+    required this.label,
+    required this.onTap,
+    this.icon,
+    this.tone = _PaperMenuChipTone.secondary,
+  });
+
+  Color get _fill => switch (tone) {
+        _PaperMenuChipTone.primary => ScrapTheme.accentSurface,
+        _PaperMenuChipTone.secondary => ScrapTheme.codeSurface,
+        _PaperMenuChipTone.ghost => Colors.transparent,
+        _PaperMenuChipTone.danger => ScrapTheme.inkRed.withValues(alpha: 0.08),
+      };
+
+  Color get _border => switch (tone) {
+        _PaperMenuChipTone.primary => ScrapTheme.accent.withValues(alpha: 0.45),
+        _PaperMenuChipTone.secondary => ScrapTheme.dividers,
+        _PaperMenuChipTone.ghost => ScrapTheme.dividers,
+        _PaperMenuChipTone.danger => ScrapTheme.inkRed.withValues(alpha: 0.4),
+      };
+
+  Color get _ink => switch (tone) {
+        _PaperMenuChipTone.primary => ScrapTheme.accent,
+        _PaperMenuChipTone.secondary => ScrapTheme.primaryText,
+        _PaperMenuChipTone.ghost => ScrapTheme.secondaryText,
+        _PaperMenuChipTone.danger => ScrapTheme.inkRed,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return _MenuPressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: _fill,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: _border, width: 1),
+          boxShadow: tone == _PaperMenuChipTone.ghost
+              ? const []
+              : ScrapTheme.deskShadow,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: _ink),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: ScrapTextStyles.stamp.copyWith(
+                color: _ink,
+                fontSize: 10,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2137,23 +2219,10 @@ class _ManualSelectButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MenuPressable(
+    return _PaperMenuChip(
+      label: 'Select manually',
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-          border: Border.all(color: ScrapTheme.dividers),
-        ),
-        child: Text(
-          'Select manually',
-          style: ScrapTextStyles.caption.copyWith(
-            color: ScrapTheme.secondaryText,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+      tone: _PaperMenuChipTone.ghost,
     );
   }
 }
@@ -2165,34 +2234,11 @@ class _AddToChatButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MenuPressable(
+    return _PaperMenuChip(
+      label: 'Add to chat',
+      icon: Icons.chat_bubble_outline,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-          border: Border.all(color: ScrapTheme.dividers),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.chat_bubble_outline,
-              size: 14,
-              color: ScrapTheme.secondaryText,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Add to chat',
-              style: ScrapTextStyles.caption.copyWith(
-                color: ScrapTheme.secondaryText,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+      tone: _PaperMenuChipTone.ghost,
     );
   }
 }
@@ -2204,34 +2250,10 @@ class _SmeltPillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MenuPressable(
+    return _PaperMenuChip(
+      label: '⟨ Smelt ⟩',
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [ScrapTheme.accent, Color(0xFF8A6A55)],
-          ),
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              'Smelt',
-              style: ScrapTextStyles.body.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      ),
+      tone: _PaperMenuChipTone.primary,
     );
   }
 }
@@ -2243,51 +2265,57 @@ class _SmeltCodePillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MenuPressable(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: ScrapTheme.accentSurface,
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-          border: Border.all(
-            color: ScrapTheme.accent.withValues(alpha: 0.55),
-          ),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _PaperMenuChip(
+          label: 'Smelt + code',
+          icon: Icons.code,
+          onTap: onTap,
+          tone: _PaperMenuChipTone.secondary,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.terminal, size: 14, color: ScrapTheme.accent),
-            const SizedBox(width: 6),
-            Text(
-              'Smelt + code',
-              style: ScrapTextStyles.body.copyWith(
-                color: ScrapTheme.accent,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                letterSpacing: 0.1,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: ScrapTheme.cardSurface,
-                borderRadius: BorderRadius.circular(3),
-                border: Border.all(
-                  color: ScrapTheme.accent.withValues(alpha: 0.7),
-                ),
-              ),
-              child: Text(
-                'NEW',
-                style: ScrapTextStyles.stamp.copyWith(
-                  color: ScrapTheme.accent,
-                  fontSize: 7,
-                  letterSpacing: 0.8,
-                ),
-              ),
+        const Positioned(
+          top: -7,
+          right: -5,
+          child: _PaperNewSticker(),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tiny tape sticker for corner badges on menu chips.
+class _PaperNewSticker extends StatelessWidget {
+  const _PaperNewSticker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: 9 * math.pi / 180,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: ScrapTheme.tape,
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: ScrapTheme.kraft.withValues(alpha: 0.75),
+            width: 0.75,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x16000000),
+              offset: Offset(1, 1),
+              blurRadius: 0,
             ),
           ],
+        ),
+        child: Text(
+          'NEW',
+          style: ScrapTextStyles.stamp.copyWith(
+            color: ScrapTheme.accent,
+            fontSize: 7,
+            letterSpacing: 0.9,
+          ),
         ),
       ),
     );
@@ -2303,22 +2331,10 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _MenuPressable(
+    return _PaperMenuChip(
+      label: label,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: danger ? const Color(0xFFF7E6E6) : const Color(0xFFF5F1EC),
-          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-        ),
-        child: Text(
-          label,
-          style: ScrapTextStyles.caption.copyWith(
-            color: danger ? const Color(0xFFB84444) : ScrapTheme.primaryText,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
+      tone: danger ? _PaperMenuChipTone.danger : _PaperMenuChipTone.secondary,
     );
   }
 }
@@ -2331,15 +2347,10 @@ class _PasteMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PaperChit(
-      child: _MenuPressable(
+      child: _PaperMenuChip(
+        label: 'Paste',
         onTap: onPaste,
-        child: Text(
-          'Paste',
-          style: ScrapTextStyles.caption.copyWith(
-            color: ScrapTheme.accent,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        tone: _PaperMenuChipTone.primary,
       ),
     );
   }

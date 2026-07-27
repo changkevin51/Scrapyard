@@ -38,7 +38,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final CanvasOcrService _ocrService = CanvasOcrService();
 
   Timer? _ocrDebounce;
-  OverlayEntry? _smeltOverlayEntry;
   OverlayEntry? _smeltPopupEntry;
   final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
@@ -52,6 +51,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   bool _showPasteMenu = false;
   String? _activeClusterId;
   bool _selectionFromDetection = false;
+  bool _isSmelting = false;
   bool _manualHintVisible = false;
   Offset? _manualSelectMenuAnchor;
   Timer? _manualHintTimer;
@@ -96,7 +96,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _manualHintTimer?.cancel();
     _ocrService.dispose();
     _scrollController.dispose();
-    _smeltOverlayEntry?.remove();
     _smeltPopupEntry?.remove();
     super.dispose();
   }
@@ -353,6 +352,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         !_isResizingSelection &&
         _activeClusterId == null &&
         !_selectionFromDetection &&
+        !_isSmelting &&
         _manualSelectMenuAnchor == null) {
       return;
     }
@@ -364,6 +364,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _selectedStrokeIds = {};
       _showSelectionMenu = false;
       _isResizingSelection = false;
+      _isSmelting = false;
       _activeClusterId = null;
       _selectionFromDetection = false;
       _manualSelectMenuAnchor = null;
@@ -585,19 +586,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _hideSelectionMenu();
 
     final rect = _selectionRect!;
-    
-    // Convert canvas-local coordinates to global screen coordinates
-    // Account for the scroll offset and the canvas position within the scaffold
-    final globalRect = _convertToGlobalRect(rect);
 
-    // Show thinking overlay on the bounding box
-    _smeltOverlayEntry?.remove();
-    _smeltOverlayEntry = OverlayEntry(
-      builder: (context) => SmeltThinkingOverlay(selectionRect: globalRect),
-    );
-    Overlay.of(context).insert(_smeltOverlayEntry!);
-
-    // Start loading state
+    setState(() => _isSmelting = true);
     ref.read(smeltProvider.notifier).startLoading();
 
     // Capture the canvas region as an image
@@ -611,12 +601,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     // Send to AI
     await ref.read(smeltProvider.notifier).smelt(imageBytes: imageBytes);
 
-    // Remove thinking overlay
-    _smeltOverlayEntry?.remove();
-    _smeltOverlayEntry = null;
-
-    // Show result popup
     if (mounted) {
+      setState(() => _isSmelting = false);
       _showSmeltPopup(rect);
     }
   }
@@ -1129,22 +1115,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         Positioned.fill(
           child: Stack(
             children: [
-              if (_selectionFromDetection)
-                TweenAnimationBuilder<double>(
-                  key: ValueKey(_activeClusterId ?? 'detected'),
-                  tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 160),
-                  builder: (context, value, child) =>
-                      Opacity(opacity: value, child: child),
-                  child: CustomPaint(
-                    painter: _DetectedBoxPainter(_selectionRect!),
-                  ),
-                )
-              else
-                CustomPaint(
-                  painter: _SelectedStrokeHighlightPainter(_selectionRect!),
-                ),
-              if (!_isResizingSelection)
+              _SelectionBoxHighlight(
+                key: ValueKey(_activeClusterId ?? 'selection'),
+                rect: _selectionRect!,
+                fromDetection: _selectionFromDetection,
+                isSmelting: _isSmelting,
+              ),
+              if (!_isResizingSelection && !_isSmelting)
                 Positioned.fromRect(
                   rect: _selectionRect!,
                   child: GestureDetector(
@@ -1411,22 +1388,270 @@ class _LassoPainter extends CustomPainter {
   bool shouldRepaint(covariant _LassoPainter oldDelegate) => oldDelegate.rect != rect;
 }
 
+class _SelectionBoxHighlight extends StatefulWidget {
+  final Rect rect;
+  final bool fromDetection;
+  final bool isSmelting;
+
+  const _SelectionBoxHighlight({
+    super.key,
+    required this.rect,
+    required this.fromDetection,
+    required this.isSmelting,
+  });
+
+  @override
+  State<_SelectionBoxHighlight> createState() => _SelectionBoxHighlightState();
+}
+
+class _SelectionBoxHighlightState extends State<_SelectionBoxHighlight>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isSmelting) _ensureController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SelectionBoxHighlight oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isSmelting && !oldWidget.isSmelting) {
+      _ensureController();
+    } else if (!widget.isSmelting && oldWidget.isSmelting) {
+      _disposeController();
+    }
+  }
+
+  void _ensureController() {
+    _controller ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  void _disposeController() {
+    _controller?.dispose();
+    _controller = null;
+  }
+
+  @override
+  void dispose() {
+    _disposeController();
+    super.dispose();
+  }
+
+  CustomPainter _painter({
+    required bool smelting,
+    required double pulseOpacity,
+    required double dashOffset,
+    required double scanProgress,
+  }) {
+    if (widget.fromDetection) {
+      return _DetectedBoxPainter(
+        widget.rect,
+        smelting: smelting,
+        pulseOpacity: pulseOpacity,
+        dashOffset: dashOffset,
+        scanProgress: scanProgress,
+      );
+    }
+    return _SelectedStrokeHighlightPainter(
+      widget.rect,
+      smelting: smelting,
+      pulseOpacity: pulseOpacity,
+      dashOffset: dashOffset,
+      scanProgress: scanProgress,
+    );
+  }
+
+  Widget _buildPaint({
+    required bool smelting,
+    required double pulseOpacity,
+    required double dashOffset,
+    required double scanProgress,
+  }) {
+    return CustomPaint(
+      painter: _painter(
+        smelting: smelting,
+        pulseOpacity: pulseOpacity,
+        dashOffset: dashOffset,
+        scanProgress: scanProgress,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget box;
+    if (widget.isSmelting && _controller != null) {
+      box = AnimatedBuilder(
+        animation: _controller!,
+        builder: (context, _) {
+          final t = _controller!.value;
+          return _buildPaint(
+            smelting: true,
+            pulseOpacity: 0.55 + 0.25 * math.sin(t * 2 * math.pi),
+            dashOffset: t,
+            scanProgress: t,
+          );
+        },
+      );
+    } else {
+      box = _buildPaint(
+        smelting: false,
+        pulseOpacity: 1.0,
+        dashOffset: 0.0,
+        scanProgress: -1.0,
+      );
+    }
+
+    if (widget.fromDetection && !widget.isSmelting) {
+      return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 160),
+        builder: (context, value, child) =>
+            Opacity(opacity: value, child: child),
+        child: box,
+      );
+    }
+
+    return box;
+  }
+}
+
 class _SelectedStrokeHighlightPainter extends CustomPainter {
   final Rect rect;
+  final bool smelting;
+  final double pulseOpacity;
+  final double dashOffset;
+  final double scanProgress;
 
-  _SelectedStrokeHighlightPainter(this.rect);
+  _SelectedStrokeHighlightPainter(
+    this.rect, {
+    this.smelting = false,
+    this.pulseOpacity = 1.0,
+    this.dashOffset = 0.0,
+    this.scanProgress = -1.0,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF7AA7D8).withValues(alpha: 0.55)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
+    if (smelting) {
+      final fill = Paint()
+        ..color = ScrapTheme.accent.withValues(alpha: pulseOpacity * 0.08)
+        ..style = PaintingStyle.fill;
+      canvas.drawRect(rect, fill);
+      _SelectionBoxPaintHelpers.drawScanSweep(canvas, rect, scanProgress);
+    }
 
-    _drawDashedRect(canvas, rect, paint);
+    final borderColor = smelting
+        ? ScrapTheme.accent.withValues(alpha: pulseOpacity * 0.85)
+        : const Color(0xFF7AA7D8).withValues(alpha: 0.55);
+    final border = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = smelting ? 2.0 : 1.4;
+
+    if (smelting) {
+      _SelectionBoxPaintHelpers.drawAnimatedDashedRect(
+        canvas,
+        rect,
+        border,
+        dashOffset,
+      );
+    } else {
+      _SelectionBoxPaintHelpers.drawDashedRect(canvas, rect, border);
+    }
   }
 
-  void _drawDashedRect(Canvas canvas, Rect rect, Paint paint) {
+  @override
+  bool shouldRepaint(covariant _SelectedStrokeHighlightPainter oldDelegate) =>
+      oldDelegate.rect != rect ||
+      oldDelegate.smelting != smelting ||
+      oldDelegate.pulseOpacity != pulseOpacity ||
+      oldDelegate.dashOffset != dashOffset ||
+      oldDelegate.scanProgress != scanProgress;
+}
+
+class _DetectedBoxPainter extends CustomPainter {
+  final Rect rect;
+  final bool smelting;
+  final double pulseOpacity;
+  final double dashOffset;
+  final double scanProgress;
+
+  _DetectedBoxPainter(
+    this.rect, {
+    this.smelting = false,
+    this.pulseOpacity = 1.0,
+    this.dashOffset = 0.0,
+    this.scanProgress = -1.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
+
+    final fillAlpha = smelting ? pulseOpacity * 0.12 : 0.06;
+    final fill = Paint()
+      ..color = ScrapTheme.accent.withValues(alpha: fillAlpha)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(rrect, fill);
+
+    if (smelting) {
+      _SelectionBoxPaintHelpers.drawScanSweep(canvas, rect, scanProgress);
+    }
+
+    final border = Paint()
+      ..color = ScrapTheme.accent
+          .withValues(alpha: smelting ? pulseOpacity * 0.85 : 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = smelting ? 2.0 : 1.4;
+
+    if (smelting) {
+      _SelectionBoxPaintHelpers.drawAnimatedDashedRRect(
+        canvas,
+        rrect,
+        border,
+        dashOffset,
+      );
+    } else {
+      _SelectionBoxPaintHelpers.drawDashedRRect(canvas, rrect, border);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DetectedBoxPainter oldDelegate) =>
+      oldDelegate.rect != rect ||
+      oldDelegate.smelting != smelting ||
+      oldDelegate.pulseOpacity != pulseOpacity ||
+      oldDelegate.dashOffset != dashOffset ||
+      oldDelegate.scanProgress != scanProgress;
+}
+
+class _SelectionBoxPaintHelpers {
+  static void drawScanSweep(Canvas canvas, Rect rect, double scanProgress) {
+    if (scanProgress < 0) return;
+
+    final bandH = math.max(8.0, rect.height * 0.12);
+    final y = (rect.height + bandH) * scanProgress - bandH;
+    final sweepRect = Rect.fromLTWH(rect.left, rect.top + y, rect.width, bandH);
+    final sweepPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          ScrapTheme.accent.withValues(alpha: 0.0),
+          ScrapTheme.accent.withValues(alpha: 0.18),
+          ScrapTheme.accent.withValues(alpha: 0.0),
+        ],
+      ).createShader(sweepRect);
+    canvas.drawRect(sweepRect.intersect(rect), sweepPaint);
+  }
+
+  static void drawDashedRect(Canvas canvas, Rect rect, Paint paint) {
     const dashLength = 5.0;
     const gapLength = 4.0;
 
@@ -1438,7 +1663,8 @@ class _SelectedStrokeHighlightPainter extends CustomPainter {
       double distance = 0;
       while (distance < totalLength) {
         final from = start + direction * distance;
-        final to = start + direction * math.min(distance + dashLength, totalLength);
+        final to = start +
+            direction * math.min(distance + dashLength, totalLength);
         canvas.drawLine(from, to, paint);
         distance += dashLength + gapLength;
       }
@@ -1450,34 +1676,42 @@ class _SelectedStrokeHighlightPainter extends CustomPainter {
     drawDashedLine(rect.bottomLeft, rect.topLeft);
   }
 
-  @override
-  bool shouldRepaint(covariant _SelectedStrokeHighlightPainter oldDelegate) =>
-      oldDelegate.rect != rect;
-}
+  static void drawAnimatedDashedRect(
+    Canvas canvas,
+    Rect rect,
+    Paint paint,
+    double offset,
+  ) {
+    const dashLen = 8.0;
+    const gapLen = 6.0;
+    const totalDash = dashLen + gapLen;
 
-class _DetectedBoxPainter extends CustomPainter {
-  final Rect rect;
+    void drawSide(Offset start, Offset end) {
+      final length = (end - start).distance;
+      if (length == 0) return;
+      final dir = (end - start) / length;
+      final shift = offset * totalDash;
+      double d = -shift % totalDash;
+      while (d < length) {
+        final segEnd = math.min(d + dashLen, length);
+        if (segEnd > 0 && d < length) {
+          canvas.drawLine(
+            start + dir * math.max(d, 0),
+            start + dir * segEnd,
+            paint,
+          );
+        }
+        d += totalDash;
+      }
+    }
 
-  _DetectedBoxPainter(this.rect);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
-
-    final fill = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.06)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(rrect, fill);
-
-    // Dashed pencil-circle border — candidate selection, not a solid UI box
-    final border = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.55)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    _drawDashedRRect(canvas, rrect, border);
+    drawSide(rect.topLeft, rect.topRight);
+    drawSide(rect.topRight, rect.bottomRight);
+    drawSide(rect.bottomRight, rect.bottomLeft);
+    drawSide(rect.bottomLeft, rect.topLeft);
   }
 
-  void _drawDashedRRect(Canvas canvas, RRect rrect, Paint paint) {
+  static void drawDashedRRect(Canvas canvas, RRect rrect, Paint paint) {
     const dashLength = 5.0;
     const gapLength = 4.0;
     final path = Path()..addRRect(rrect);
@@ -1491,9 +1725,29 @@ class _DetectedBoxPainter extends CustomPainter {
     }
   }
 
-  @override
-  bool shouldRepaint(covariant _DetectedBoxPainter oldDelegate) =>
-      oldDelegate.rect != rect;
+  static void drawAnimatedDashedRRect(
+    Canvas canvas,
+    RRect rrect,
+    Paint paint,
+    double offset,
+  ) {
+    const dashLen = 8.0;
+    const gapLen = 6.0;
+    const totalDash = dashLen + gapLen;
+    final path = Path()..addRRect(rrect);
+
+    for (final metric in path.computeMetrics()) {
+      final shift = offset * totalDash;
+      double distance = -shift % totalDash;
+      while (distance < metric.length) {
+        final next = math.min(distance + dashLen, metric.length);
+        if (next > 0) {
+          canvas.drawPath(metric.extractPath(math.max(distance, 0), next), paint);
+        }
+        distance = next + gapLen;
+      }
+    }
+  }
 }
 
 class _CopiedSelection {

@@ -6,12 +6,11 @@ import '../providers/canvas_providers.dart';
 
 // ─────────────────────────────────────────────────────────────────
 // Document Tab Bar
-// Scrapyard-themed open scrap tabs — NOT browser-style.
+// Scrapyard-themed filing tabs — sheets rising off the desk.
 //
-// Design: Horizontal scrollable strip of bookmark-style pill cards.
-// Each tab has a 3px colored left-stripe, note title, and close ×.
-// Active tab is elevated with a subtle glow from its accent color.
-// Grouped tabs share a tinted background connector.
+// Design: Horizontal scrollable strip of index-card tabs.
+// Active tab merges into the canvas below (no bottom border).
+// Inactive tabs sit lower on a kraft/codeSurface fill.
 // ─────────────────────────────────────────────────────────────────
 class DocumentTabBar extends ConsumerWidget {
   const DocumentTabBar({super.key});
@@ -27,7 +26,7 @@ class DocumentTabBar extends ConsumerWidget {
     return Container(
       height: 44,
       decoration: const BoxDecoration(
-        color: ScrapTheme.cardSurface,
+        color: ScrapTheme.background,
         border: Border(bottom: BorderSide(color: ScrapTheme.dividers, width: 0.5)),
       ),
       child: Row(
@@ -39,7 +38,7 @@ class DocumentTabBar extends ConsumerWidget {
           Expanded(
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
               itemCount: tabs.length,
               itemBuilder: (ctx, i) {
                 final tab      = tabs[i];
@@ -76,6 +75,7 @@ class DocumentTabBar extends ConsumerWidget {
               width: 36, height: 36,
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
+                color: ScrapTheme.kraft.withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(color: ScrapTheme.dividers),
               ),
@@ -98,13 +98,14 @@ class DocumentTabBar extends ConsumerWidget {
       context: context,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
+          borderRadius: BorderRadius.vertical(
+              top: Radius.circular(ScrapTheme.borderRadiusDefault))),
       builder: (_) => _TabMenuSheet(tab: tab, tabs: tabs, groups: groups),
     );
   }
 }
 
-// ─── Individual tab chip ─────────────────────────────────────────
+// ─── Individual filing tab ───────────────────────────────────────
 class _TabChip extends StatelessWidget {
   final OpenedTab tab;
   final bool isActive;
@@ -129,53 +130,45 @@ class _TabChip extends StatelessWidget {
       onLongPress: onLongPress,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        margin: const EdgeInsets.only(right: 6),
+        margin: EdgeInsets.only(right: 4, top: isActive ? 0 : 3),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
         decoration: BoxDecoration(
-          color: isActive
-              ? tab.accent.withValues(alpha: 0.08)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
+          color: isActive ? ScrapTheme.cardSurface : ScrapTheme.codeSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
           border: Border(
-            left: BorderSide(
+            top: BorderSide(
               color: isActive ? tab.accent : ScrapTheme.dividers,
-              width: isActive ? 2.5 : 1.5,
+              width: isActive ? 3 : 1,
             ),
-            top: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
+            left: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
             right: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
-            bottom: BorderSide(
-              color: isActive ? tab.accent.withValues(alpha: 0.4) : ScrapTheme.dividers,
-              width: 0.5,
-            ),
+            // Active tab merges into canvas — no bottom border
+            bottom: isActive
+                ? BorderSide.none
+                : const BorderSide(color: ScrapTheme.dividers, width: 0.5),
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Colored accent dot
-            Container(
-              width: 6, height: 6,
-              decoration: BoxDecoration(
-                color: tab.accent,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 6),
-            // Title
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 100),
               child: Text(
                 tab.title,
-                style: ScrapTextStyles.body.copyWith(
-                  fontSize: 12,
-                  color: isActive ? ScrapTheme.primaryText : ScrapTheme.secondaryText,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                ),
+                style: isActive
+                    ? ScrapTextStyles.body.copyWith(
+                        fontSize: 12,
+                        color: ScrapTheme.primaryText,
+                        fontWeight: FontWeight.w600,
+                      )
+                    : ScrapTextStyles.stamp.copyWith(
+                        fontSize: 10,
+                        color: ScrapTheme.secondaryText,
+                      ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),
             ),
-            // Group badge
             if (groupName != null) ...[
               const SizedBox(width: 4),
               Text(
@@ -184,7 +177,6 @@ class _TabChip extends StatelessWidget {
               ),
             ],
             const SizedBox(width: 6),
-            // Close
             GestureDetector(
               onTap: onClose,
               child: Icon(
@@ -220,6 +212,17 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: ScrapTheme.kraft,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(children: [
             Container(width: 8, height: 8,
                 decoration: BoxDecoration(color: widget.tab.accent, shape: BoxShape.circle)),
@@ -293,27 +296,31 @@ class _BackHomeButtonState extends State<_BackHomeButton> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _pressed ? 0.92 : 1.0,
-        duration: ScrapMotion.press,
-        curve: Curves.easeOut,
-        child: Container(
-          width: 36,
-          height: 36,
-          margin: const EdgeInsets.only(left: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: ScrapTheme.dividers),
-          ),
-          child: const Icon(
-            Icons.arrow_back,
-            size: 16,
-            color: ScrapTheme.mutedText,
+    return Tooltip(
+      message: 'Back to the pile',
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.92 : 1.0,
+          duration: ScrapMotion.press,
+          curve: Curves.easeOut,
+          child: Container(
+            width: 36,
+            height: 36,
+            margin: const EdgeInsets.only(left: 8),
+            decoration: BoxDecoration(
+              color: ScrapTheme.kraft.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: ScrapTheme.dividers),
+            ),
+            child: const Icon(
+              Icons.arrow_back,
+              size: 16,
+              color: ScrapTheme.secondaryText,
+            ),
           ),
         ),
       ),

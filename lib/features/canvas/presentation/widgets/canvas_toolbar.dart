@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../providers/canvas_providers.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
@@ -36,6 +38,49 @@ const List<Color> _palette = [
   Color(0xFF7A9BB5), // slate blue
   Color(0xFFB58590), // dusty rose
 ];
+
+// ─────────────────────────────────────────────────────────
+// Shared press scale — same feel as home _ScrapPressable
+// ─────────────────────────────────────────────────────────
+class _ToolPressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  const _ToolPressable({
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  @override
+  State<_ToolPressable> createState() => _ToolPressableState();
+}
+
+class _ToolPressableState extends State<_ToolPressable> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: widget.onTap != null || widget.onLongPress != null
+          ? (_) => setState(() => _pressed = true)
+          : null,
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap?.call();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      onLongPress: widget.onLongPress,
+      child: AnimatedScale(
+        scale: _pressed ? 0.93 : 1.0,
+        duration: ScrapMotion.press,
+        curve: ScrapMotion.pressCurve,
+        child: widget.child,
+      ),
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────
 // Main toolbar widget
@@ -95,6 +140,22 @@ class CanvasToolbar extends ConsumerWidget {
       const _SettingsButton(),
     ];
 
+    // Tape hairline on the canvas-facing edge
+    BorderSide tapeEdge = BorderSide.none;
+    BorderSide dividerEdge = BorderSide.none;
+    if (isHorizontal) {
+      if (position == ToolbarPosition.top) {
+        tapeEdge = const BorderSide(color: ScrapTheme.tape, width: 1);
+        dividerEdge = const BorderSide(color: ScrapTheme.dividers, width: 0.5);
+      } else {
+        tapeEdge = const BorderSide(color: ScrapTheme.tape, width: 1);
+        dividerEdge = const BorderSide(color: ScrapTheme.dividers, width: 0.5);
+      }
+    } else {
+      tapeEdge = const BorderSide(color: ScrapTheme.tape, width: 1);
+      dividerEdge = const BorderSide(color: ScrapTheme.dividers, width: 0.5);
+    }
+
     return Container(
       width: isHorizontal ? double.infinity : null,
       height: isHorizontal ? null : double.infinity,
@@ -103,22 +164,27 @@ class CanvasToolbar extends ConsumerWidget {
         color: ScrapTheme.cardSurface,
         border: isHorizontal
             ? Border(
-                bottom: position == ToolbarPosition.top
-                    ? const BorderSide(color: ScrapTheme.dividers)
-                    : BorderSide.none,
-                top: position == ToolbarPosition.bottom
-                    ? const BorderSide(color: ScrapTheme.dividers)
-                    : BorderSide.none,
+                bottom: position == ToolbarPosition.top ? tapeEdge : BorderSide.none,
+                top: position == ToolbarPosition.bottom ? tapeEdge : BorderSide.none,
               )
             : Border(
-                right: position == ToolbarPosition.left
-                    ? const BorderSide(color: ScrapTheme.dividers)
-                    : BorderSide.none,
-                left: position == ToolbarPosition.right
-                    ? const BorderSide(color: ScrapTheme.dividers)
-                    : BorderSide.none,
+                right: position == ToolbarPosition.left ? tapeEdge : BorderSide.none,
+                left: position == ToolbarPosition.right ? tapeEdge : BorderSide.none,
               ),
       ),
+      foregroundDecoration: isHorizontal
+          ? BoxDecoration(
+              border: Border(
+                bottom: position == ToolbarPosition.top ? dividerEdge : BorderSide.none,
+                top: position == ToolbarPosition.bottom ? dividerEdge : BorderSide.none,
+              ),
+            )
+          : BoxDecoration(
+              border: Border(
+                right: position == ToolbarPosition.left ? dividerEdge : BorderSide.none,
+                left: position == ToolbarPosition.right ? dividerEdge : BorderSide.none,
+              ),
+            ),
       child: SingleChildScrollView(
         scrollDirection: isHorizontal ? Axis.horizontal : Axis.vertical,
         child: isHorizontal
@@ -129,10 +195,18 @@ class CanvasToolbar extends ConsumerWidget {
   }
 
   Widget _sep(bool isHorizontal) => isHorizontal
-      ? Container(width: 1, height: 20, color: ScrapTheme.dividers,
-          margin: const EdgeInsets.symmetric(horizontal: 6))
-      : Container(height: 1, width: 20, color: ScrapTheme.dividers,
-          margin: const EdgeInsets.symmetric(vertical: 6));
+      ? Container(
+          width: 1,
+          height: 16,
+          color: ScrapTheme.tape.withValues(alpha: 0.7),
+          margin: const EdgeInsets.symmetric(horizontal: 6),
+        )
+      : Container(
+          height: 1,
+          width: 16,
+          color: ScrapTheme.tape.withValues(alpha: 0.7),
+          margin: const EdgeInsets.symmetric(vertical: 6),
+        );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -147,11 +221,10 @@ class _ModeToggle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Tooltip(
       message: isPenMode ? 'Switch to scroll/read mode' : 'Switch to draw mode',
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () {
           final newMode = !isPenMode;
           ref.read(isPenModeActiveProvider.notifier).state = newMode;
-          // When switching to touch/scroll mode, disable selection tools
           final tool = ref.read(activeCanvasToolProvider);
           if (!newMode && (tool == CanvasTool.lasso || tool == CanvasTool.smelt)) {
             ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
@@ -174,10 +247,9 @@ class _ModeToggle extends ConsumerWidget {
                 )
               : Text(
                   isPenMode ? 'Draw' : 'Move',
-                  style: ScrapTextStyles.label.copyWith(
-                    fontSize: 12,
+                  style: ScrapTextStyles.stamp.copyWith(
+                    fontSize: 11,
                     color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
         ),
@@ -206,7 +278,7 @@ class _ToolButton extends ConsumerWidget {
       message: def.tool == CanvasTool.shape
           ? '${def.tip} (long‑press for library)'
           : def.tip,
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () {
           ref.read(activeCanvasToolProvider.notifier).state = def.tool;
           ref.read(isPenModeActiveProvider.notifier).state = true;
@@ -223,24 +295,35 @@ class _ToolButton extends ConsumerWidget {
                 ? ScrapTheme.accent.withValues(alpha: 0.12)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
-            border: isActive
-                ? Border.all(
-                    color: ScrapTheme.accent.withValues(alpha: 0.35), width: 1)
-                : null,
           ),
           child: Stack(
             clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
-              isIcon
-                  ? Icon(def.icon, size: 22,
-                      color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText)
-                  : Text(def.label,
-                      style: ScrapTextStyles.label.copyWith(
-                        fontSize: 11,
-                        color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                      )),
-              // Library shape indicator dot
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  isIcon
+                      ? Icon(def.icon, size: 22,
+                          color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText)
+                      : Text(def.label,
+                          style: ScrapTextStyles.stamp.copyWith(
+                            fontSize: 11,
+                            color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                          )),
+                  // Highlighter-swipe underline under active tool
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    margin: const EdgeInsets.only(top: 2),
+                    height: 2,
+                    width: isActive ? 18 : 0,
+                    decoration: BoxDecoration(
+                      color: ScrapTheme.accent.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
+                ],
+              ),
               if (hasLibShape)
                 Positioned(
                   top: -4, right: -4,
@@ -279,7 +362,7 @@ class _StrokeStyleChip extends ConsumerWidget {
     final isActive = style == current;
     return Tooltip(
       message: style.name[0].toUpperCase() + style.name.substring(1),
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () => ref.read(strokeStyleProvider.notifier).state = style,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 130),
@@ -326,14 +409,13 @@ class _ActionButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Tooltip(
       message: tip,
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () {
           if (action == CanvasTool.undo) ref.read(strokesProvider.notifier).undo();
           if (action == CanvasTool.redo) ref.read(strokesProvider.notifier).redo();
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          // Always use icons for undo/redo — universally recognizable
           child: Icon(icon, size: 20, color: ScrapTheme.secondaryText),
         ),
       ),
@@ -342,7 +424,7 @@ class _ActionButton extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────
-// Colour dots
+// Colour dots — ink-well ring, no blur glow
 // ─────────────────────────────────────────────────────────
 class _ColorDot extends ConsumerWidget {
   final Color color;
@@ -353,19 +435,25 @@ class _ColorDot extends ConsumerWidget {
     final current = ref.watch(canvasColorProvider);
     final isSelected = current.toARGB32() == color.toARGB32();
 
-    return GestureDetector(
+    return _ToolPressable(
       onTap: () => ref.read(canvasColorProvider.notifier).state = color,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-        width: isSelected ? 22 : 18,
-        height: isSelected ? 22 : 18,
+        width: 22,
+        height: 22,
         decoration: BoxDecoration(
-          color: color,
           shape: BoxShape.circle,
-          boxShadow: isSelected
-              ? [BoxShadow(color: color.withValues(alpha: 0.45), blurRadius: 4, spreadRadius: 1)]
-              : null,
+          border: isSelected
+              ? Border.all(color: ScrapTheme.accent, width: 1.5)
+              : Border.all(color: Colors.transparent, width: 1.5),
+        ),
+        padding: const EdgeInsets.all(2),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
         ),
       ),
     );
@@ -388,7 +476,7 @@ class _ThicknessDots extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         for (final (size, val) in _sizes)
-          GestureDetector(
+          _ToolPressable(
             onTap: () => ref.read(strokeWidthModifierProvider.notifier).state = val,
             child: Tooltip(
               message: 'Thickness $val×',
@@ -422,7 +510,7 @@ class _DisplayModeToggle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Tooltip(
       message: isIcon ? 'Switch to label mode' : 'Switch to icon mode',
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () {
           final next = isIcon ? ToolbarDisplayMode.labels : ToolbarDisplayMode.icons;
           ref.read(toolbarDisplayModeProvider.notifier).state = next;
@@ -431,10 +519,9 @@ class _DisplayModeToggle extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
             isIcon ? 'Aa' : '◆',
-            style: ScrapTextStyles.label.copyWith(
-              fontSize: 13,
+            style: ScrapTextStyles.stamp.copyWith(
+              fontSize: 12,
               color: ScrapTheme.mutedText,
-              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -454,17 +541,16 @@ class _SettingsButton extends ConsumerWidget {
     final isIcon = ref.watch(toolbarDisplayModeProvider) == ToolbarDisplayMode.icons;
     return Tooltip(
       message: 'Canvas settings',
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () => _showSettings(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: isIcon
               ? const Icon(Icons.tune_outlined, size: 22, color: ScrapTheme.mutedText)
               : Text('Set',
-                  style: ScrapTextStyles.label.copyWith(
+                  style: ScrapTextStyles.stamp.copyWith(
                     fontSize: 11,
                     color: ScrapTheme.mutedText,
-                    fontWeight: FontWeight.w600,
                   )),
         ),
       ),
@@ -476,7 +562,8 @@ class _SettingsButton extends ConsumerWidget {
       context: context,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
+          borderRadius: BorderRadius.vertical(
+              top: Radius.circular(ScrapTheme.borderRadiusDefault))),
       builder: (_) => const _CanvasSettingsSheet(),
     );
   }
@@ -484,7 +571,6 @@ class _SettingsButton extends ConsumerWidget {
 
 // ─────────────────────────────────────────────────────────
 // Settings bottom sheet  (layout / dock / palm rejection)
-// stroke style is now inline; kept here only for completeness
 // ─────────────────────────────────────────────────────────
 class _CanvasSettingsSheet extends ConsumerWidget {
   const _CanvasSettingsSheet();
@@ -501,12 +587,26 @@ class _CanvasSettingsSheet extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Grabber
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: ScrapTheme.kraft,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const ScrapStampLabel(text: '⟨ Canvas ⟩'),
+          const SizedBox(height: 8),
           Text('Canvas Settings',
               style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 24),
 
           // Page layout
-          Text('PAGE STYLE', style: ScrapTextStyles.label),
+          Text('PAGE STYLE', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -521,7 +621,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
           const SizedBox(height: 20),
 
           // Toolbar dock
-          Text('TOOLBAR POSITION', style: ScrapTextStyles.label),
+          Text('TOOLBAR POSITION', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -543,7 +643,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PALM REJECTION', style: ScrapTextStyles.label),
+                Text('PALM REJECTION', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
                 Text('Touch = scroll/zoom, Stylus = write',
                     style: ScrapTextStyles.caption
                         .copyWith(color: ScrapTheme.mutedText)),
@@ -574,9 +674,9 @@ class _CanvasSettingsSheet extends ConsumerWidget {
         ),
         child: Text(
           label,
-          style: ScrapTextStyles.caption.copyWith(
+          style: ScrapTextStyles.stamp.copyWith(
+            fontSize: 11,
             color: selected ? Colors.white : ScrapTheme.secondaryText,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       );
@@ -593,7 +693,7 @@ class _StickerButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: 'Sticker library',
-      child: GestureDetector(
+      child: _ToolPressable(
         onTap: () => showStickerLibrary(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

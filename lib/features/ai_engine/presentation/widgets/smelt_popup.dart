@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../../_debug_log_helper.dart';
@@ -32,6 +34,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
+  late Animation<double> _rotateAnim;
 
   @override
   void initState() {
@@ -45,6 +48,9 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
     );
     _scaleAnim = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
+    );
+    _rotateAnim = Tween<double>(begin: -1.2 * math.pi / 180, end: 0.0).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOut),
     );
     _animController.forward();
   }
@@ -103,9 +109,17 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
         child: ScaleTransition(
           scale: _scaleAnim,
           alignment: Alignment.topCenter,
-          child: TapRegion(
-            onTapOutside: (_) => widget.onDismiss(),
-            child: _buildCard(state),
+          child: AnimatedBuilder(
+            animation: _rotateAnim,
+            builder: (context, child) => Transform.rotate(
+              angle: _rotateAnim.value,
+              alignment: Alignment.topCenter,
+              child: child,
+            ),
+            child: TapRegion(
+              onTapOutside: (_) => widget.onDismiss(),
+              child: _buildCard(state),
+            ),
           ),
         ),
       ),
@@ -113,40 +127,76 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildCard(SmeltState state) {
-    return Container(
-      width: _popupWidth(),
-      constraints: const BoxConstraints(maxHeight: 400),
-      decoration: BoxDecoration(
-        color: ScrapTheme.cardSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ScrapTheme.dividers, width: 1.0),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            offset: const Offset(0, 8),
-            blurRadius: 24,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: _popupWidth(),
+          constraints: const BoxConstraints(maxHeight: 400),
+          decoration: BoxDecoration(
+            color: ScrapTheme.cardSurface,
+            borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+            border: Border.all(color: ScrapTheme.dividers, width: 1.0),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000), // ~5% black
+                offset: Offset(0, 4),
+                blurRadius: 12,
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              color: ScrapTheme.accent,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Tape strip header
+              Transform.rotate(
+                angle: -1.5 * math.pi / 180,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.tape,
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(
+                      color: ScrapTheme.kraft.withValues(alpha: 0.6),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: const Center(
+                    child: ScrapStampLabel(
+                      text: '⟨ Smelt ⟩',
+                      tiltDegrees: 0,
+                    ),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  child: _buildContent(state),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Torn bottom deckle — page colour notches so the slip looks torn
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 10,
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: TornEdgePainter(
+                seed: 42,
+                amplitude: 3.5,
+                fillColor: Color(0xFFF5F4F0), // ScrapTheme.background
+              ),
             ),
           ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: _buildContent(state),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -171,7 +221,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           const _ThinkingDots(),
           const SizedBox(width: 12),
           Text(
-            'Analyzing...',
+            'Smelting...',
             style: ScrapTextStyles.body.copyWith(
               color: ScrapTheme.mutedText,
               fontStyle: FontStyle.italic,
@@ -319,10 +369,11 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
       alignment: Alignment.centerRight,
       child: Text(
         'Powered by ${_formatModelName(modelUsed)}',
-        style: ScrapTextStyles.caption.copyWith(
+        style: ScrapTextStyles.stamp.copyWith(
           color: ScrapTheme.mutedText,
           fontSize: 9,
-          fontStyle: FontStyle.italic,
+          letterSpacing: 0.8,
+          fontWeight: FontWeight.w400,
         ),
       ),
     );
@@ -828,6 +879,7 @@ class _ThinkingDotsState extends State<_ThinkingDots>
 
   @override
   Widget build(BuildContext context) {
+    const ember = Color(0xFF8A6A55);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -838,12 +890,14 @@ class _ThinkingDotsState extends State<_ThinkingDots>
             final progress = (_controller.value - delay).clamp(0.0, 1.0);
             final opacity =
                 progress < 0.5 ? progress * 2 : 2 - progress * 2;
+            // Stagger accent → ember for a furnace glow
+            final color = Color.lerp(ScrapTheme.accent, ember, index / 2)!;
             return Container(
               width: 6,
               height: 6,
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
-                color: ScrapTheme.accent.withValues(alpha: 0.3 + opacity * 0.7),
+                color: color.withValues(alpha: 0.3 + opacity * 0.7),
                 shape: BoxShape.circle,
               ),
             );
@@ -868,8 +922,10 @@ class _SmeltThinkingOverlayState extends State<SmeltThinkingOverlay>
     with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late AnimationController _dashController;
+  late AnimationController _scanController;
   late Animation<double> _pulseAnim;
   late Animation<double> _dashAnim;
+  late Animation<double> _scanAnim;
 
   @override
   void initState() {
@@ -882,34 +938,46 @@ class _SmeltThinkingOverlayState extends State<SmeltThinkingOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 8000),
     )..repeat();
+    _scanController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
 
     _pulseAnim = Tween<double>(begin: 0.3, end: 0.8).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _dashAnim = Tween<double>(begin: 0, end: 1).animate(_dashController);
+    _scanAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _scanController, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
     _dashController.dispose();
+    _scanController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Use Positioned.fromRect to position the overlay exactly at the selection rect
     return Positioned.fromRect(
       rect: widget.selectionRect,
       child: IgnorePointer(
         child: AnimatedBuilder(
-          animation: Listenable.merge([_pulseController, _dashController]),
+          animation: Listenable.merge([
+            _pulseController,
+            _dashController,
+            _scanController,
+          ]),
           builder: (context, _) {
             return CustomPaint(
               size: widget.selectionRect.size,
               painter: _ThinkingBorderPainter(
                 pulseOpacity: _pulseAnim.value,
                 dashOffset: _dashAnim.value,
+                scanProgress: _scanAnim.value,
               ),
             );
           },
@@ -922,16 +990,18 @@ class _SmeltThinkingOverlayState extends State<SmeltThinkingOverlay>
 class _ThinkingBorderPainter extends CustomPainter {
   final double pulseOpacity;
   final double dashOffset;
+  final double scanProgress;
 
   _ThinkingBorderPainter({
     required this.pulseOpacity,
     required this.dashOffset,
+    required this.scanProgress,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    
+
     // Soft glow fill
     final fillPaint = Paint()
       ..color = ScrapTheme.accent.withValues(alpha: pulseOpacity * 0.08)
@@ -940,6 +1010,22 @@ class _ThinkingBorderPainter extends CustomPainter {
       RRect.fromRectAndRadius(rect, const Radius.circular(4)),
       fillPaint,
     );
+
+    // Scan sweep — one thin gradient band traversing top → bottom
+    final bandH = math.max(8.0, size.height * 0.12);
+    final y = (size.height + bandH) * scanProgress - bandH;
+    final sweepRect = Rect.fromLTWH(0, y, size.width, bandH);
+    final sweepPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          ScrapTheme.accent.withValues(alpha: 0.0),
+          ScrapTheme.accent.withValues(alpha: 0.18),
+          ScrapTheme.accent.withValues(alpha: 0.0),
+        ],
+      ).createShader(sweepRect);
+    canvas.drawRect(sweepRect.intersect(rect), sweepPaint);
 
     // Animated dashed border
     final borderPaint = Paint()
@@ -987,5 +1073,7 @@ class _ThinkingBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ThinkingBorderPainter old) =>
-      old.pulseOpacity != pulseOpacity || old.dashOffset != dashOffset;
+      old.pulseOpacity != pulseOpacity ||
+      old.dashOffset != dashOffset ||
+      old.scanProgress != scanProgress;
 }

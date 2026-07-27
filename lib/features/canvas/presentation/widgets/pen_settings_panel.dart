@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 
@@ -19,7 +20,8 @@ class PenSettingsPanel extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
       decoration: const BoxDecoration(
         color: ScrapTheme.cardSurface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(ScrapTheme.borderRadiusDefault)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -30,12 +32,14 @@ class PenSettingsPanel extends ConsumerWidget {
             child: Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: ScrapTheme.dividers,
+                color: ScrapTheme.kraft,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          const ScrapStampLabel(text: '⟨ Pen ⟩'),
+          const SizedBox(height: 8),
           Text('Pen Settings', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 24),
 
@@ -157,7 +161,7 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Tooltip(
           message: tooltip,
-          child: Text(label, style: ScrapTextStyles.label),
+          child: Text(label, style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
         ),
         const Spacer(),
         Text(value,

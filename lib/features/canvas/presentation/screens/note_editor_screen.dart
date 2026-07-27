@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/widgets/paper_grain.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../providers/canvas_providers.dart';
@@ -972,6 +974,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final canvasZoom      = ref.watch(canvasZoomProvider);
     final toolbarPosition = ref.watch(toolbarPositionProvider);
 
+    final strokes = ref.watch(strokesProvider);
     final canvasStack = RepaintBoundary(
       key: _canvasRepaintKey,
       child: Stack(
@@ -981,6 +984,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             zoomLevel: canvasZoom,
             onZoomChanged: (v) => ref.read(canvasZoomProvider.notifier).state = v,
           ),
+          // Soft paper grain — cached 64×64 tile, one drawRect, IgnorePointer
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: RepaintBoundary(
+                child: PaperGrain(opacity: 0.022),
+              ),
+            ),
+          ),
+          // Empty-sheet affordance
+          if (strokes.isEmpty)
+            const Positioned(
+              top: 80,
+              left: 0,
+              right: 0,
+              child: _FreshScrapHint(),
+            ),
           // Transparent text annotations — tap to edit, drag to move
           ...ref.watch(canvasTextNodesProvider)
               .map((node) => CanvasTextSticker(key: ValueKey(node.id), item: node)),
@@ -1100,19 +1119,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           child: Center(
             child: Material(
               color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: ScrapTheme.dividers),
-                  boxShadow: ScrapTheme.subtleShadow,
-                ),
-                child: Text(
-                  'Drag to select',
-                  style: ScrapTextStyles.caption.copyWith(
-                    color: ScrapTheme.accent,
-                    fontWeight: FontWeight.w600,
+              child: Transform.rotate(
+                angle: -0.6 * math.pi / 180,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.cardSurface,
+                    borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                    border: Border.all(color: ScrapTheme.dividers),
+                    boxShadow: ScrapTheme.subtleShadow,
+                  ),
+                  child: Text(
+                    'Drag to select',
+                    style: ScrapTextStyles.caption.copyWith(
+                      color: ScrapTheme.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -1155,8 +1177,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               ? const NeverScrollableScrollPhysics()
               : const ClampingScrollPhysics(),
           child: ColoredBox(
+            // Desk tone when zoomed out so the sheet sits on a surface
             color: canvasZoom <= 1.0
-                ? ScrapTheme.cardSurface
+                ? ScrapTheme.codeSurface
                 : ScrapTheme.background,
             child: SizedBox(
               width: double.infinity,
@@ -1166,34 +1189,39 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 alignment: canvasZoom <= 1.0
                     ? const Alignment(0, -1)
                     : Alignment.topLeft,
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 5000,
-                  child: Listener(
-                    onPointerDown: stylusOnly && isSelectionMode
-                        ? _onSelectionPointerDown
-                        : null,
-                    onPointerMove: stylusOnly && isSelectionMode
-                        ? _onSelectionPointerMove
-                        : null,
-                    onPointerUp: stylusOnly && isSelectionMode
-                        ? _onSelectionPointerUp
-                        : null,
-                    onPointerCancel: stylusOnly && isSelectionMode
-                        ? _onSelectionPointerCancel
-                        : null,
-                    child: GestureDetector(
-                      onTapDown: _onCanvasTapDown,
-                      onTapUp: isSmeltMode ? _onCanvasTapUp : null,
-                      onLongPressStart: _handleCanvasLongPressStart,
-                      onPanStart: allowSelectionDrag ? _startLasso : null,
-                      onPanUpdate: allowSelectionDrag ? _updateLasso : null,
-                      onPanEnd: allowSelectionDrag ? _endLasso : null,
-                      child: Stack(
-                        children: [
-                          canvasStack,
-                          ...contentOverlays,
-                        ],
+                child: DecoratedBox(
+                  decoration: canvasZoom <= 1.0
+                      ? const BoxDecoration(boxShadow: ScrapTheme.subtleShadow)
+                      : const BoxDecoration(),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 5000,
+                    child: Listener(
+                      onPointerDown: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerDown
+                          : null,
+                      onPointerMove: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerMove
+                          : null,
+                      onPointerUp: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerUp
+                          : null,
+                      onPointerCancel: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerCancel
+                          : null,
+                      child: GestureDetector(
+                        onTapDown: _onCanvasTapDown,
+                        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+                        onLongPressStart: _handleCanvasLongPressStart,
+                        onPanStart: allowSelectionDrag ? _startLasso : null,
+                        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
+                        onPanEnd: allowSelectionDrag ? _endLasso : null,
+                        child: Stack(
+                          children: [
+                            canvasStack,
+                            ...contentOverlays,
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1334,15 +1362,30 @@ class _DetectedBoxPainter extends CustomPainter {
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
 
     final fill = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.08)
+      ..color = ScrapTheme.accent.withValues(alpha: 0.06)
       ..style = PaintingStyle.fill;
+    canvas.drawRRect(rrect, fill);
+
+    // Dashed pencil-circle border — candidate selection, not a solid UI box
     final border = Paint()
       ..color = ScrapTheme.accent.withValues(alpha: 0.55)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
+      ..strokeWidth = 1.4;
+    _drawDashedRRect(canvas, rrect, border);
+  }
 
-    canvas.drawRRect(rrect, fill);
-    canvas.drawRRect(rrect, border);
+  void _drawDashedRRect(Canvas canvas, RRect rrect, Paint paint) {
+    const dashLength = 5.0;
+    const gapLength = 4.0;
+    final path = Path()..addRRect(rrect);
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final next = math.min(distance + dashLength, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance = next + gapLength;
+      }
+    }
   }
 
   @override
@@ -1355,6 +1398,73 @@ class _CopiedSelection {
   final Rect bounds;
 
   const _CopiedSelection({required this.strokes, required this.bounds});
+}
+
+/// Shared paper-chit shell for selection / smelt / paste menus.
+class _PaperChit extends StatelessWidget {
+  final Widget child;
+
+  const _PaperChit({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.94, end: 1.0),
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOut,
+      builder: (context, scale, child) => Transform.scale(
+        scale: scale,
+        child: child,
+      ),
+      child: Transform.rotate(
+        angle: -0.6 * math.pi / 180,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: ScrapTheme.cardSurface,
+              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              border: Border.all(color: ScrapTheme.dividers),
+              boxShadow: ScrapTheme.subtleShadow,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FreshScrapHint extends StatelessWidget {
+  const _FreshScrapHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: 1.0,
+        duration: const Duration(milliseconds: 200),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ScrapStampLabel(text: '⟨ fresh scrap ⟩'),
+            const SizedBox(height: 10),
+            Text(
+              'scribble anything — Smelt figures it out',
+              textAlign: TextAlign.center,
+              style: ScrapTextStyles.stamp.copyWith(
+                fontSize: 11,
+                color: ScrapTheme.mutedText.withValues(alpha: 0.7),
+                letterSpacing: 0.8,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SelectionActionMenu extends StatelessWidget {
@@ -1378,26 +1488,16 @@ class _SelectionActionMenu extends StatelessWidget {
     return Positioned(
       top: top,
       left: left,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: ScrapTheme.dividers),
-            boxShadow: ScrapTheme.subtleShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _MenuButton(label: 'Resize', onTap: onResize),
-              const SizedBox(width: 8),
-              _MenuButton(label: 'Delete', onTap: onDelete, danger: true),
-              const SizedBox(width: 8),
-              _MenuButton(label: 'Copy', onTap: onCopy),
-            ],
-          ),
+      child: _PaperChit(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MenuButton(label: 'Resize', onTap: onResize),
+            const SizedBox(width: 8),
+            _MenuButton(label: 'Delete', onTap: onDelete, danger: true),
+            const SizedBox(width: 8),
+            _MenuButton(label: 'Copy', onTap: onCopy),
+          ],
         ),
       ),
     );
@@ -1425,26 +1525,16 @@ class _SmeltActionMenu extends StatelessWidget {
     return Positioned(
       top: top,
       left: left,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: ScrapTheme.dividers),
-            boxShadow: ScrapTheme.subtleShadow,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SmeltPillButton(onTap: onSmelt),
-              if (showManualSelect) ...[
-                const SizedBox(width: 8),
-                _ManualSelectButton(onTap: onManualSelect),
-              ],
+      child: _PaperChit(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SmeltPillButton(onTap: onSmelt),
+            if (showManualSelect) ...[
+              const SizedBox(width: 8),
+              _ManualSelectButton(onTap: onManualSelect),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -1458,17 +1548,39 @@ class _ManualSelectActionMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: ScrapTheme.dividers),
-          boxShadow: ScrapTheme.subtleShadow,
-        ),
-        child: _ManualSelectButton(onTap: onSelect),
+    return _PaperChit(
+      child: _ManualSelectButton(onTap: onSelect),
+    );
+  }
+}
+
+class _MenuPressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const _MenuPressable({required this.child, required this.onTap});
+
+  @override
+  State<_MenuPressable> createState() => _MenuPressableState();
+}
+
+class _MenuPressableState extends State<_MenuPressable> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.93 : 1.0,
+        duration: ScrapMotion.press,
+        curve: ScrapMotion.pressCurve,
+        child: widget.child,
       ),
     );
   }
@@ -1481,13 +1593,13 @@ class _ManualSelectButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _MenuPressable(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
           border: Border.all(color: ScrapTheme.dividers),
         ),
         child: Text(
@@ -1502,63 +1614,39 @@ class _ManualSelectButton extends StatelessWidget {
   }
 }
 
-class _SmeltPillButton extends StatefulWidget {
+class _SmeltPillButton extends StatelessWidget {
   final VoidCallback onTap;
 
   const _SmeltPillButton({required this.onTap});
 
   @override
-  State<_SmeltPillButton> createState() => _SmeltPillButtonState();
-}
-
-class _SmeltPillButtonState extends State<_SmeltPillButton> {
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
-        setState(() => _pressed = false);
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.96 : 1.0,
-        duration: ScrapMotion.press,
-        curve: ScrapMotion.pressCurve,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [ScrapTheme.accent, Color(0xFF8A6A55)],
+    return _MenuPressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [ScrapTheme.accent, Color(0xFF8A6A55)],
+          ),
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              'Smelt',
+              style: ScrapTextStyles.body.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
             ),
-            borderRadius: BorderRadius.circular(999),
-            boxShadow: [
-              BoxShadow(
-                color: ScrapTheme.accent.withValues(alpha: 0.28),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.auto_awesome, size: 15, color: Colors.white),
-              const SizedBox(width: 6),
-              Text(
-                'Smelt',
-                style: ScrapTextStyles.body.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -1574,13 +1662,13 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _MenuPressable(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: danger ? const Color(0xFFF7E6E6) : const Color(0xFFF5F1EC),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
         ),
         child: Text(
           label,
@@ -1601,24 +1689,14 @@ class _PasteMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: GestureDetector(
+    return _PaperChit(
+      child: _MenuPressable(
         onTap: onPaste,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: ScrapTheme.dividers),
-            boxShadow: ScrapTheme.subtleShadow,
-          ),
-          child: Text(
-            'Paste',
-            style: ScrapTextStyles.caption.copyWith(
-              color: ScrapTheme.accent,
-              fontWeight: FontWeight.w700,
-            ),
+        child: Text(
+          'Paste',
+          style: ScrapTextStyles.caption.copyWith(
+            color: ScrapTheme.accent,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),

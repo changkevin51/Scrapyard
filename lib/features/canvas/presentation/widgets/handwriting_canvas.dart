@@ -463,9 +463,20 @@ class CanvasPainter extends CustomPainter {
   void _drawPageLines(Canvas canvas, Size size) {
     final p = Paint()..color = ScrapTheme.notebookLines..strokeWidth = 0.7;
     if (pageLayout == PageLayout.ruled) {
-      for (double y = 36; y < size.height; y += 36) {
+      // Double header rule — "start here" band
+      final headerPaint = Paint()
+        ..color = ScrapTheme.notebookLines
+        ..strokeWidth = 1.0;
+      canvas.drawLine(const Offset(0, 34), Offset(size.width, 34), headerPaint);
+      canvas.drawLine(const Offset(0, 38), Offset(size.width, 38), headerPaint);
+      for (double y = 72; y < size.height; y += 36) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
       }
+      // Left margin rule
+      final marginPaint = Paint()
+        ..color = ScrapTheme.accent.withValues(alpha: 0.10)
+        ..strokeWidth = 1.0;
+      canvas.drawLine(const Offset(56, 0), Offset(56, size.height), marginPaint);
     } else if (pageLayout == PageLayout.grid) {
       for (double y = 36; y < size.height; y += 36) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
@@ -473,6 +484,11 @@ class CanvasPainter extends CustomPainter {
       for (double x = 36; x < size.width; x += 36) {
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), p);
       }
+      // Left margin rule
+      final marginPaint = Paint()
+        ..color = ScrapTheme.accent.withValues(alpha: 0.10)
+        ..strokeWidth = 1.0;
+      canvas.drawLine(const Offset(56, 0), Offset(56, size.height), marginPaint);
     } else if (pageLayout == PageLayout.dotted) {
       final dp = Paint()..color = ScrapTheme.notebookLines..style = PaintingStyle.fill;
       for (double y = 36; y < size.height; y += 36) {
@@ -481,6 +497,45 @@ class CanvasPainter extends CustomPainter {
         }
       }
     }
+
+    // Soft page edge — 1px divider inset + warm falloff so the sheet
+    // reads as a bounded scrap rather than an infinite void.
+    _drawPageEdge(canvas, size);
+  }
+
+  void _drawPageEdge(Canvas canvas, Size size) {
+    const inset = 2.0;
+    final edgePaint = Paint()
+      ..color = ScrapTheme.dividers
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    canvas.drawRect(
+      Rect.fromLTWH(inset, inset, size.width - inset * 2, size.height - inset * 2),
+      edgePaint,
+    );
+
+    // Warm 6px falloff on right and bottom edges (cheap gradient rects).
+    final rightGrad = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          ScrapTheme.kraft.withValues(alpha: 0.0),
+          ScrapTheme.kraft.withValues(alpha: 0.12),
+        ],
+      ).createShader(Rect.fromLTWH(size.width - 6, 0, 6, size.height));
+    canvas.drawRect(Rect.fromLTWH(size.width - 6, 0, 6, size.height), rightGrad);
+
+    final bottomGrad = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          ScrapTheme.kraft.withValues(alpha: 0.0),
+          ScrapTheme.kraft.withValues(alpha: 0.12),
+        ],
+      ).createShader(Rect.fromLTWH(0, size.height - 6, size.width, 6));
+    canvas.drawRect(Rect.fromLTWH(0, size.height - 6, size.width, 6), bottomGrad);
   }
 
   // ── Raw segment rendering (active stroke — max speed) ────────

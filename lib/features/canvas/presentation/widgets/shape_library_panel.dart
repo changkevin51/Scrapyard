@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
 
@@ -32,7 +33,8 @@ class ShapeLibraryPanel extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       decoration: const BoxDecoration(
         color: ScrapTheme.cardSurface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(ScrapTheme.borderRadiusDefault)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -42,12 +44,14 @@ class ShapeLibraryPanel extends ConsumerWidget {
             child: Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: ScrapTheme.dividers,
+                color: ScrapTheme.kraft,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          const ScrapStampLabel(text: '⟨ Shapes ⟩'),
+          const SizedBox(height: 8),
           Text('Shape Library', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 6),
           Text('Tap to place  ·  or draw your own',

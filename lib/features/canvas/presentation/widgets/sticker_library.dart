@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
 
 // ─────────────────────────────────────────────────────────────────
 // Canvas Sticker model — an emoji/decorative sticker placed on canvas
@@ -111,7 +112,8 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
       height: MediaQuery.of(context).size.height * 0.55,
       decoration: const BoxDecoration(
         color: ScrapTheme.cardSurface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(
+            top: Radius.circular(ScrapTheme.borderRadiusDefault)),
       ),
       child: Column(
         children: [
@@ -120,17 +122,17 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
             margin: const EdgeInsets.only(top: 12),
             width: 36, height: 4,
             decoration: BoxDecoration(
-              color: ScrapTheme.dividers,
+              color: ScrapTheme.kraft,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           // Title
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                Text('Stickers', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
+                const ScrapStampLabel(text: '⟨ Stickers ⟩'),
                 const Spacer(),
                 Text('Tap to place', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
               ],

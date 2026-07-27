@@ -616,6 +616,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  String _formatNodeUpdatedAt(DateTime updatedAt) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final updatedDay =
+        DateTime(updatedAt.year, updatedAt.month, updatedAt.day);
+    final date = '${updatedAt.month}/${updatedAt.day}';
+
+    String? dayLabel;
+    if (updatedDay == today) {
+      dayLabel = 'today';
+    } else if (updatedDay == today.subtract(const Duration(days: 1))) {
+      dayLabel = 'yesterday';
+    }
+
+    if (dayLabel != null) {
+      final hour = updatedAt.hour;
+      final minute = updatedAt.minute.toString().padLeft(2, '0');
+      final period = hour >= 12 ? 'PM' : 'AM';
+      final hour12 = hour % 12 == 0 ? 12 : hour % 12;
+      return 'Updated $dayLabel at $hour12:$minute $period';
+    }
+
+    return 'Updated $date';
+  }
+
   Widget _cardMeta(HomeNode node) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -631,7 +656,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Updated ${node.updatedAt.month}/${node.updatedAt.day}',
+          _formatNodeUpdatedAt(node.updatedAt),
           style: ScrapTextStyles.caption.copyWith(
             color: ScrapTheme.mutedText,
           ),

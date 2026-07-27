@@ -86,9 +86,19 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
 
   Future<void> _send([String? override]) async {
     final text = (override ?? _composer.text).trim();
-    if (text.isEmpty) return;
-    if (override == null) _composer.clear();
-    await ref.read(activeChatProvider.notifier).send(text);
+    final attachment = override == null
+        ? ref.read(pendingChatAttachmentProvider)
+        : null;
+    if (text.isEmpty && attachment == null) return;
+    if (override == null) {
+      _composer.clear();
+      if (attachment != null) {
+        ref.read(pendingChatAttachmentProvider.notifier).state = null;
+      }
+    }
+    await ref
+        .read(activeChatProvider.notifier)
+        .send(text, imageBytes: attachment);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -98,6 +108,16 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
         );
       }
     });
+  }
+
+  void _requestCanvasCapture() {
+    _focusNode.unfocus();
+    ref.read(chatCaptureRequestProvider.notifier).state = true;
+    ref.read(chatPanelOpenProvider.notifier).state = false;
+  }
+
+  void _clearAttachment() {
+    ref.read(pendingChatAttachmentProvider.notifier).state = null;
   }
 
   bool get _isDesktop {
@@ -450,6 +470,8 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
   }
 
   Widget _buildComposer(bool isStreaming) {
+    final attachment = ref.watch(pendingChatAttachmentProvider);
+
     return SafeArea(
       top: false,
       child: Container(
@@ -458,75 +480,159 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
           border: Border(top: BorderSide(color: ScrapTheme.dividers)),
           color: ScrapTheme.cardSurface,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: ScrapTheme.codeSurface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: ScrapTheme.dividers),
+            if (attachment != null) ...[
+              _AttachmentChip(
+                bytes: attachment,
+                onClear: _clearAttachment,
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                GestureDetector(
+                  onTap: isStreaming ? null : _requestCanvasCapture,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: ScrapTheme.codeSurface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ScrapTheme.dividers),
+                    ),
+                    child: Icon(
+                      Icons.crop_free,
+                      color: isStreaming
+                          ? ScrapTheme.mutedText
+                          : ScrapTheme.secondaryText,
+                      size: 20,
+                    ),
+                  ),
                 ),
-                child: KeyboardListener(
-                  focusNode: _keyboardFocus,
-                  onKeyEvent: (event) {
-                    if (!_isDesktop) return;
-                    if (event is KeyDownEvent &&
-                        event.logicalKey == LogicalKeyboardKey.enter &&
-                        !HardwareKeyboard.instance.isShiftPressed) {
-                      _send();
-                    }
-                  },
-                  child: TextField(
-                    controller: _composer,
-                    focusNode: _focusNode,
-                    minLines: 1,
-                    maxLines: 5,
-                    textInputAction: _isDesktop
-                        ? TextInputAction.send
-                        : TextInputAction.newline,
-                    onSubmitted: _isDesktop ? (_) => _send() : null,
-                    style: ScrapTextStyles.body.copyWith(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Ask a question…',
-                      hintStyle: ScrapTextStyles.body.copyWith(
-                        color: ScrapTheme.mutedText,
-                        fontSize: 14,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: ScrapTheme.codeSurface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: ScrapTheme.dividers),
+                    ),
+                    child: KeyboardListener(
+                      focusNode: _keyboardFocus,
+                      onKeyEvent: (event) {
+                        if (!_isDesktop) return;
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.enter &&
+                            !HardwareKeyboard.instance.isShiftPressed) {
+                          _send();
+                        }
+                      },
+                      child: TextField(
+                        controller: _composer,
+                        focusNode: _focusNode,
+                        minLines: 1,
+                        maxLines: 5,
+                        textInputAction: _isDesktop
+                            ? TextInputAction.send
+                            : TextInputAction.newline,
+                        onSubmitted: _isDesktop ? (_) => _send() : null,
+                        style: ScrapTextStyles.body.copyWith(fontSize: 14),
+                        decoration: InputDecoration(
+                          hintText: attachment != null
+                              ? 'Ask about this selection…'
+                              : 'Ask a question…',
+                          hintStyle: ScrapTextStyles.body.copyWith(
+                            color: ScrapTheme.mutedText,
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: isStreaming
-                  ? () => ref.read(activeChatProvider.notifier).stop()
-                  : () => _send(),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: ScrapTheme.accent,
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: isStreaming
+                      ? () => ref.read(activeChatProvider.notifier).stop()
+                      : () => _send(),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: ScrapTheme.accent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AttachmentChip extends StatelessWidget {
+  final Uint8List bytes;
+  final VoidCallback onClear;
+
+  const _AttachmentChip({required this.bytes, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ScrapTheme.dividers),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            width: 56,
+            height: 56,
+          ),
+        ),
+        Positioned(
+          top: -6,
+          right: -6,
+          child: GestureDetector(
+            onTap: onClear,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: ScrapTheme.secondaryText,
+                shape: BoxShape.circle,
+                border: Border.all(color: ScrapTheme.cardSurface, width: 1.5),
+              ),
+              child: const Icon(Icons.close, size: 12, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

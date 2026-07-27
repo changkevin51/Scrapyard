@@ -125,11 +125,22 @@ Rules for that line:
       final msg = history[i];
       final parts = <Map<String, dynamic>>[];
 
-      // Attach image to the first user message if provided.
-      if (i == 0 &&
+      // Prefer the image stored on the message itself (persisted attachments).
+      final msgImage = msg.image;
+      if (msg.role == ChatRole.user &&
+          msgImage != null &&
+          msgImage.isNotEmpty) {
+        parts.add({
+          'inline_data': {
+            'mime_type': 'image/png',
+            'data': base64Encode(msgImage),
+          },
+        });
+      } else if (i == 0 &&
           msg.role == ChatRole.user &&
           imageBytes != null &&
           imageBytes.isNotEmpty) {
+        // Smelt-seed fallback: one-shot image on the first user turn.
         parts.add({
           'inline_data': {
             'mime_type': 'image/png',

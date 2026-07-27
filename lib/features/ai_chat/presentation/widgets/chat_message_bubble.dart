@@ -53,14 +53,21 @@ class ChatMessageBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (isUser && message.image != null) ...[
+                    _MessageImageThumbnail(bytes: message.image!),
+                    if (content.isNotEmpty) const SizedBox(height: 8),
+                  ],
                   if (isUser)
-                    SelectableText(
-                      content,
-                      style: ScrapTextStyles.body.copyWith(
-                        fontSize: 14,
-                        color: ScrapTheme.primaryText,
-                      ),
-                    )
+                    if (content.isNotEmpty)
+                      SelectableText(
+                        content,
+                        style: ScrapTextStyles.body.copyWith(
+                          fontSize: 14,
+                          color: ScrapTheme.primaryText,
+                        ),
+                      )
+                    else
+                      const SizedBox.shrink()
                   else if (message.isError)
                     Text(
                       content,
@@ -132,6 +139,56 @@ class ChatMessageBubble extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _MessageImageThumbnail extends StatelessWidget {
+  final Uint8List bytes;
+
+  const _MessageImageThumbnail({required this.bytes});
+
+  void _openFull(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              child: Center(
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _openFull(context),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 180, maxWidth: 240),
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+          ),
+        ),
       ),
     );
   }

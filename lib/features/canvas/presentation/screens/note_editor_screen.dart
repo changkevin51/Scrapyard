@@ -12,6 +12,7 @@ import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
+import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/smelt_detection_provider.dart';
@@ -58,6 +59,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   Offset? _selectionDownPos;
   bool _selectionDragStarted = false;
   bool _selectionPointerIsStylus = false;
+  /// True while the chat panel has requested a canvas region for attachment.
+  bool _chatCaptureMode = false;
 
   static const double _selectionDragSlop = 8.0;
 
@@ -322,14 +325,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     setState(() {
       _selectionFromDetection = false;
       _activeClusterId = null;
-    });
-    _refreshSelectionBounds(showMenu: true);
-    _hidePasteMenu();
-
-    setState(() {
       _lassoStart = null;
       _lassoPreviewRect = null;
     });
+    _hidePasteMenu();
+
+    // Chat capture mode: auto-attach without showing the selection menu.
+    if (_chatCaptureMode) {
+      _attachSelectionToChat();
+      return;
+    }
+
+    _refreshSelectionBounds(showMenu: true);
   }
 
   void _hideSelectionMenu() {
@@ -614,12 +621,47 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
   }
 
-  Future<Uint8List?> _captureCanvasRegion(Rect region) async {
+  /// Capture the current selection and stage it as a chat attachment.
+  Future<void> _attachSelectionToChat() async {
+    final rect = _selectionRect;
+    if (rect == null || _selectedStrokeIds.isEmpty) return;
+    _hideSelectionMenu();
+
+    Uint8List? bytes;
+    try {
+      bytes = await _captureCanvasRegion(rect, maxWidth: 1000);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (bytes != null) {
+      ref.read(pendingChatAttachmentProvider.notifier).state = bytes;
+      ref.read(chatPanelOpenProvider.notifier).state = true;
+    }
+
+    ref.read(chatCaptureRequestProvider.notifier).state = false;
+    setState(() {
+      _chatCaptureMode = false;
+      _lassoStart = null;
+      _lassoPreviewRect = null;
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _showSelectionMenu = false;
+      _selectionFromDetection = false;
+      _activeClusterId = null;
+      _manualHintVisible = false;
+    });
+  }
+
+  Future<Uint8List?> _captureCanvasRegion(
+    Rect region, {
+    int? maxWidth,
+  }) async {
     final boundary = _canvasRepaintKey.currentContext?.findRenderObject()
         as RenderRepaintBoundary?;
     if (boundary == null) return null;
 
-    final pixelRatio = 2.0;
+    const pixelRatio = 2.0;
     final image = await boundary.toImage(pixelRatio: pixelRatio);
 
     // Calculate crop rect in image pixel coordinates
@@ -637,6 +679,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       math.min(cropRect.width, image.width - cropRect.left).round().toDouble(),
       math.min(cropRect.height, image.height - cropRect.top).round().toDouble(),
     );
+
+    if (clampedCropRect.width <= 0 || clampedCropRect.height <= 0) {
+      image.dispose();
+      return null;
+    }
 
     // Create cropped image using PictureRecorder
     final recorder = ui.PictureRecorder();
@@ -665,16 +712,24 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     Uint8List bytes = byteData.buffer.asUint8List();
 
-    // Compress if larger than 1MB
-    if (bytes.length > 1024 * 1024) {
+    // Optionally downscale for chat attachments (keeps DB/base64 size sane).
+    final needsDownscale = maxWidth != null &&
+        clampedCropRect.width > maxWidth;
+    final needsCompress = bytes.length > 1024 * 1024;
+
+    if (needsDownscale || needsCompress) {
+      final targetW = needsDownscale
+          ? maxWidth
+          : (clampedCropRect.width * 0.5).round();
       final codec = await ui.instantiateImageCodec(
         bytes,
-        targetWidth: (clampedCropRect.width * 0.5).round(),
+        targetWidth: targetW,
       );
       final frame = await codec.getNextFrame();
       final compressed = await frame.image.toByteData(
         format: ui.ImageByteFormat.png,
       );
+      frame.image.dispose();
       if (compressed != null) {
         bytes = compressed.buffer.asUint8List();
       }
@@ -947,6 +1002,50 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         if (_manualHintVisible) setState(() => _manualHintVisible = false);
         if (_manualSelectMenuAnchor != null) setState(() => _manualSelectMenuAnchor = null);
       }
+      // Cancel an in-progress chat capture if the user picks another tool.
+      if (_chatCaptureMode && previous != next && next != CanvasTool.lasso) {
+        ref.read(chatCaptureRequestProvider.notifier).state = false;
+        setState(() => _chatCaptureMode = false);
+      }
+    });
+
+    ref.listen<bool>(chatCaptureRequestProvider, (previous, next) {
+      if (next == true && previous != true) {
+        _manualHintTimer?.cancel();
+        ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.lasso;
+        ref.read(isPenModeActiveProvider.notifier).state = true;
+        setState(() {
+          _chatCaptureMode = true;
+          _lassoStart = null;
+          _lassoPreviewRect = null;
+          _selectionRect = null;
+          _selectedStrokeIds = {};
+          _showSelectionMenu = false;
+          _isResizingSelection = false;
+          _selectionFromDetection = false;
+          _activeClusterId = null;
+          _manualSelectMenuAnchor = null;
+          _manualHintVisible = true;
+        });
+        _manualHintTimer = Timer(const Duration(seconds: 3), () {
+          if (!mounted) return;
+          setState(() => _manualHintVisible = false);
+        });
+      } else if (next == false && _chatCaptureMode) {
+        setState(() {
+          _chatCaptureMode = false;
+          _manualHintVisible = false;
+        });
+      }
+    });
+
+    // If the user reopens chat without finishing a capture, cancel capture mode.
+    ref.listen<bool>(chatPanelOpenProvider, (previous, next) {
+      if (next == true &&
+          _chatCaptureMode &&
+          ref.read(pendingChatAttachmentProvider) == null) {
+        ref.read(chatCaptureRequestProvider.notifier).state = false;
+      }
     });
 
     ref.listen<bool>(stylusOnlyModeProvider, (previous, next) {
@@ -1094,6 +1193,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   rect: _selectionRect!,
                   showManualSelect: _selectionFromDetection,
                   onSmelt: _smeltSelection,
+                  onAddToChat: _attachSelectionToChat,
                   onManualSelect: _beginManualSelect,
                 )
               else if (_showSelectionMenu && !isSmeltMode)
@@ -1108,7 +1208,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         ),
       );
     }
-    if (_manualHintVisible && isSmeltMode && !stylusOnly) {
+    if (_manualHintVisible && (isSmeltMode || _chatCaptureMode) && !stylusOnly) {
       contentOverlays.add(
         Positioned(
           top: 24,
@@ -1128,7 +1228,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                     boxShadow: ScrapTheme.subtleShadow,
                   ),
                   child: Text(
-                    'Drag to select',
+                    _chatCaptureMode
+                        ? 'Drag to select for chat'
+                        : 'Drag to select',
                     style: ScrapTextStyles.caption.copyWith(
                       color: ScrapTheme.accent,
                       fontWeight: FontWeight.w600,
@@ -1509,12 +1611,14 @@ class _SmeltActionMenu extends StatelessWidget {
   final Rect rect;
   final bool showManualSelect;
   final VoidCallback onSmelt;
+  final VoidCallback onAddToChat;
   final VoidCallback onManualSelect;
 
   const _SmeltActionMenu({
     required this.rect,
     required this.showManualSelect,
     required this.onSmelt,
+    required this.onAddToChat,
     required this.onManualSelect,
   });
 
@@ -1531,6 +1635,8 @@ class _SmeltActionMenu extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             _SmeltPillButton(onTap: onSmelt),
+            const SizedBox(width: 8),
+            _AddToChatButton(onTap: onAddToChat),
             if (showManualSelect) ...[
               const SizedBox(width: 8),
               _ManualSelectButton(onTap: onManualSelect),
@@ -1609,6 +1715,45 @@ class _ManualSelectButton extends StatelessWidget {
             color: ScrapTheme.secondaryText,
             fontWeight: FontWeight.w600,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddToChatButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddToChatButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return _MenuPressable(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+          border: Border.all(color: ScrapTheme.dividers),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.chat_bubble_outline,
+              size: 14,
+              color: ScrapTheme.secondaryText,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Add to chat',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.secondaryText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );

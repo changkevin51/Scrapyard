@@ -55,6 +55,12 @@ final chatSecureStorageProvider = Provider<FlutterSecureStorage>((ref) {
 
 final chatPanelOpenProvider = StateProvider<bool>((ref) => false);
 
+/// Cropped canvas PNG staged in the composer, not yet sent.
+final pendingChatAttachmentProvider = StateProvider<Uint8List?>((ref) => null);
+
+/// True while the chat is waiting for the user to lasso a region on canvas.
+final chatCaptureRequestProvider = StateProvider<bool>((ref) => false);
+
 final chatPanelWidthProvider =
     StateNotifierProvider<ChatPanelWidthNotifier, double>((ref) {
   return ChatPanelWidthNotifier();
@@ -290,7 +296,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   Future<void> send(String text, {Uint8List? imageBytes}) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || state.isStreaming) return;
+    final attachment = imageBytes ?? _pendingImage;
+    if ((trimmed.isEmpty && attachment == null) || state.isStreaming) return;
+
+    // Visible content can be empty when only an image is attached; the API
+    // still needs a short text prompt for image-only turns.
+    const imageOnlyFallback = 'Take a look at this selection from my notes.';
+    final displayContent = trimmed;
+    final apiContent =
+        trimmed.isEmpty ? imageOnlyFallback : trimmed;
+    final titleSource =
+        trimmed.isEmpty ? 'Canvas selection' : trimmed;
 
     final modelId = _ref.read(chatModelProvider);
     final now = DateTime.now();
@@ -299,7 +315,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (conv == null) {
       conv = ChatConversation(
         id: _uuid.v4(),
-        title: ChatConversation.titleFromMessage(trimmed),
+        title: ChatConversation.titleFromMessage(titleSource),
         noteId: _pendingNoteId,
         noteTitle: _pendingNoteTitle,
         model: modelId,
@@ -313,7 +329,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           state.messages.any((m) => m.role == ChatRole.user && !m.hidden);
       if (!hasVisibleUser) {
         conv = conv.copyWith(
-          title: ChatConversation.titleFromMessage(trimmed),
+          title: ChatConversation.titleFromMessage(titleSource),
           updatedAt: now,
         );
       } else {
@@ -322,20 +338,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
       await _repo.upsertConversation(conv);
     }
 
+    // Persist the attachment on the message so it survives history reload.
+    // For the Smelt seed path, `_pendingImage` is still passed via
+    // `imageBytes` in streamChat for the hidden first turn.
+    final persistedImage = imageBytes;
     final userMsg = ChatMessage(
       id: _uuid.v4(),
       conversationId: conv.id,
       role: ChatRole.user,
-      content: trimmed,
+      content: displayContent,
       createdAt: now,
+      image: persistedImage,
     );
     await _repo.insertMessage(userMsg);
 
     final assistantId = _uuid.v4();
     _streamingAssistantId = assistantId;
 
-    final historyForApi = [...state.messages, userMsg];
-    final image = imageBytes ?? _pendingImage;
+    // History sent to the API uses the fallback text when content is empty.
+    final apiUserMsg = displayContent.isEmpty
+        ? userMsg.copyWith(content: apiContent)
+        : userMsg;
+    final historyForApi = [...state.messages, apiUserMsg];
+    final seedImage = imageBytes == null ? _pendingImage : null;
     _pendingImage = null; // only attach once
 
     state = state.copyWith(
@@ -354,7 +379,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final stream = _service.streamChat(
         history: historyForApi,
         preferredModel: modelId,
-        imageBytes: image,
+        imageBytes: seedImage,
         onComplete: (r) => result = r,
       );
 

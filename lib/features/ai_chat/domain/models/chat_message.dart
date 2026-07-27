@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 enum ChatRole { user, assistant }
 
@@ -15,6 +16,8 @@ class ChatMessage {
   /// When true, the message is sent to the model but not shown in the UI
   /// (used for Smelt handoff context).
   final bool hidden;
+  /// Optional PNG image attached to the message (e.g. a canvas selection).
+  final Uint8List? image;
 
   const ChatMessage({
     required this.id,
@@ -26,6 +29,7 @@ class ChatMessage {
     required this.createdAt,
     this.isError = false,
     this.hidden = false,
+    this.image,
   });
 
   Map<String, dynamic> toMap() {
@@ -39,6 +43,7 @@ class ChatMessage {
       'created_at': createdAt.toIso8601String(),
       'is_error': isError ? 1 : 0,
       'hidden': hidden ? 1 : 0,
+      'image': image == null ? null : base64Encode(image!),
     };
   }
 
@@ -53,6 +58,15 @@ class ChatMessage {
         }
       } catch (_) {}
     }
+
+    Uint8List? image;
+    final rawImage = map['image'];
+    if (rawImage is String && rawImage.isNotEmpty) {
+      try {
+        image = base64Decode(rawImage);
+      } catch (_) {}
+    }
+
     return ChatMessage(
       id: map['id'] as String,
       conversationId: map['conversation_id'] as String,
@@ -66,6 +80,7 @@ class ChatMessage {
       createdAt: DateTime.parse(map['created_at'] as String),
       isError: (map['is_error'] as int? ?? 0) == 1,
       hidden: (map['hidden'] as int? ?? 0) == 1,
+      image: image,
     );
   }
 
@@ -75,6 +90,8 @@ class ChatMessage {
     String? modelUsed,
     bool? isError,
     bool? hidden,
+    Uint8List? image,
+    bool clearImage = false,
   }) {
     return ChatMessage(
       id: id,
@@ -86,6 +103,7 @@ class ChatMessage {
       createdAt: createdAt,
       isError: isError ?? this.isError,
       hidden: hidden ?? this.hidden,
+      image: clearImage ? null : (image ?? this.image),
     );
   }
 }

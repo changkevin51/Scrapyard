@@ -26,7 +26,7 @@ class ChatRepository {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_conversationsTable (
@@ -49,12 +49,20 @@ class ChatRepository {
             model_used TEXT,
             created_at TEXT NOT NULL,
             is_error INTEGER NOT NULL DEFAULT 0,
-            hidden INTEGER NOT NULL DEFAULT 0
+            hidden INTEGER NOT NULL DEFAULT 0,
+            image TEXT
           )
         ''');
         await db.execute(
           'CREATE INDEX idx_messages_conversation ON $_messagesTable(conversation_id)',
         );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE $_messagesTable ADD COLUMN image TEXT',
+          );
+        }
       },
     );
   }

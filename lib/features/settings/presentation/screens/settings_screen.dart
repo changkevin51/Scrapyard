@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/chat_history_sheet.dart';
@@ -55,6 +57,7 @@ class SettingsScreen extends ConsumerWidget {
               color: ScrapTheme.mutedText,
             ),
             onTap: () async {
+              ScrapFeedback.tap();
               final saved = await showApiKeyDialog(context, allowSkip: false);
               if (saved == true && context.mounted) {
                 final nowHasKey =
@@ -87,7 +90,10 @@ class SettingsScreen extends ConsumerWidget {
               Icons.chevron_right,
               color: ScrapTheme.mutedText,
             ),
-            onTap: () => showModelPickerSheet(context),
+            onTap: () {
+              ScrapFeedback.tap();
+              showModelPickerSheet(context);
+            },
           ),
           const Divider(color: ScrapTheme.dividers),
           ListTile(
@@ -104,7 +110,10 @@ class SettingsScreen extends ConsumerWidget {
               Icons.chevron_right,
               color: ScrapTheme.mutedText,
             ),
-            onTap: () => showChatHistorySheet(context),
+            onTap: () {
+              ScrapFeedback.tap();
+              showChatHistorySheet(context);
+            },
           ),
           const Divider(color: ScrapTheme.dividers),
           ListTile(
@@ -121,7 +130,8 @@ class SettingsScreen extends ConsumerWidget {
             onTap: chatCount == 0
                 ? null
                 : () async {
-                    final confirmed = await showDialog<bool>(
+                    ScrapFeedback.warn();
+                    final confirmed = await showScrapDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
                         backgroundColor: ScrapTheme.cardSurface,
@@ -181,7 +191,10 @@ class SettingsScreen extends ConsumerWidget {
               Icons.chevron_right,
               color: ScrapTheme.mutedText,
             ),
-            onTap: () => context.push('/settings/gestures'),
+            onTap: () {
+              ScrapFeedback.tap();
+              context.push('/settings/gestures');
+            },
           ),
           const Divider(color: ScrapTheme.dividers),
         ],

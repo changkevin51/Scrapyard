@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
@@ -155,7 +156,7 @@ void convertOcrToTextNode(
 }
 
 Future<void> showInsertTableDialog(BuildContext context) {
-  return showDialog(
+  return showScrapDialog(
     context: context,
     builder: (_) => const InsertTableDialog(),
   );

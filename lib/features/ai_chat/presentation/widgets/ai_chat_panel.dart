@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../../ai_engine/data/smelt_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
@@ -90,6 +92,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
         ? ref.read(pendingChatAttachmentProvider)
         : null;
     if (text.isEmpty && attachment == null) return;
+    ScrapFeedback.action();
     if (override == null) {
       _composer.clear();
       if (attachment != null) {
@@ -444,7 +447,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
       itemCount: items.length + (chat.isStreaming ? 1 : 0),
       itemBuilder: (context, index) {
         if (chat.isStreaming && index == 0) {
-          // Streaming bubble as a synthetic assistant message
+          // Streaming bubble — no entrance (updates every token).
           return ChatMessageBubble(
             message: ChatMessage(
               id: 'streaming',
@@ -461,9 +464,14 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
         }
         final msgIndex = chat.isStreaming ? index - 1 : index;
         final msg = items[msgIndex];
-        return ChatMessageBubble(
-          message: msg,
-          onSuggestionTap: (s) => _send(s),
+        return ScrapCardEntrance(
+          key: ValueKey(msg.id),
+          index: 0,
+          stagger: Duration.zero,
+          child: ChatMessageBubble(
+            message: msg,
+            onSuggestionTap: (s) => _send(s),
+          ),
         );
       },
     );
@@ -497,7 +505,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                 GestureDetector(
                   onTap: isStreaming ? null : _requestCanvasCapture,
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: ScrapMotion.fast,
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
@@ -561,12 +569,13 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                   ),
                 ),
                 const SizedBox(width: 8),
-                GestureDetector(
+                ScrapPressable(
+                  scale: 0.9,
                   onTap: isStreaming
                       ? () => ref.read(activeChatProvider.notifier).stop()
                       : () => _send(),
                   child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
+                    duration: ScrapMotion.fast,
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(

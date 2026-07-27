@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../providers/canvas_providers.dart';
 import 'canvas_smart_widgets.dart';
 import 'pen_settings_panel.dart';
@@ -69,7 +71,10 @@ class _ToolPressableState extends State<_ToolPressable> {
           : null,
       onTapUp: (_) {
         setState(() => _pressed = false);
-        widget.onTap?.call();
+        if (widget.onTap != null) {
+          ScrapFeedback.tap();
+          widget.onTap!();
+        }
       },
       onTapCancel: () => setState(() => _pressed = false),
       onLongPress: widget.onLongPress,
@@ -559,7 +564,7 @@ class _SettingsButton extends ConsumerWidget {
   }
 
   void _showSettings(BuildContext context) {
-    showModalBottomSheet(
+    showScrapSheet(
       context: context,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(

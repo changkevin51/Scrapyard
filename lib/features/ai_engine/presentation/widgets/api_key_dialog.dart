@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../data/api_key_service.dart';
 import '../providers/smelt_provider.dart';
 
@@ -15,7 +16,7 @@ Future<bool?> showApiKeyDialog(
   BuildContext context, {
   bool allowSkip = true,
 }) {
-  return showDialog<bool>(
+  return showScrapDialog<bool>(
     context: context,
     barrierDismissible: allowSkip,
     builder: (context) => ApiKeyDialog(allowSkip: allowSkip),

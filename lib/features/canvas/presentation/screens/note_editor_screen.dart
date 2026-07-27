@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
@@ -36,6 +37,7 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
 class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final ScrollController _scrollController = ScrollController();
   final CanvasOcrService _ocrService = CanvasOcrService();
+  final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
 
   Timer? _ocrDebounce;
   OverlayEntry? _smeltPopupEntry;
@@ -832,6 +834,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     // Convert to global coordinates for the popup positioning
     final globalRect = _convertToGlobalRect(selectionRect);
+    ScrapFeedback.action();
 
     _smeltPopupEntry = OverlayEntry(
       builder: (context) => Stack(
@@ -845,8 +848,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             ),
           ),
           SmeltPopup(
+            key: _smeltPopupKey,
             selectionRect: globalRect,
-            onDismiss: _dismissSmeltPopup,
+            onDismiss: _removeSmeltPopup,
             onRetry: _retrySmelt,
             screenSize: MediaQuery.of(context).size,
           ),
@@ -859,6 +863,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _dismissSmeltPopup() {
+    final state = _smeltPopupKey.currentState;
+    if (state != null) {
+      state.dismiss();
+      return;
+    }
+    _removeSmeltPopup();
+  }
+
+  void _removeSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
     ref.read(smeltProvider.notifier).clearState();
@@ -1881,15 +1894,31 @@ class _PaperChit extends StatelessWidget {
   }
 }
 
-class _FreshScrapHint extends StatelessWidget {
+class _FreshScrapHint extends StatefulWidget {
   const _FreshScrapHint();
+
+  @override
+  State<_FreshScrapHint> createState() => _FreshScrapHintState();
+}
+
+class _FreshScrapHintState extends State<_FreshScrapHint> {
+  double _opacity = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _opacity = 1);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: AnimatedOpacity(
-        opacity: 1.0,
-        duration: const Duration(milliseconds: 200),
+        opacity: _opacity,
+        duration: ScrapMotion.panel,
+        curve: ScrapMotion.panelCurve,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
 
@@ -141,7 +142,7 @@ class ShapeLibraryPanel extends ConsumerWidget {
 
 /// Show the shape library from a button tap
 void showShapeLibrary(BuildContext context) {
-  showModalBottomSheet(
+  showScrapSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

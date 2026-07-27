@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../domain/models/gemini_model.dart';
 import '../providers/chat_providers.dart';
 
 Future<void> showModelPickerSheet(BuildContext context) {
-  return showModalBottomSheet(
+  return showScrapSheet(
     context: context,
     backgroundColor: ScrapTheme.cardSurface,
     shape: const RoundedRectangleBorder(
@@ -58,13 +62,15 @@ class ModelPickerSheet extends ConsumerWidget {
             final sel = m.id == selected;
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: GestureDetector(
+              child: ScrapPressable(
+                scale: 0.98,
                 onTap: () {
+                  ScrapFeedback.tap();
                   ref.read(chatModelProvider.notifier).setModel(m.id);
                   Navigator.pop(context);
                 },
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
+                  duration: ScrapMotion.fast,
                   width: double.infinity,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

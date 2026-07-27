@@ -4,8 +4,10 @@ import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_tilt.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/home_node.dart';
 import '../providers/home_providers.dart' show
@@ -189,10 +191,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GestureDetector(
-                        onTap: () => ref
-                            .read(currentHomeNodesProvider.notifier)
-                            .createFolder('New Folder'),
+                      ScrapPressable(
+                        scale: 0.96,
+                        onTap: () {
+                          ScrapFeedback.tap();
+                          ref
+                              .read(currentHomeNodesProvider.notifier)
+                              .createFolder('New Folder');
+                        },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
@@ -204,8 +210,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                       ),
-                      GestureDetector(
-                        onTap: _createAndOpenScrap,
+                      ScrapPressable(
+                        scale: 0.96,
+                        onTap: () {
+                          ScrapFeedback.tap();
+                          _createAndOpenScrap();
+                        },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
@@ -217,10 +227,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
                         ),
                       ),
-                      GestureDetector(
-                        onTap: () => ref
-                            .read(currentHomeNodesProvider.notifier)
-                            .importDocument(),
+                      ScrapPressable(
+                        scale: 0.96,
+                        onTap: () {
+                          ScrapFeedback.tap();
+                          ref
+                              .read(currentHomeNodesProvider.notifier)
+                              .importDocument();
+                        },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
@@ -264,51 +278,94 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     // Breadcrumb Navigation
                     Row(
                       children: [
-                        if (currentFolder != 'root') ...[
-                          IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: ScrapTheme.primaryText,
+                        SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: AnimatedSlide(
+                            duration: ScrapMotion.panel,
+                            curve: ScrapMotion.panelCurve,
+                            offset: currentFolder == 'root'
+                                ? const Offset(-0.35, 0)
+                                : Offset.zero,
+                            child: AnimatedOpacity(
+                              duration: ScrapMotion.panel,
+                              curve: ScrapMotion.panelCurve,
+                              opacity: currentFolder == 'root' ? 0.0 : 1.0,
+                              child: IgnorePointer(
+                                ignoring: currentFolder == 'root',
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  icon: const Icon(
+                                    Icons.arrow_back,
+                                    color: ScrapTheme.primaryText,
+                                  ),
+                                  onPressed: () {
+                                    final path = ref.read(folderPathProvider);
+                                    if (path.length > 1) {
+                                      ref
+                                          .read(currentFolderIdProvider
+                                              .notifier)
+                                          .state = path[path.length - 2].id;
+                                      ref
+                                          .read(folderPathProvider.notifier)
+                                          .state = path.sublist(
+                                              0, path.length - 1);
+                                    } else {
+                                      ref
+                                          .read(currentFolderIdProvider
+                                              .notifier)
+                                          .state = 'root';
+                                      ref
+                                          .read(folderPathProvider.notifier)
+                                          .state = [];
+                                    }
+                                  },
+                                ),
+                              ),
                             ),
-                            onPressed: () {
-                              final path = ref.read(folderPathProvider);
-                              if (path.length > 1) {
-                                ref
-                                    .read(currentFolderIdProvider.notifier)
-                                    .state = path[path.length - 2].id;
-                                ref.read(folderPathProvider.notifier).state =
-                                    path.sublist(0, path.length - 1);
-                              } else {
-                                ref
-                                    .read(currentFolderIdProvider.notifier)
-                                    .state = 'root';
-                                ref.read(folderPathProvider.notifier).state =
-                                    [];
-                              }
-                            },
                           ),
-                          const SizedBox(width: 16),
-                        ],
-                        AnimatedSwitcher(
-                          duration: ScrapMotion.panel,
-                          switchInCurve: ScrapMotion.panelCurve,
-                          switchOutCurve: ScrapMotion.panelCurve,
-                          transitionBuilder: (child, animation) {
-                            return SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.12),
-                                end: Offset.zero,
-                              ).animate(animation),
-                              child: child,
-                            );
-                          },
-                          child: Text(
-                            currentFolder == 'root'
-                                ? 'All Files'
-                                : folderPath.last.title,
-                            key: ValueKey(currentFolder),
-                            style: ScrapTextStyles.heading
-                                .copyWith(fontSize: 24),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: AnimatedSwitcher(
+                            duration: ScrapMotion.panel,
+                            switchInCurve: ScrapMotion.panelCurve,
+                            switchOutCurve: ScrapMotion.panelCurve,
+                            layoutBuilder: (currentChild, previousChildren) {
+                              return Stack(
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  ...previousChildren,
+                                  if (currentChild != null) currentChild,
+                                ],
+                              );
+                            },
+                            transitionBuilder: (child, animation) {
+                              final fade = CurvedAnimation(
+                                parent: animation,
+                                curve: const Interval(0.45, 1.0),
+                              );
+                              return FadeTransition(
+                                opacity: fade,
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, 0.12),
+                                    end: Offset.zero,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Text(
+                              currentFolder == 'root'
+                                  ? 'All Files'
+                                  : folderPath.last.title,
+                              key: ValueKey(currentFolder),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ScrapTextStyles.heading
+                                  .copyWith(fontSize: 24),
+                            ),
                           ),
                         ),
                       ],
@@ -320,54 +377,75 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Expanded(
                       child: KeyedSubtree(
                         key: ValueKey(currentFolder),
-                        child: nodesAsync.when(
-                          loading: () => const Center(
-                            child: CircularProgressIndicator(
-                              color: ScrapTheme.accent,
-                            ),
-                          ),
-                          error: (err, stack) =>
-                              Center(child: Text('Error: $err')),
-                          data: (nodes) {
-                            if (nodes.isEmpty) {
-                              return Center(
-                                child: Text(
-                                  'Empty folder. Grab a scrap above, or import a doc.',
-                                  style: ScrapTextStyles.caption.copyWith(
-                                    color: ScrapTheme.mutedText,
-                                  ),
-                                ),
-                              );
+                        child: AnimatedSwitcher(
+                          duration: ScrapMotion.fast,
+                          switchInCurve: ScrapMotion.panelCurve,
+                          switchOutCurve: ScrapMotion.exitCurve,
+                          transitionBuilder: (child, animation) {
+                            // Fade only leaf states (spinner / empty / error).
+                            // Grid entrance is transform-only via ScrapCardEntrance.
+                            if (child.key == const ValueKey('grid')) {
+                              return child;
                             }
-
-                            return GridView.builder(
-                              cacheExtent: 800,
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 32,
-                                mainAxisSpacing: 32,
-                                childAspectRatio: 1.1,
+                            return FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            );
+                          },
+                          child: nodesAsync.when(
+                            loading: () => const Center(
+                              key: ValueKey('loading'),
+                              child: CircularProgressIndicator(
+                                color: ScrapTheme.accent,
                               ),
-                              itemCount: nodes.length,
-                              itemBuilder: (context, index) {
-                                final node = nodes[index];
-                                return ScrapCardEntrance(
-                                  index: index,
-                                  stagger:
-                                      const Duration(milliseconds: 28),
-                                  child: RepaintBoundary(
-                                    child: ScrapTilt(
-                                      key: ValueKey(node.id),
-                                      seed: node.id.hashCode,
-                                      child: _buildNodeCard(
-                                          context, ref, node),
+                            ),
+                            error: (err, stack) => Center(
+                              key: const ValueKey('error'),
+                              child: Text('Error: $err'),
+                            ),
+                            data: (nodes) {
+                              if (nodes.isEmpty) {
+                                return Center(
+                                  key: const ValueKey('empty'),
+                                  child: Text(
+                                    'Empty folder. Grab a scrap above, or import a doc.',
+                                    style: ScrapTextStyles.caption.copyWith(
+                                      color: ScrapTheme.mutedText,
                                     ),
                                   ),
                                 );
-                              },
-                            );
-                          },
+                              }
+
+                              return GridView.builder(
+                                key: const ValueKey('grid'),
+                                cacheExtent: 800,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 32,
+                                  mainAxisSpacing: 32,
+                                  childAspectRatio: 1.1,
+                                ),
+                                itemCount: nodes.length,
+                                itemBuilder: (context, index) {
+                                  final node = nodes[index];
+                                  return ScrapCardEntrance(
+                                    index: index,
+                                    stagger:
+                                        const Duration(milliseconds: 28),
+                                    child: RepaintBoundary(
+                                      child: ScrapTilt(
+                                        key: ValueKey(node.id),
+                                        seed: node.id.hashCode,
+                                        child: _buildNodeCard(
+                                            context, ref, node),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -382,9 +460,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
-    return _ScrapPressable(
+    return ScrapPressable(
       onTap: () {
         if (node.type == NodeType.folder) {
+          ScrapFeedback.action();
           ref.read(currentFolderIdProvider.notifier).state = node.id;
           ref.read(folderPathProvider.notifier).state = [
             ...ref.read(folderPathProvider),
@@ -791,43 +870,6 @@ class _PileStackGraphic extends StatelessWidget {
   }
 }
 
-class _ScrapPressable extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-
-  const _ScrapPressable({
-    required this.child,
-    required this.onTap,
-  });
-
-  @override
-  State<_ScrapPressable> createState() => _ScrapPressableState();
-}
-
-class _ScrapPressableState extends State<_ScrapPressable> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          scale: _pressed ? 0.97 : 1.0,
-          duration: ScrapMotion.press,
-          curve: Curves.easeOut,
-          child: widget.child,
-        ),
-      ),
-    );
-  }
-}
-
 class _NewScrapButton extends StatefulWidget {
   final VoidCallback onTap;
 
@@ -1079,15 +1121,16 @@ class _SidebarItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      hoverColor: Colors.transparent,
-      splashColor: Colors.transparent,
-      highlightColor: Colors.transparent,
+    return ScrapPressable(
+      scale: 0.98,
+      onTap: () {
+        ScrapFeedback.tap();
+        onTap();
+      },
       child: AnimatedContainer(
         duration: ScrapMotion.panel,
         curve: ScrapMotion.panelCurve,
-        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 10.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 10.0),
         decoration: BoxDecoration(
           color: isSelected
               ? ScrapTheme.accent.withValues(alpha: 0.08)
@@ -1095,6 +1138,19 @@ class _SidebarItem extends StatelessWidget {
         ),
         child: Row(
           children: [
+            AnimatedContainer(
+              duration: ScrapMotion.panel,
+              curve: ScrapMotion.panelCurve,
+              width: 3,
+              height: 18,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? ScrapTheme.accent
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             AnimatedDefaultTextStyle(
               duration: ScrapMotion.panel,
               curve: ScrapMotion.panelCurve,

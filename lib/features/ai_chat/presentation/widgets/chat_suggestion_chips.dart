@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
 
 /// Shared chip row for follow-up / starter suggestions.
 class ChatSuggestionChips extends StatelessWidget {
@@ -19,8 +21,12 @@ class ChatSuggestionChips extends StatelessWidget {
     if (suggestions.isEmpty) return const SizedBox.shrink();
 
     final chips = suggestions.map((s) {
-      return GestureDetector(
-        onTap: () => onSelected(s),
+      return ScrapPressable(
+        scale: 0.95,
+        onTap: () {
+          ScrapFeedback.tap();
+          onSelected(s);
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(

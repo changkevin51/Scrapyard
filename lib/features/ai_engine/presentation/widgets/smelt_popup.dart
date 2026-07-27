@@ -29,15 +29,16 @@ class SmeltPopup extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<SmeltPopup> createState() => _SmeltPopupState();
+  ConsumerState<SmeltPopup> createState() => SmeltPopupState();
 }
 
-class _SmeltPopupState extends ConsumerState<SmeltPopup>
+class SmeltPopupState extends ConsumerState<SmeltPopup>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
   late Animation<double> _rotateAnim;
+  bool _closing = false;
 
   @override
   void initState() {
@@ -56,6 +57,14 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
       CurvedAnimation(parent: _animController, curve: Curves.easeOut),
     );
     _animController.forward();
+  }
+
+  /// Reverse entrance animation, then notify the host to remove the overlay.
+  Future<void> dismiss() async {
+    if (_closing) return;
+    _closing = true;
+    await _animController.reverse();
+    if (mounted) widget.onDismiss();
   }
 
   @override
@@ -120,7 +129,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               child: child,
             ),
             child: TapRegion(
-              onTapOutside: (_) => widget.onDismiss(),
+              onTapOutside: (_) => dismiss(),
               child: _buildCard(state),
             ),
           ),
@@ -430,7 +439,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
       noteTitle: noteTitle,
     );
     ref.read(chatPanelOpenProvider.notifier).state = true;
-    widget.onDismiss();
+    dismiss();
   }
 
   Widget _buildChatHandoff(SmeltResponse response) {

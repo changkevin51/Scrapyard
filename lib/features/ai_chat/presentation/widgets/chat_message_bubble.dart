@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_engine/presentation/widgets/latex_markdown_view.dart';
 import '../../domain/models/chat_message.dart';
 import '../../domain/models/gemini_model.dart';
@@ -150,7 +151,7 @@ class _MessageImageThumbnail extends StatelessWidget {
   const _MessageImageThumbnail({required this.bytes});
 
   void _openFull(BuildContext context) {
-    showDialog(
+    showScrapDialog(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.black87,

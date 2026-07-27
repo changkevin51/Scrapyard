@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
 import '../providers/pdf_providers.dart';
 import '../widgets/annotation_toolbar.dart';
 import '../widgets/split_screen_layout.dart';
@@ -17,7 +20,7 @@ class PdfViewerScreen extends ConsumerStatefulWidget {
 
 class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
   final PdfViewerController _pdfController = PdfViewerController();
-  
+
   // Mocked for testing, realistically we pick a file
   final String _mockDocId = 'test-doc-id-1234';
 
@@ -49,26 +52,51 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
         ),
         iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
         actions: [
-          IconButton(
-            icon: Icon(
-              isSplitScreen ? Icons.vertical_split : Icons.vertical_split_outlined,
-              color: isSplitScreen ? ScrapTheme.accent : ScrapTheme.secondaryText,
-            ),
-            onPressed: () {
+          ScrapPressable(
+            scale: 0.9,
+            onTap: () {
+              ScrapFeedback.tap();
               ref.read(isSplitScreenProvider.notifier).state = !isSplitScreen;
             },
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                isSplitScreen
+                    ? Icons.vertical_split
+                    : Icons.vertical_split_outlined,
+                color: isSplitScreen
+                    ? ScrapTheme.accent
+                    : ScrapTheme.secondaryText,
+              ),
+            ),
           ),
         ],
       ),
       body: Stack(
         children: [
-          isSplitScreen
-              ? SplitScreenLayout(
-                  leftChild: _buildPdfViewer(),
-                  rightChild: const NoteEditorScreen(), // Phase 4 placeholder inside split
-                )
-              : _buildPdfViewer(),
-              
+          AnimatedSwitcher(
+            duration: ScrapMotion.panel,
+            switchInCurve: ScrapMotion.panelCurve,
+            switchOutCurve: ScrapMotion.exitCurve,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+            child: isSplitScreen
+                ? SplitScreenLayout(
+                    key: const ValueKey('split'),
+                    leftChild: _buildPdfViewer(),
+                    rightChild:
+                        const NoteEditorScreen(), // Phase 4 placeholder inside split
+                  )
+                : KeyedSubtree(
+                    key: const ValueKey('single'),
+                    child: _buildPdfViewer(),
+                  ),
+          ),
+
           // Draggable formatting pill
           const AnnotationToolbar(),
         ],

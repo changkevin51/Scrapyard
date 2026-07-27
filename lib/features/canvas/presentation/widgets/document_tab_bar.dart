@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../providers/canvas_providers.dart';
 
 // ─────────────────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ class DocumentTabBar extends ConsumerWidget {
     List<OpenedTab> tabs,
     List<TabGroup> groups,
   ) {
-    showModalBottomSheet(
+    showScrapSheet(
       context: context,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
@@ -253,7 +254,7 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
 
   void _groupDialog(BuildContext context) {
     final others = widget.tabs.where((t) => t.id != widget.tab.id).toList();
-    showDialog(
+    showScrapDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: ScrapTheme.cardSurface,

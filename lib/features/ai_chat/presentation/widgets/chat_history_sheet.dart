@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../domain/models/chat_conversation.dart';
 import '../providers/chat_providers.dart';
 
@@ -9,7 +12,7 @@ Future<void> showChatHistorySheet(
   BuildContext context, {
   void Function(ChatConversation conv)? onOpen,
 }) {
-  return showModalBottomSheet(
+  return showScrapSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: ScrapTheme.cardSurface,
@@ -165,7 +168,8 @@ class _HistoryTile extends StatelessWidget {
         child: const Icon(Icons.delete_outline, color: Colors.redAccent),
       ),
       confirmDismiss: (_) async {
-        return await showDialog<bool>(
+        ScrapFeedback.warn();
+        return await showScrapDialog<bool>(
               context: context,
               builder: (ctx) => AlertDialog(
                 backgroundColor: ScrapTheme.cardSurface,
@@ -193,9 +197,15 @@ class _HistoryTile extends StatelessWidget {
             false;
       },
       onDismissed: (_) => onDelete(),
-      child: ListTile(
+      child: ScrapPressable(
+        scale: 0.98,
+        onTap: () {
+          ScrapFeedback.tap();
+          onTap();
+        },
+        child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-        onTap: onTap,
+        onTap: null,
         title: Text(
           conversation.title,
           style: ScrapTextStyles.body.copyWith(fontWeight: FontWeight.w600),
@@ -214,6 +224,7 @@ class _HistoryTile extends StatelessWidget {
           style:
               ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText),
         ),
+      ),
       ),
     );
   }

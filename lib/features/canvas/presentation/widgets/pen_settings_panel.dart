@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 
@@ -298,7 +299,7 @@ class PenSettingsButton extends ConsumerWidget {
       message: 'Pen settings',
       child: GestureDetector(
         onTap: () {
-          showModalBottomSheet(
+          showScrapSheet(
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,

@@ -27,17 +27,6 @@ extension PenStyleInfo on PenStyle {
     PenStyle.ballpoint     => 'Ballpoint',
   };
 
-  String get kanji => switch (this) {
-    PenStyle.normal        => '筆',
-    PenStyle.calligraphy   => '書',
-    PenStyle.fountain      => '泉',
-    PenStyle.brush         => '刷',
-    PenStyle.pencil        => '鉛',
-    PenStyle.marker        => '印',
-    PenStyle.chalk         => '粉',
-    PenStyle.ballpoint     => '珠',
-  };
-
   String get description => switch (this) {
     PenStyle.normal        => 'Smooth cubic Bézier ink',
     PenStyle.calligraphy   => 'Thick & thin nib strokes',

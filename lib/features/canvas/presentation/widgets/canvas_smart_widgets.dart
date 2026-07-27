@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
 
@@ -31,10 +31,10 @@ class CanvasTableOverlay extends ConsumerWidget {
         },
         child: Container(
           decoration: BoxDecoration(
-            color: KotoTheme.cardSurface,
-            border: Border.all(color: KotoTheme.dividers),
+            color: ScrapTheme.cardSurface,
+            border: Border.all(color: ScrapTheme.dividers),
             borderRadius: BorderRadius.circular(4),
-            boxShadow: KotoTheme.subtleShadow,
+            boxShadow: ScrapTheme.subtleShadow,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -43,7 +43,7 @@ class CanvasTableOverlay extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: const BoxDecoration(
-                  color: KotoTheme.dividers,
+                  color: ScrapTheme.dividers,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
                 ),
                 child: Row(
@@ -51,8 +51,8 @@ class CanvasTableOverlay extends ConsumerWidget {
                   children: [
                     Text(
                       '${table.rows}×${table.cols} Table',
-                      style: KotoTextStyles.caption.copyWith(
-                        color: KotoTheme.secondaryText,
+                      style: ScrapTextStyles.caption.copyWith(
+                        color: ScrapTheme.secondaryText,
                         fontSize: 11,
                       ),
                     ),
@@ -64,7 +64,7 @@ class CanvasTableOverlay extends ConsumerWidget {
                             tables.where((t) => t.id != table.id).toList();
                       },
                       child: const Icon(Icons.close, size: 14,
-                          color: KotoTheme.mutedText),
+                          color: ScrapTheme.mutedText),
                     ),
                   ],
                 ),
@@ -100,10 +100,10 @@ class _TableCell extends ConsumerWidget {
       decoration: BoxDecoration(
         border: Border(
           right: col < table.cols - 1
-              ? const BorderSide(color: KotoTheme.dividers)
+              ? const BorderSide(color: ScrapTheme.dividers)
               : BorderSide.none,
           bottom: row < table.rows - 1
-              ? const BorderSide(color: KotoTheme.dividers)
+              ? const BorderSide(color: ScrapTheme.dividers)
               : BorderSide.none,
         ),
       ),
@@ -118,7 +118,7 @@ class _TableCell extends ConsumerWidget {
           newList[idx] = updated;
           ref.read(canvasTablesProvider.notifier).state = newList;
         },
-        style: KotoTextStyles.body.copyWith(fontSize: 13),
+        style: ScrapTextStyles.body.copyWith(fontSize: 13),
         decoration: const InputDecoration(
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -193,8 +193,8 @@ class _CanvasSmartBarState extends ConsumerState<CanvasSmartBar>
     ref.read(strokesProvider.notifier).hideStrokes(widget.ocrStrokeIds);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Converted to text node', style: KotoTextStyles.caption),
-        backgroundColor: KotoTheme.accent,
+        content: Text('Converted to text node', style: ScrapTextStyles.caption),
+        backgroundColor: ScrapTheme.accent,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
@@ -239,17 +239,17 @@ class _CanvasSmartBarState extends ConsumerState<CanvasSmartBar>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: _expanded ? KotoTheme.accent : KotoTheme.cardSurface,
+              color: _expanded ? ScrapTheme.accent : ScrapTheme.cardSurface,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: KotoTheme.dividers),
-              boxShadow: KotoTheme.subtleShadow,
+              border: Border.all(color: ScrapTheme.dividers),
+              boxShadow: ScrapTheme.subtleShadow,
             ),
             child: Center(
               child: Text(
                 '✦',
-                style: KotoTextStyles.body.copyWith(
+                style: ScrapTextStyles.body.copyWith(
                   fontSize: 18,
-                  color: _expanded ? Colors.white : KotoTheme.accent,
+                  color: _expanded ? Colors.white : ScrapTheme.accent,
                 ),
               ),
             ),
@@ -278,19 +278,19 @@ class _SmartButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: KotoTheme.cardSurface,
+          color: ScrapTheme.cardSurface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: KotoTheme.dividers),
-          boxShadow: KotoTheme.subtleShadow,
+          border: Border.all(color: ScrapTheme.dividers),
+          boxShadow: ScrapTheme.subtleShadow,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: KotoTheme.accent),
+            Icon(icon, size: 18, color: ScrapTheme.accent),
             const SizedBox(width: 8),
             Text(label,
-                style: KotoTextStyles.body.copyWith(
-                    fontSize: 13, color: KotoTheme.primaryText)),
+                style: ScrapTextStyles.body.copyWith(
+                    fontSize: 13, color: ScrapTheme.primaryText)),
           ],
         ),
       ),
@@ -313,10 +313,10 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      backgroundColor: KotoTheme.cardSurface,
+      backgroundColor: ScrapTheme.cardSurface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       title: Text('Insert Table',
-          style: KotoTextStyles.heading.copyWith(fontSize: 18)),
+          style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -329,7 +329,7 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text('Cancel',
-              style: KotoTextStyles.body.copyWith(color: KotoTheme.mutedText)),
+              style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText)),
         ),
         GestureDetector(
           onTap: () {
@@ -345,11 +345,11 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             decoration: BoxDecoration(
-              color: KotoTheme.accent,
+              color: ScrapTheme.accent,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text('Insert',
-                style: KotoTextStyles.body.copyWith(
+                style: ScrapTextStyles.body.copyWith(
                     color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ),
@@ -362,22 +362,22 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: KotoTextStyles.body),
+        Text(label, style: ScrapTextStyles.body),
         Row(children: [
           IconButton(
             icon: const Icon(Icons.remove_circle_outline, size: 22),
-            color: value > min ? KotoTheme.accent : KotoTheme.dividers,
+            color: value > min ? ScrapTheme.accent : ScrapTheme.dividers,
             onPressed: value > min ? () => onChange(value - 1) : null,
           ),
           SizedBox(
             width: 30,
             child: Text('$value',
                 textAlign: TextAlign.center,
-                style: KotoTextStyles.body.copyWith(fontWeight: FontWeight.w600)),
+                style: ScrapTextStyles.body.copyWith(fontWeight: FontWeight.w600)),
           ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline, size: 22),
-            color: value < max ? KotoTheme.accent : KotoTheme.dividers,
+            color: value < max ? ScrapTheme.accent : ScrapTheme.dividers,
             onPressed: value < max ? () => onChange(value + 1) : null,
           ),
         ]),

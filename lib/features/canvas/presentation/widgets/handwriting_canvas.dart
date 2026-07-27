@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../domain/models/stroke.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../../data/smart_shape_recognizer.dart';
@@ -431,11 +431,11 @@ class CanvasPainter extends CustomPainter {
           currentPenStyle == PenStyle.ballpoint) {
         StrokeRenderer.paintStyled(
           canvas: canvas, pts: pts,
-          color: KotoTheme.primaryText, baseWidth: 1.5,
+          color: ScrapTheme.primaryText, baseWidth: 1.5,
           style: currentPenStyle, isHighlighter: false,
         );
       } else {
-        _paintRaw(canvas, pts, KotoTheme.primaryText, 1.5);
+        _paintRaw(canvas, pts, ScrapTheme.primaryText, 1.5);
       }
       if (predict) _paintPrediction(canvas, pts);
     }
@@ -443,7 +443,7 @@ class CanvasPainter extends CustomPainter {
 
   // Saved layer: each stroke rendered via its baked penStyle
   void _buildSavedLayer(Canvas canvas, Size size) {
-    canvas.drawColor(KotoTheme.background, BlendMode.srcOver);
+    canvas.drawColor(ScrapTheme.background, BlendMode.srcOver);
     _drawPageLines(canvas, size);
     for (final stroke in strokes) {
       if (stroke.isHidden) continue;
@@ -461,7 +461,7 @@ class CanvasPainter extends CustomPainter {
 
   // ── Page rule/grid/dot backgrounds ───────────────────────────
   void _drawPageLines(Canvas canvas, Size size) {
-    final p = Paint()..color = KotoTheme.notebookLines..strokeWidth = 0.7;
+    final p = Paint()..color = ScrapTheme.notebookLines..strokeWidth = 0.7;
     if (pageLayout == PageLayout.ruled) {
       for (double y = 36; y < size.height; y += 36) {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
@@ -474,7 +474,7 @@ class CanvasPainter extends CustomPainter {
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), p);
       }
     } else if (pageLayout == PageLayout.dotted) {
-      final dp = Paint()..color = KotoTheme.notebookLines..style = PaintingStyle.fill;
+      final dp = Paint()..color = ScrapTheme.notebookLines..style = PaintingStyle.fill;
       for (double y = 36; y < size.height; y += 36) {
         for (double x = 36; x < size.width; x += 36) {
           canvas.drawCircle(Offset(x, y), 1.5, dp);
@@ -531,7 +531,7 @@ class CanvasPainter extends CustomPainter {
     }
 
     final p = Paint()
-      ..color = KotoTheme.mutedText.withValues(alpha: 0.20)
+      ..color = ScrapTheme.mutedText.withValues(alpha: 0.20)
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

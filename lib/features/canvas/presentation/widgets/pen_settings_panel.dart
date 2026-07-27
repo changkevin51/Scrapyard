@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 
@@ -18,7 +18,7 @@ class PenSettingsPanel extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
       decoration: const BoxDecoration(
-        color: KotoTheme.cardSurface,
+        color: ScrapTheme.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
       child: Column(
@@ -30,13 +30,13 @@ class PenSettingsPanel extends ConsumerWidget {
             child: Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: KotoTheme.dividers,
+                color: ScrapTheme.dividers,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 20),
-          Text('Pen Settings', style: KotoTextStyles.heading.copyWith(fontSize: 18)),
+          Text('Pen Settings', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 24),
 
           // ── Pen Style ──────────────────────────────────────────────
@@ -62,7 +62,7 @@ class PenSettingsPanel extends ConsumerWidget {
           const SizedBox(height: 4),
           Row(
             children: [
-              Text('Raw', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText, fontSize: 11)),
+              Text('Raw', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText, fontSize: 11)),
               Expanded(
                 child: SliderTheme(
                   data: _sliderTheme(context),
@@ -74,7 +74,7 @@ class PenSettingsPanel extends ConsumerWidget {
                   ),
                 ),
               ),
-              Text('Max', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText, fontSize: 11)),
+              Text('Max', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 4),
@@ -90,7 +90,7 @@ class PenSettingsPanel extends ConsumerWidget {
           const SizedBox(height: 4),
           Row(
             children: [
-              Text('Light', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText, fontSize: 11)),
+              Text('Light', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText, fontSize: 11)),
               Expanded(
                 child: SliderTheme(
                   data: _sliderTheme(context),
@@ -102,7 +102,7 @@ class PenSettingsPanel extends ConsumerWidget {
                   ),
                 ),
               ),
-              Text('Full', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText, fontSize: 11)),
+              Text('Full', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText, fontSize: 11)),
             ],
           ),
           const SizedBox(height: 4),
@@ -117,7 +117,7 @@ class PenSettingsPanel extends ConsumerWidget {
             onChanged: (v) => ref.read(penSettingsProvider.notifier).state =
                 settings.copyWith(beautify: v),
           ),
-          const Divider(color: KotoTheme.dividers, height: 24),
+          const Divider(color: ScrapTheme.dividers, height: 24),
           _ToggleRow(
             label: 'STROKE PREDICTION',
             subtitle: 'Show a ghost continuation ahead of your stroke',
@@ -131,10 +131,10 @@ class PenSettingsPanel extends ConsumerWidget {
   }
 
   SliderThemeData _sliderTheme(BuildContext context) => SliderTheme.of(context).copyWith(
-    activeTrackColor: KotoTheme.accent,
-    thumbColor: KotoTheme.accent,
-    inactiveTrackColor: KotoTheme.dividers,
-    overlayColor: KotoTheme.accent.withValues(alpha: 0.12),
+    activeTrackColor: ScrapTheme.accent,
+    thumbColor: ScrapTheme.accent,
+    inactiveTrackColor: ScrapTheme.dividers,
+    overlayColor: ScrapTheme.accent.withValues(alpha: 0.12),
     trackHeight: 2,
     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
   );
@@ -157,12 +157,12 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Tooltip(
           message: tooltip,
-          child: Text(label, style: KotoTextStyles.label),
+          child: Text(label, style: ScrapTextStyles.label),
         ),
         const Spacer(),
         Text(value,
-            style: KotoTextStyles.caption.copyWith(
-                color: KotoTheme.accent, fontWeight: FontWeight.w600)),
+            style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.accent, fontWeight: FontWeight.w600)),
       ],
     );
   }
@@ -189,18 +189,18 @@ class _ToggleRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: KotoTextStyles.label),
+              Text(label, style: ScrapTextStyles.label),
               const SizedBox(height: 2),
               Text(subtitle,
-                  style: KotoTextStyles.caption
-                      .copyWith(color: KotoTheme.mutedText)),
+                  style: ScrapTextStyles.caption
+                      .copyWith(color: ScrapTheme.mutedText)),
             ],
           ),
         ),
         Switch(
           value: value,
           onChanged: onChanged,
-          activeTrackColor: KotoTheme.accent,
+          activeTrackColor: ScrapTheme.accent,
           thumbColor: const WidgetStatePropertyAll(Colors.white),
         ),
       ],
@@ -232,7 +232,7 @@ class _StabilityPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = KotoTheme.accent
+      ..color = ScrapTheme.accent
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
@@ -269,8 +269,8 @@ class _ConcentrationPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
         gradient: LinearGradient(
           colors: [
-            KotoTheme.accent.withValues(alpha: 0.05),
-            KotoTheme.accent.withValues(alpha: concentration),
+            ScrapTheme.accent.withValues(alpha: 0.05),
+            ScrapTheme.accent.withValues(alpha: concentration),
           ],
         ),
       ),
@@ -307,17 +307,17 @@ class PenSettingsButton extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
             color: isPen
-                ? KotoTheme.accent.withValues(alpha: 0.08)
+                ? ScrapTheme.accent.withValues(alpha: 0.08)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
           ),
           child: isIcon
               ? Icon(Icons.tune, size: 18,
-                  color: isPen ? KotoTheme.accent : KotoTheme.mutedText)
+                  color: isPen ? ScrapTheme.accent : ScrapTheme.mutedText)
               : Text('調',
-                  style: KotoTextStyles.body.copyWith(
+                  style: ScrapTextStyles.body.copyWith(
                       fontSize: 16,
-                      color: isPen ? KotoTheme.accent : KotoTheme.mutedText)),
+                      color: isPen ? ScrapTheme.accent : ScrapTheme.mutedText)),
         ),
       ),
     );
@@ -356,34 +356,33 @@ class _PenStyleSelector extends StatelessWidget {
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               decoration: BoxDecoration(
-                color: isSelected ? KotoTheme.accent : KotoTheme.cardSurface,
+                color: isSelected ? ScrapTheme.accent : ScrapTheme.cardSurface,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isSelected ? KotoTheme.accent : KotoTheme.dividers,
+                  color: isSelected ? ScrapTheme.accent : ScrapTheme.dividers,
                   width: 1.5,
                 ),
                 boxShadow: isSelected
-                    ? [BoxShadow(color: KotoTheme.accent.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
+                    ? [BoxShadow(color: ScrapTheme.accent.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))]
                     : [],
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    style.kanji,
-                    style: TextStyle(
-                      fontFamily: 'Noto Serif',
-                      fontSize: 24,
-                      color: isSelected ? Colors.white : KotoTheme.primaryText,
+                    style.label.substring(0, 1),
+                    style: ScrapTextStyles.heading.copyWith(
+                      fontSize: 22,
+                      color: isSelected ? Colors.white : ScrapTheme.primaryText,
                     ),
                   ),
                   const Spacer(),
                   Text(
                     style.label,
-                    style: KotoTextStyles.caption.copyWith(
+                    style: ScrapTextStyles.caption.copyWith(
                       fontSize: 10,
                       fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                      color: isSelected ? Colors.white : KotoTheme.secondaryText,
+                      color: isSelected ? Colors.white : ScrapTheme.secondaryText,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 1,
@@ -396,7 +395,7 @@ class _PenStyleSelector extends StatelessWidget {
                     child: CustomPaint(
                       painter: _MiniStrokePainter(
                         style: style,
-                        color: isSelected ? Colors.white : KotoTheme.primaryText,
+                        color: isSelected ? Colors.white : ScrapTheme.primaryText,
                       ),
                     ),
                   ),

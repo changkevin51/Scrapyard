@@ -2,9 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/widgets/scrap_tilt.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/home_node.dart';
-import '../providers/home_providers.dart';
+import '../providers/home_providers.dart' show
+    currentFolderIdProvider,
+    currentHomeNodesProvider,
+    folderPathProvider,
+    invalidateNoteThumbnail,
+    scrapThumbnailPreloaderProvider;
 import '../widgets/scrap_thumbnail.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
@@ -19,13 +28,25 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _bannerDismissed = false;
+  String? _lastWarmedFolderKey;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybePromptForApiKey();
+      _warmThumbnailsIfReady();
     });
+  }
+
+  void _warmThumbnailsIfReady() {
+    final nodes = ref.read(currentHomeNodesProvider).valueOrNull;
+    if (nodes == null) return;
+    final folderId = ref.read(currentFolderIdProvider);
+    final key = '$folderId:${nodes.length}:${nodes.map((n) => n.id).join(',')}';
+    if (key == _lastWarmedFolderKey) return;
+    _lastWarmedFolderKey = key;
+    ref.read(scrapThumbnailPreloaderProvider).warmFolder(nodes);
   }
 
   Future<void> _maybePromptForApiKey() async {
@@ -54,9 +75,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SnackBar(
             content: Text(
               'API key saved',
-              style: KotoTextStyles.body.copyWith(color: Colors.white),
+              style: ScrapTextStyles.body.copyWith(color: Colors.white),
             ),
-            backgroundColor: KotoTheme.accent,
+            backgroundColor: ScrapTheme.accent,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -71,9 +92,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         SnackBar(
           content: Text(
             'API key saved',
-            style: KotoTextStyles.body.copyWith(color: Colors.white),
+            style: ScrapTextStyles.body.copyWith(color: Colors.white),
           ),
-          backgroundColor: KotoTheme.accent,
+          backgroundColor: ScrapTheme.accent,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -88,7 +109,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(activeNoteIdProvider.notifier).state = node.id;
     openNoteTab(ref, node.id, node.title);
     context.push('/note_editor').then((_) {
-      ref.invalidate(noteStrokesPreviewProvider(node.id));
+      invalidateNoteThumbnail(ref, node.id);
     });
   }
 
@@ -102,6 +123,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final showBanner =
         !hasApiKey && !_bannerDismissed && !apiKeyAsync.isLoading;
 
+    // Warm first rows ASAP, then trickle the rest — do not wait for scroll.
+    ref.listen<AsyncValue<List<HomeNode>>>(currentHomeNodesProvider, (prev, next) {
+      next.whenData((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _warmThumbnailsIfReady();
+        });
+      });
+    });
+
     return Scaffold(
       body: Row(
         children: [
@@ -109,9 +139,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Container(
             width: 232,
             decoration: const BoxDecoration(
-              color: KotoTheme.background,
+              color: ScrapTheme.background,
               border: Border(
-                right: BorderSide(color: KotoTheme.dividers, width: 1.0),
+                right: BorderSide(color: ScrapTheme.dividers, width: 1.0),
               ),
             ),
             child: Column(
@@ -125,7 +155,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     children: [
                       Text(
                         'Scrapyard',
-                        style: KotoTextStyles.heading.copyWith(
+                        style: ScrapTextStyles.heading.copyWith(
                           fontSize: 20,
                           letterSpacing: 2.0,
                         ),
@@ -133,7 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         'scrap paper',
-                        style: KotoTextStyles.caption.copyWith(
+                        style: ScrapTextStyles.caption.copyWith(
                           fontSize: 16,
                           letterSpacing: 2.0,
                         ),
@@ -160,8 +190,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     padding: const EdgeInsets.only(left: 32, top: 8),
                     child: Text(
                       '⟨ AI key connected ⟩',
-                      style: KotoTextStyles.label.copyWith(
-                        color: KotoTheme.accent,
+                      style: ScrapTextStyles.label.copyWith(
+                        color: ScrapTheme.accent,
                         letterSpacing: 0.8,
                       ),
                     ),
@@ -180,8 +210,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
                             '+  New folder',
-                            style: KotoTextStyles.body.copyWith(
-                              color: KotoTheme.accent,
+                            style: ScrapTextStyles.body.copyWith(
+                              color: ScrapTheme.accent,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -193,8 +223,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
                             '+  New scrap',
-                            style: KotoTextStyles.body.copyWith(
-                              color: KotoTheme.accent,
+                            style: ScrapTextStyles.body.copyWith(
+                              color: ScrapTheme.accent,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -208,8 +238,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 8.0),
                           child: Text(
                             '↑  Import app/doc',
-                            style: KotoTextStyles.body.copyWith(
-                              color: KotoTheme.accent,
+                            style: ScrapTextStyles.body.copyWith(
+                              color: ScrapTheme.accent,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -225,98 +255,137 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
           // Main Content
           Expanded(
-            child: Container(
-              color: KotoTheme.background,
-              padding: const EdgeInsets.all(48.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (showBanner) ...[
-                    _ApiKeyBanner(
-                      onSetup: _openApiKeyDialog,
-                      onDismiss: () => setState(() => _bannerDismissed = true),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-
-                  _NewScrapButton(onTap: _createAndOpenScrap),
-                  const SizedBox(height: 40),
-
-                  // Breadcrumb Navigation
-                  Row(
-                    children: [
-                      if (currentFolder != 'root') ...[
-                        IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: KotoTheme.primaryText,
-                          ),
-                          onPressed: () {
-                            final path = ref.read(folderPathProvider);
-                            if (path.length > 1) {
-                              ref.read(currentFolderIdProvider.notifier).state =
-                                  path[path.length - 2].id;
-                              ref.read(folderPathProvider.notifier).state =
-                                  path.sublist(0, path.length - 1);
-                            } else {
-                              ref.read(currentFolderIdProvider.notifier).state =
-                                  'root';
-                              ref.read(folderPathProvider.notifier).state = [];
-                            }
-                          },
-                        ),
-                        const SizedBox(width: 16),
-                      ],
-                      Text(
-                        currentFolder == 'root'
-                            ? 'All Files'
-                            : folderPath.last.title,
-                        style: KotoTextStyles.heading.copyWith(fontSize: 24),
+            child: ColoredBox(
+              color: ScrapTheme.background,
+              child: Padding(
+                padding: const EdgeInsets.all(48.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (showBanner) ...[
+                      _ApiKeyBanner(
+                        onSetup: _openApiKeyDialog,
+                        onDismiss: () =>
+                            setState(() => _bannerDismissed = true),
                       ),
+                      const SizedBox(height: 24),
                     ],
-                  ),
-                  const SizedBox(height: 32),
 
-                  // Grid View of Nodes
-                  Expanded(
-                    child: nodesAsync.when(
-                      loading: () => const Center(
-                        child: CircularProgressIndicator(
-                          color: KotoTheme.accent,
+                    _NewScrapButton(onTap: _createAndOpenScrap),
+                    const SizedBox(height: 40),
+
+                    // Breadcrumb Navigation
+                    Row(
+                      children: [
+                        if (currentFolder != 'root') ...[
+                          IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: ScrapTheme.primaryText,
+                            ),
+                            onPressed: () {
+                              final path = ref.read(folderPathProvider);
+                              if (path.length > 1) {
+                                ref
+                                    .read(currentFolderIdProvider.notifier)
+                                    .state = path[path.length - 2].id;
+                                ref.read(folderPathProvider.notifier).state =
+                                    path.sublist(0, path.length - 1);
+                              } else {
+                                ref
+                                    .read(currentFolderIdProvider.notifier)
+                                    .state = 'root';
+                                ref.read(folderPathProvider.notifier).state =
+                                    [];
+                              }
+                            },
+                          ),
+                          const SizedBox(width: 16),
+                        ],
+                        AnimatedSwitcher(
+                          duration: ScrapMotion.panel,
+                          switchInCurve: ScrapMotion.panelCurve,
+                          switchOutCurve: ScrapMotion.panelCurve,
+                          transitionBuilder: (child, animation) {
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.12),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: child,
+                            );
+                          },
+                          child: Text(
+                            currentFolder == 'root'
+                                ? 'All Files'
+                                : folderPath.last.title,
+                            key: ValueKey(currentFolder),
+                            style: ScrapTextStyles.heading
+                                .copyWith(fontSize: 24),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Grid View of Nodes — remount on folder change so
+                    // cards get a brief staggered scrap entrance.
+                    Expanded(
+                      child: KeyedSubtree(
+                        key: ValueKey(currentFolder),
+                        child: nodesAsync.when(
+                          loading: () => const Center(
+                            child: CircularProgressIndicator(
+                              color: ScrapTheme.accent,
+                            ),
+                          ),
+                          error: (err, stack) =>
+                              Center(child: Text('Error: $err')),
+                          data: (nodes) {
+                            if (nodes.isEmpty) {
+                              return Center(
+                                child: Text(
+                                  'Empty folder. Grab a scrap above, or import a doc.',
+                                  style: ScrapTextStyles.caption.copyWith(
+                                    color: ScrapTheme.mutedText,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return GridView.builder(
+                              cacheExtent: 800,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 32,
+                                mainAxisSpacing: 32,
+                                childAspectRatio: 1.1,
+                              ),
+                              itemCount: nodes.length,
+                              itemBuilder: (context, index) {
+                                final node = nodes[index];
+                                return ScrapCardEntrance(
+                                  index: index,
+                                  stagger:
+                                      const Duration(milliseconds: 28),
+                                  child: RepaintBoundary(
+                                    child: ScrapTilt(
+                                      key: ValueKey(node.id),
+                                      seed: node.id.hashCode,
+                                      child: _buildNodeCard(
+                                          context, ref, node),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
                         ),
                       ),
-                      error: (err, stack) =>
-                          Center(child: Text('Error: $err')),
-                      data: (nodes) {
-                        if (nodes.isEmpty) {
-                          return Center(
-                            child: Text(
-                              'Empty folder. Grab a scrap above, or import a doc.',
-                              style: KotoTextStyles.caption.copyWith(
-                                color: KotoTheme.mutedText,
-                              ),
-                            ),
-                          );
-                        }
-
-                        return GridView.builder(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 32,
-                            mainAxisSpacing: 32,
-                            childAspectRatio: 1.1,
-                          ),
-                          itemCount: nodes.length,
-                          itemBuilder: (context, index) {
-                            final node = nodes[index];
-                            return _buildNodeCard(context, ref, node);
-                          },
-                        );
-                      },
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -326,37 +395,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () {
-          if (node.type == NodeType.folder) {
-            ref.read(currentFolderIdProvider.notifier).state = node.id;
-            ref.read(folderPathProvider.notifier).state = [
-              ...ref.read(folderPathProvider),
-              node,
-            ];
-          } else if (node.type == NodeType.document) {
-            if (node.externalPath != null &&
-                node.externalPath!.endsWith('.pdf')) {
-              context.push('/pdf_viewer');
-            } else if (node.externalPath != null) {
-              OpenFilex.open(node.externalPath!);
-            }
-          } else if (node.type == NodeType.note) {
-            // Set the active note ID BEFORE navigating so the editor
-            // loads this specific note's strokes.
-            ref.read(activeNoteIdProvider.notifier).state = node.id;
-            openNoteTab(ref, node.id, node.title);
-            context.push('/note_editor').then((_) {
-              ref.invalidate(noteStrokesPreviewProvider(node.id));
-            });
+    return _ScrapPressable(
+      onTap: () {
+        if (node.type == NodeType.folder) {
+          ref.read(currentFolderIdProvider.notifier).state = node.id;
+          ref.read(folderPathProvider.notifier).state = [
+            ...ref.read(folderPathProvider),
+            node,
+          ];
+        } else if (node.type == NodeType.document) {
+          if (node.externalPath != null &&
+              node.externalPath!.endsWith('.pdf')) {
+            context.push('/pdf_viewer');
+          } else if (node.externalPath != null) {
+            OpenFilex.open(node.externalPath!);
           }
-        },
-        child: node.type == NodeType.folder
-            ? _buildPileCard(context, ref, node)
-            : _buildFlatCard(context, ref, node),
-      ),
+        } else if (node.type == NodeType.note) {
+          // Set the active note ID BEFORE navigating so the editor
+          // loads this specific note's strokes.
+          ref.read(activeNoteIdProvider.notifier).state = node.id;
+          openNoteTab(ref, node.id, node.title);
+          context.push('/note_editor').then((_) {
+            invalidateNoteThumbnail(ref, node.id);
+          });
+        }
+      },
+      child: node.type == NodeType.folder
+          ? _buildPileCard(context, ref, node)
+          : _buildFlatCard(context, ref, node),
     );
   }
 
@@ -365,10 +431,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final isScrap = node.type == NodeType.note;
     final typeLabel = isScrap ? '⟨ Scrap ⟩' : '⟨ Document ⟩';
 
-    return Container(
+    final card = Container(
       decoration: BoxDecoration(
-        color: KotoTheme.cardSurface,
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+        color: ScrapTheme.cardSurface,
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
         boxShadow: const [
           BoxShadow(
             color: Color(0x05000000),
@@ -377,42 +443,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: isScrap ? Clip.none : Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (isScrap)
             Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: ScrapThumbnail(noteId: node.id),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.background,
+                    borderRadius:
+                        BorderRadius.circular(ScrapTheme.borderRadiusSmall),
+                    boxShadow: ScrapTheme.subtleShadow,
                   ),
-                  const Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 56,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xE6F5F4F0),
-                            Color(0x00F5F4F0),
-                          ],
+                  child: ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(ScrapTheme.borderRadiusSmall),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ScrapThumbnail(noteId: node.id),
                         ),
-                      ),
+                        const Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: 56,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Color(0xE6F5F4F0),
+                                  Color(0x00F5F4F0),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          left: 16,
+                          right: 4,
+                          child: _cardHeader(context, ref, node, typeLabel),
+                        ),
+                      ],
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    left: 16,
-                    right: 4,
-                    child: _cardHeader(context, ref, node, typeLabel),
-                  ),
-                ],
+                ),
               ),
             )
           else ...[
@@ -429,26 +510,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+
+    // Scraps get a torn bottom edge painted in page colour (no ClipPath layer).
+    if (!isScrap) return card;
+    return CustomPaint(
+      foregroundPainter: TornEdgePainter(
+        seed: node.id.hashCode,
+        amplitude: 4.0,
+      ),
+      child: card,
+    );
   }
 
   /// Pile card — stacked sheets with a warm folder tab.
   Widget _buildPileCard(BuildContext context, WidgetRef ref, HomeNode node) {
+    final seed = node.id.hashCode;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Back sheet
+          // Back sheet — slightly rotated
           Positioned(
             top: 10,
             left: 10,
             right: 0,
             bottom: 0,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: KotoTheme.dividers,
-                borderRadius:
-                    BorderRadius.circular(KotoTheme.borderRadiusDefault),
+            child: Transform.rotate(
+              angle: ((seed % 7) - 3) * 0.012,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ScrapTheme.kraft,
+                  borderRadius:
+                      BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                ),
               ),
             ),
           ),
@@ -458,11 +553,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             left: 5,
             right: 4,
             bottom: 4,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8E2DA),
-                borderRadius:
-                    BorderRadius.circular(KotoTheme.borderRadiusDefault),
+            child: Transform.rotate(
+              angle: (((seed ~/ 11) % 7) - 3) * 0.01,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ScrapTheme.tape,
+                  borderRadius:
+                      BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                ),
               ),
             ),
           ),
@@ -470,11 +568,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                color: KotoTheme.accentSurface,
+                color: ScrapTheme.accentSurface,
                 borderRadius:
-                    BorderRadius.circular(KotoTheme.borderRadiusDefault),
+                    BorderRadius.circular(ScrapTheme.borderRadiusDefault),
                 border: Border.all(
-                  color: KotoTheme.accent.withValues(alpha: 0.18),
+                  color: ScrapTheme.accent.withValues(alpha: 0.18),
                   width: 1,
                 ),
                 boxShadow: const [
@@ -497,7 +595,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       width: 52,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: KotoTheme.accent.withValues(alpha: 0.45),
+                        color: ScrapTheme.accent.withValues(alpha: 0.45),
                         borderRadius: const BorderRadius.only(
                           bottomLeft: Radius.circular(2),
                           bottomRight: Radius.circular(2),
@@ -537,7 +635,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       children: [
         Text(
           node.title,
-          style: KotoTextStyles.heading.copyWith(
+          style: ScrapTextStyles.heading.copyWith(
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -547,8 +645,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const SizedBox(height: 8),
         Text(
           'Updated ${node.updatedAt.month}/${node.updatedAt.day}',
-          style: KotoTextStyles.caption.copyWith(
-            color: KotoTheme.mutedText,
+          style: ScrapTextStyles.caption.copyWith(
+            color: ScrapTheme.mutedText,
           ),
         ),
       ],
@@ -565,24 +663,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          typeLabel,
-          style: KotoTextStyles.label.copyWith(
-            color: node.type == NodeType.folder
-                ? KotoTheme.accent
-                : KotoTheme.mutedText,
-            letterSpacing: 1.2,
-          ),
+        ScrapStampLabel(
+          text: typeLabel,
+          color: node.type == NodeType.folder
+              ? ScrapTheme.accent
+              : ScrapTheme.mutedText,
         ),
         PopupMenuButton<String>(
           icon: const Icon(
             Icons.more_horiz,
-            color: KotoTheme.mutedText,
+            color: ScrapTheme.mutedText,
             size: 20,
           ),
           tooltip: 'Options',
           elevation: 1,
-          color: KotoTheme.cardSurface,
+          color: ScrapTheme.cardSurface,
           onSelected: (val) {
             if (val == 'delete') {
               ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
@@ -616,7 +711,7 @@ class _PileStackGraphic extends StatelessWidget {
             left: 10,
             top: 0,
             child: _sheet(
-              color: KotoTheme.dividers,
+              color: ScrapTheme.kraft,
               width: 52,
               height: 40,
             ),
@@ -625,7 +720,7 @@ class _PileStackGraphic extends StatelessWidget {
             left: 5,
             top: 6,
             child: _sheet(
-              color: const Color(0xFFEDE8E2),
+              color: ScrapTheme.tape,
               width: 52,
               height: 40,
             ),
@@ -634,7 +729,7 @@ class _PileStackGraphic extends StatelessWidget {
             left: 0,
             top: 12,
             child: _sheet(
-              color: KotoTheme.cardSurface,
+              color: ScrapTheme.cardSurface,
               width: 52,
               height: 40,
               border: true,
@@ -656,30 +751,67 @@ class _PileStackGraphic extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusSmall),
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusSmall),
         border: border
-            ? Border.all(color: KotoTheme.dividers, width: 1)
+            ? Border.all(color: ScrapTheme.dividers, width: 1)
             : null,
       ),
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
       child: border
           ? Column(
               children: [
-                Container(height: 2, color: KotoTheme.notebookLines),
+                Container(height: 2, color: ScrapTheme.notebookLines),
                 const SizedBox(height: 5),
-                Container(height: 2, color: KotoTheme.notebookLines),
+                Container(height: 2, color: ScrapTheme.notebookLines),
                 const SizedBox(height: 5),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
                     width: 22,
                     height: 2,
-                    color: KotoTheme.notebookLines,
+                    color: ScrapTheme.notebookLines,
                   ),
                 ),
               ],
             )
           : null,
+    );
+  }
+}
+
+class _ScrapPressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const _ScrapPressable({
+    required this.child,
+    required this.onTap,
+  });
+
+  @override
+  State<_ScrapPressable> createState() => _ScrapPressableState();
+}
+
+class _ScrapPressableState extends State<_ScrapPressable> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: ScrapMotion.press,
+          curve: Curves.easeOut,
+          child: widget.child,
+        ),
+      ),
     );
   }
 }
@@ -714,7 +846,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
         onTapCancel: () => setState(() => _pressed = false),
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
+          duration: ScrapMotion.press,
           curve: Curves.easeOut,
           transform: Matrix4.translationValues(0, lift, 0),
           width: double.infinity,
@@ -722,13 +854,13 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
           decoration: BoxDecoration(
             color: _hovered
                 ? const Color(0xFFFAF8F5)
-                : KotoTheme.cardSurface,
+                : ScrapTheme.cardSurface,
             borderRadius:
-                BorderRadius.circular(KotoTheme.borderRadiusDefault),
+                BorderRadius.circular(ScrapTheme.borderRadiusDefault),
             border: Border.all(
               color: _hovered
-                  ? KotoTheme.accent.withValues(alpha: 0.35)
-                  : KotoTheme.dividers,
+                  ? ScrapTheme.accent.withValues(alpha: 0.35)
+                  : ScrapTheme.dividers,
               width: 1.5,
             ),
             boxShadow: [
@@ -756,9 +888,9 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                           width: 44,
                           height: 56,
                           decoration: BoxDecoration(
-                            color: KotoTheme.dividers,
+                            color: ScrapTheme.dividers,
                             borderRadius: BorderRadius.circular(
-                              KotoTheme.borderRadiusSmall,
+                              ScrapTheme.borderRadiusSmall,
                             ),
                           ),
                         ),
@@ -773,12 +905,12 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                           width: 44,
                           height: 56,
                           decoration: BoxDecoration(
-                            color: KotoTheme.background,
+                            color: ScrapTheme.background,
                             borderRadius: BorderRadius.circular(
-                              KotoTheme.borderRadiusSmall,
+                              ScrapTheme.borderRadiusSmall,
                             ),
                             border: Border.all(
-                              color: KotoTheme.accent.withValues(alpha: 0.25),
+                              color: ScrapTheme.accent.withValues(alpha: 0.25),
                               width: 1,
                             ),
                           ),
@@ -787,12 +919,12 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                             children: [
                               Container(
                                 height: 2,
-                                color: KotoTheme.notebookLines,
+                                color: ScrapTheme.notebookLines,
                               ),
                               const SizedBox(height: 6),
                               Container(
                                 height: 2,
-                                color: KotoTheme.notebookLines,
+                                color: ScrapTheme.notebookLines,
                               ),
                               const SizedBox(height: 6),
                               Align(
@@ -800,7 +932,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                                 child: Container(
                                   width: 16,
                                   height: 2,
-                                  color: KotoTheme.notebookLines,
+                                  color: ScrapTheme.notebookLines,
                                 ),
                               ),
                             ],
@@ -816,17 +948,14 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '⟨ Fresh sheet ⟩',
-                      style: KotoTextStyles.label.copyWith(
-                        color: KotoTheme.accent,
-                        letterSpacing: 1.2,
-                      ),
+                    const ScrapStampLabel(
+                      text: '⟨ Fresh sheet ⟩',
+                      color: ScrapTheme.accent,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'New Scrap',
-                      style: KotoTextStyles.heading.copyWith(
+                      style: ScrapTextStyles.heading.copyWith(
                         fontSize: 28,
                         fontWeight: FontWeight.w600,
                       ),
@@ -834,8 +963,8 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                     const SizedBox(height: 4),
                     Text(
                       'Grab a blank scrap and start scribbling',
-                      style: KotoTextStyles.caption.copyWith(
-                        color: KotoTheme.mutedText,
+                      style: ScrapTextStyles.caption.copyWith(
+                        color: ScrapTheme.mutedText,
                       ),
                     ),
                   ],
@@ -843,9 +972,9 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
               ),
               Text(
                 '+',
-                style: KotoTextStyles.heading.copyWith(
+                style: ScrapTextStyles.heading.copyWith(
                   fontSize: 36,
-                  color: KotoTheme.accent.withValues(alpha: 0.7),
+                  color: ScrapTheme.accent.withValues(alpha: 0.7),
                   fontWeight: FontWeight.w400,
                 ),
               ),
@@ -872,8 +1001,8 @@ class _ApiKeyBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: KotoTheme.accentSurface,
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+        color: ScrapTheme.accentSurface,
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
       ),
       child: Row(
         children: [
@@ -883,15 +1012,15 @@ class _ApiKeyBanner extends StatelessWidget {
               children: [
                 Text(
                   '⟨ Gemini ⟩',
-                  style: KotoTextStyles.label.copyWith(
-                    color: KotoTheme.accent,
+                  style: ScrapTextStyles.label.copyWith(
+                    color: ScrapTheme.accent,
                     letterSpacing: 1.0,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Add your Gemini API key to use Smelt',
-                  style: KotoTextStyles.body.copyWith(
+                  style: ScrapTextStyles.body.copyWith(
                     fontWeight: FontWeight.w500,
                     fontSize: 15,
                   ),
@@ -903,8 +1032,8 @@ class _ApiKeyBanner extends StatelessWidget {
             onPressed: onSetup,
             child: Text(
               'Set up',
-              style: KotoTextStyles.body.copyWith(
-                color: KotoTheme.accent,
+              style: ScrapTextStyles.body.copyWith(
+                color: ScrapTheme.accent,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -916,7 +1045,7 @@ class _ApiKeyBanner extends StatelessWidget {
             icon: const Icon(
               Icons.close,
               size: 18,
-              color: KotoTheme.mutedText,
+              color: ScrapTheme.mutedText,
             ),
           ),
         ],
@@ -943,25 +1072,29 @@ class _SidebarItem extends StatelessWidget {
       hoverColor: Colors.transparent,
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,
-      child: Container(
+      child: AnimatedContainer(
+        duration: ScrapMotion.panel,
+        curve: ScrapMotion.panelCurve,
         padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 10.0),
         decoration: BoxDecoration(
           color: isSelected
-              ? KotoTheme.accent.withValues(alpha: 0.08)
+              ? ScrapTheme.accent.withValues(alpha: 0.08)
               : Colors.transparent,
         ),
         child: Row(
           children: [
-            Text(
-              title,
-              style: KotoTextStyles.body.copyWith(
+            AnimatedDefaultTextStyle(
+              duration: ScrapMotion.panel,
+              curve: ScrapMotion.panelCurve,
+              style: ScrapTextStyles.body.copyWith(
                 color: isSelected
-                    ? KotoTheme.accent
-                    : KotoTheme.secondaryText,
+                    ? ScrapTheme.accent
+                    : ScrapTheme.secondaryText,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 letterSpacing: 0.3,
                 fontSize: 15,
               ),
+              child: Text(title),
             ),
           ],
         ),

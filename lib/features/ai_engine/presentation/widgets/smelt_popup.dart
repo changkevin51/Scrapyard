@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../../_debug_log_helper.dart';
@@ -117,9 +117,9 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
       width: _popupWidth(),
       constraints: const BoxConstraints(maxHeight: 400),
       decoration: BoxDecoration(
-        color: KotoTheme.cardSurface,
+        color: ScrapTheme.cardSurface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: KotoTheme.dividers, width: 1.0),
+        border: Border.all(color: ScrapTheme.dividers, width: 1.0),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.08),
@@ -135,7 +135,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           Container(
             height: 3,
             decoration: const BoxDecoration(
-              color: KotoTheme.accent,
+              color: ScrapTheme.accent,
               borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
             ),
           ),
@@ -172,8 +172,8 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           const SizedBox(width: 12),
           Text(
             'Analyzing...',
-            style: KotoTextStyles.body.copyWith(
-              color: KotoTheme.mutedText,
+            style: ScrapTextStyles.body.copyWith(
+              color: ScrapTheme.mutedText,
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -200,7 +200,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             const SizedBox(width: 8),
             Text(
               isMissingKey ? 'API key needed' : 'Error',
-              style: KotoTextStyles.body.copyWith(
+              style: ScrapTextStyles.body.copyWith(
                 color: Colors.redAccent.shade400,
                 fontWeight: FontWeight.w600,
               ),
@@ -212,7 +212,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           isMissingKey
               ? SmeltService.missingApiKeyMessage
               : displayError,
-          style: KotoTextStyles.caption.copyWith(color: KotoTheme.secondaryText),
+          style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.secondaryText),
         ),
         if (isMissingKey) ...[
           const SizedBox(height: 12),
@@ -230,8 +230,8 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             ),
             child: Text(
               'Add key',
-              style: KotoTextStyles.body.copyWith(
-                color: KotoTheme.accent,
+              style: ScrapTextStyles.body.copyWith(
+                color: ScrapTheme.accent,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
@@ -253,7 +253,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: KotoTheme.accentSurface,
+              color: ScrapTheme.accentSurface,
               borderRadius: BorderRadius.circular(8),
             ),
             child: _buildMathAnswer(cleanedAnswer),
@@ -261,7 +261,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
         ] else ...[
           SelectableText(
             response.answer,
-            style: KotoTextStyles.body.copyWith(fontSize: 15, height: 1.5),
+            style: ScrapTextStyles.body.copyWith(fontSize: 15, height: 1.5),
           ),
         ],
         if (response.steps.isNotEmpty) ...[
@@ -272,7 +272,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: KotoTheme.dividers),
+                border: Border.all(color: ScrapTheme.dividers),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -280,13 +280,13 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
                   Icon(
                     showSteps ? Icons.expand_less : Icons.expand_more,
                     size: 16,
-                    color: KotoTheme.mutedText,
+                    color: ScrapTheme.mutedText,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     showSteps ? 'Hide steps' : 'Show steps',
-                    style: KotoTextStyles.caption.copyWith(
-                      color: KotoTheme.mutedText,
+                    style: ScrapTextStyles.caption.copyWith(
+                      color: ScrapTheme.mutedText,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -300,7 +300,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: KotoTheme.codeSurface,
+                color: ScrapTheme.codeSurface,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: _buildMathSteps(response.steps),
@@ -319,8 +319,8 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
       alignment: Alignment.centerRight,
       child: Text(
         'Powered by ${_formatModelName(modelUsed)}',
-        style: KotoTextStyles.caption.copyWith(
-          color: KotoTheme.mutedText,
+        style: ScrapTextStyles.caption.copyWith(
+          color: ScrapTheme.mutedText,
           fontSize: 9,
           fontStyle: FontStyle.italic,
         ),
@@ -417,7 +417,7 @@ class _LatexDisplay extends StatelessWidget {
     fontSize: 18,
     height: 1.2,
     fontWeight: FontWeight.normal,
-    color: KotoTheme.accent,
+    color: ScrapTheme.accent,
   );
 
   @override
@@ -452,9 +452,9 @@ class _LatexStepsRenderer extends StatelessWidget {
     fontSize: 13,
     height: 1.5,
     fontWeight: FontWeight.normal,
-    color: KotoTheme.bodyText,
+    color: ScrapTheme.bodyText,
     // Prose uses the app caption font; math widgets use KaTeX via Math.tex.
-    fontFamily: KotoTextStyles.caption.fontFamily,
+    fontFamily: ScrapTextStyles.caption.fontFamily,
   );
 
   static const _mathOnlyStyle = TextStyle(
@@ -462,7 +462,7 @@ class _LatexStepsRenderer extends StatelessWidget {
     fontSize: 13,
     height: 1.2,
     fontWeight: FontWeight.normal,
-    color: KotoTheme.bodyText,
+    color: ScrapTheme.bodyText,
   );
 
   @override
@@ -566,7 +566,7 @@ class _LatexStepsRenderer extends StatelessWidget {
               '${numberMatch.group(1)}. ',
               style: _baseTextStyle.copyWith(
                 fontWeight: FontWeight.w600,
-                color: KotoTheme.primaryText,
+                color: ScrapTheme.primaryText,
               ),
             ),
             Expanded(child: _buildInlineOrMathOnly(body)),
@@ -621,7 +621,7 @@ class _LatexStepsRenderer extends StatelessWidget {
         textStyle: _mathOnlyStyle,
         onErrorFallback: (_) => Text(
           latex,
-          style: _mathOnlyStyle.copyWith(color: KotoTheme.accent),
+          style: _mathOnlyStyle.copyWith(color: ScrapTheme.accent),
         ),
       ),
     );
@@ -645,7 +645,7 @@ class _LatexStepsRenderer extends StatelessWidget {
                     latex,
                     style: _mathOnlyStyle.copyWith(
                       fontSize: 14,
-                      color: KotoTheme.accent,
+                      color: ScrapTheme.accent,
                     ),
                   ),
                 ),
@@ -681,7 +681,7 @@ class _LatexStepsRenderer extends StatelessWidget {
                 textStyle: _mathOnlyStyle,
                 onErrorFallback: (_) => Text(
                   token.content,
-                  style: _mathOnlyStyle.copyWith(color: KotoTheme.accent),
+                  style: _mathOnlyStyle.copyWith(color: ScrapTheme.accent),
                 ),
               ),
             ),
@@ -748,7 +748,7 @@ class _LatexStepsRenderer extends StatelessWidget {
         spans.add(TextSpan(
           style: _baseTextStyle.copyWith(
             fontWeight: FontWeight.w600,
-            color: KotoTheme.primaryText,
+            color: ScrapTheme.primaryText,
           ),
           children: [_italicizeNumbers(part)],
         ));
@@ -843,7 +843,7 @@ class _ThinkingDotsState extends State<_ThinkingDots>
               height: 6,
               margin: const EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
-                color: KotoTheme.accent.withValues(alpha: 0.3 + opacity * 0.7),
+                color: ScrapTheme.accent.withValues(alpha: 0.3 + opacity * 0.7),
                 shape: BoxShape.circle,
               ),
             );
@@ -934,7 +934,7 @@ class _ThinkingBorderPainter extends CustomPainter {
     
     // Soft glow fill
     final fillPaint = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: pulseOpacity * 0.08)
+      ..color = ScrapTheme.accent.withValues(alpha: pulseOpacity * 0.08)
       ..style = PaintingStyle.fill;
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(4)),
@@ -943,7 +943,7 @@ class _ThinkingBorderPainter extends CustomPainter {
 
     // Animated dashed border
     final borderPaint = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: pulseOpacity)
+      ..color = ScrapTheme.accent.withValues(alpha: pulseOpacity)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 
 class SplitScreenLayout extends StatefulWidget {
   final Widget leftChild;
@@ -47,13 +47,13 @@ class _SplitScreenLayoutState extends State<SplitScreenLayout> {
                 child: Container(
                   width: 1,
                   height: double.infinity,
-                  color: KotoTheme.dividers,
+                  color: ScrapTheme.dividers,
                   child: Center(
                     child: Container(
                       width: 4,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: KotoTheme.accent,
+                        color: ScrapTheme.accent,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),

@@ -1,11 +1,22 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../domain/models/home_node.dart';
-import '../../data/home_repository.dart';
-import 'package:file_picker/file_picker.dart';
+import 'dart:async';
 import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../data/home_repository.dart';
+import '../../domain/models/home_node.dart';
+import 'scrap_thumbnail_preloader.dart';
+
+export 'scrap_thumbnail_preloader.dart';
+
 final homeRepositoryProvider = Provider((ref) => HomeRepository());
+
+/// Drop + re-render a single note after the user edits it.
+void invalidateNoteThumbnail(WidgetRef ref, String noteId) {
+  unawaited(ref.read(scrapThumbnailPreloaderProvider).refreshNote(noteId));
+}
 
 // Navigation Path Trackings
 final currentFolderIdProvider = StateProvider<String>((ref) => 'root');

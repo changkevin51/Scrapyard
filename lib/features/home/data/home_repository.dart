@@ -38,18 +38,18 @@ class HomeRepository {
         ''');
 
         // Insert initial Welcome Note setup
-        final welcomeNote = HomeNode.create(title: 'Welcome to Koto', type: NodeType.note);
+        final welcomeNote = HomeNode.create(title: 'Welcome to Scrapyard', type: NodeType.note);
         await db.insert(_tableName, welcomeNote.toMap());
 
         // Insert sample content
-        final japaneseFolder = HomeNode.create(title: 'Japanese 101', type: NodeType.folder);
-        await db.insert(_tableName, japaneseFolder.toMap());
+        final ideasFolder = HomeNode.create(title: 'Loose Ideas', type: NodeType.folder);
+        await db.insert(_tableName, ideasFolder.toMap());
         
-        final hiraganaNote = HomeNode.create(title: 'Hiragana Practice', type: NodeType.note, parentId: japaneseFolder.id);
-        await db.insert(_tableName, hiraganaNote.toMap());
+        final sketchNote = HomeNode.create(title: 'Quick Sketch', type: NodeType.note, parentId: ideasFolder.id);
+        await db.insert(_tableName, sketchNote.toMap());
         
-        final kanjiNote = HomeNode.create(title: 'Kanji Flashcards', type: NodeType.note, parentId: japaneseFolder.id);
-        await db.insert(_tableName, kanjiNote.toMap());
+        final doodleNote = HomeNode.create(title: 'Margin Doodles', type: NodeType.note, parentId: ideasFolder.id);
+        await db.insert(_tableName, doodleNote.toMap());
 
         final physicsFolder = HomeNode.create(title: 'Physics 205', type: NodeType.folder);
         await db.insert(_tableName, physicsFolder.toMap());

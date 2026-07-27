@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../providers/canvas_providers.dart';
 
 // ─────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
               padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
               decoration: _selected ? BoxDecoration(
                 border: Border.all(
-                  color: KotoTheme.accent.withValues(alpha: 0.4),
+                  color: ScrapTheme.accent.withValues(alpha: 0.4),
                   width: 1,
                 ),
                 borderRadius: BorderRadius.circular(3),
@@ -96,7 +96,7 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                         maxLines: null,
                         style: TextStyle(
                           fontSize: _fontSize,
-                          color: KotoTheme.primaryText,
+                          color: ScrapTheme.primaryText,
                           decoration: TextDecoration.none,
                           fontFamily: 'Noto Serif',
                         ),
@@ -117,8 +117,8 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                       style: TextStyle(
                         fontSize: _fontSize,
                         color: _ctrl.text.isEmpty
-                            ? KotoTheme.mutedText
-                            : KotoTheme.primaryText,
+                            ? ScrapTheme.mutedText
+                            : ScrapTheme.primaryText,
                         decoration: TextDecoration.none,
                         fontFamily: 'Noto Serif',
                       ),
@@ -140,11 +140,11 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: KotoTheme.accent,
+                        color: ScrapTheme.accent,
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text('Done',
-                          style: KotoTextStyles.caption.copyWith(
+                          style: ScrapTextStyles.caption.copyWith(
                               color: Colors.white, fontSize: 11)),
                     ),
                   ),
@@ -158,13 +158,13 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                   child: Container(
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      color: KotoTheme.cardSurface,
+                      color: ScrapTheme.cardSurface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: KotoTheme.dividers),
-                      boxShadow: KotoTheme.subtleShadow,
+                      border: Border.all(color: ScrapTheme.dividers),
+                      boxShadow: ScrapTheme.subtleShadow,
                     ),
                     child: const Icon(Icons.close, size: 12,
-                        color: KotoTheme.secondaryText),
+                        color: ScrapTheme.secondaryText),
                   ),
                 ),
               ),
@@ -178,12 +178,12 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                   child: Container(
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      color: KotoTheme.cardSurface,
+                      color: ScrapTheme.cardSurface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: KotoTheme.dividers),
+                      border: Border.all(color: ScrapTheme.dividers),
                     ),
                     child: const Icon(Icons.remove, size: 12,
-                        color: KotoTheme.secondaryText),
+                        color: ScrapTheme.secondaryText),
                   ),
                 ),
               ),
@@ -197,7 +197,7 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker> {
                   child: Container(
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      color: KotoTheme.accent,
+                      color: ScrapTheme.accent,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.add, size: 12, color: Colors.white),

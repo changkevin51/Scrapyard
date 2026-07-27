@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../providers/gesture_providers.dart';
 
 class GestureSettingsScreen extends ConsumerWidget {
@@ -9,12 +9,12 @@ class GestureSettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      backgroundColor: KotoTheme.background,
+      backgroundColor: ScrapTheme.background,
       appBar: AppBar(
-        title: Text('Gestures', style: KotoTextStyles.heading.copyWith(fontSize: 20)),
-        backgroundColor: KotoTheme.background,
+        title: Text('Gestures', style: ScrapTextStyles.heading.copyWith(fontSize: 20)),
+        backgroundColor: ScrapTheme.background,
         elevation: 0,
-        iconTheme: const IconThemeData(color: KotoTheme.primaryText),
+        iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
@@ -24,10 +24,10 @@ class GestureSettingsScreen extends ConsumerWidget {
              ref.read(edgeSwipesEnabledProvider.notifier).state = val;
            }),
            const SizedBox(height: 8),
-           Text('Left edge right: Document Navigator\nRight edge left: AI Agent Panel\nBottom edge up: Settings', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+           Text('Left edge right: Document Navigator\nRight edge left: AI Agent Panel\nBottom edge up: Settings', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
            const Padding(
              padding: EdgeInsets.symmetric(vertical: 24.0),
-             child: Divider(height: 1, color: KotoTheme.dividers),
+             child: Divider(height: 1, color: ScrapTheme.dividers),
            ),
 
            _buildSectionHeader('Multi-Touch & Tap Holds'),
@@ -40,7 +40,7 @@ class GestureSettingsScreen extends ConsumerWidget {
            }),
            const Padding(
              padding: EdgeInsets.symmetric(vertical: 24.0),
-             child: Divider(height: 1, color: KotoTheme.dividers),
+             child: Divider(height: 1, color: ScrapTheme.dividers),
            ),
 
            _buildSectionHeader('Morse Action Corner'),
@@ -48,7 +48,7 @@ class GestureSettingsScreen extends ConsumerWidget {
              ref.read(morseEnabledProvider.notifier).state = val;
            }),
            const SizedBox(height: 16),
-           Text('Bottom left corner, 52x52px zone.', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+           Text('Bottom left corner, 52x52px zone.', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
            const SizedBox(height: 16),
            _buildMorseActionRow('· ·', 'AI Popup on last word'),
            _buildMorseActionRow('· —', 'Language Sidebar'),
@@ -64,8 +64,8 @@ class GestureSettingsScreen extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Text(
         title.toUpperCase(),
-        style: KotoTextStyles.label.copyWith(
-           color: KotoTheme.accent,
+        style: ScrapTextStyles.label.copyWith(
+           color: ScrapTheme.accent,
            fontWeight: FontWeight.bold,
         ),
       ),
@@ -76,11 +76,11 @@ class GestureSettingsScreen extends ConsumerWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: KotoTextStyles.body),
+        Text(label, style: ScrapTextStyles.body),
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: KotoTheme.accent,
+          activeColor: ScrapTheme.accent,
         ),
       ],
     );
@@ -92,8 +92,8 @@ class GestureSettingsScreen extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(pattern, style: KotoTextStyles.heading.copyWith(fontWeight: FontWeight.bold, color: KotoTheme.primaryText)),
-          Text(actionDesc, style: KotoTextStyles.body.copyWith(color: KotoTheme.secondaryText)),
+          Text(pattern, style: ScrapTextStyles.heading.copyWith(fontWeight: FontWeight.bold, color: ScrapTheme.primaryText)),
+          Text(actionDesc, style: ScrapTextStyles.body.copyWith(color: ScrapTheme.secondaryText)),
         ],
       ),
     );

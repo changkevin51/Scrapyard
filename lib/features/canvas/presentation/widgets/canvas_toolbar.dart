@@ -1,31 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../providers/canvas_providers.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
 import 'sticker_library.dart';
 
 // ─────────────────────────────────────────────────────────
-// Tool definition — each tool has an icon, kanji label & tip
+// Tool definition — each tool has an icon, short label & tip
 // ─────────────────────────────────────────────────────────
 typedef _ToolDef = ({
   IconData icon,
-  String kanji,
+  String label,
   String tip,
   CanvasTool tool,
 });
 
 const List<_ToolDef> _tools = [
-  (icon: Icons.edit_outlined,      kanji: '筆', tip: 'Pen',          tool: CanvasTool.pen),
-  (icon: Icons.brush_outlined,     kanji: '刷', tip: 'Brush',        tool: CanvasTool.brush),
-  (icon: Icons.highlight_outlined, kanji: '光', tip: 'Highlighter',  tool: CanvasTool.highlighter),
-  (icon: Icons.auto_fix_high,      kanji: '消', tip: 'Eraser',       tool: CanvasTool.eraser),
-  (icon: Icons.horizontal_rule,    kanji: '線', tip: 'Straight line', tool: CanvasTool.straightLine),
-  (icon: Icons.text_fields_outlined, kanji: '文', tip: 'Text',       tool: CanvasTool.text),
-  (icon: Icons.category_outlined,  kanji: '形', tip: 'Shape',        tool: CanvasTool.shape),
-  (icon: Icons.gesture,            kanji: '套', tip: 'Lasso',       tool: CanvasTool.lasso),
-  (icon: Icons.auto_awesome,       kanji: '溶', tip: 'Smelt',       tool: CanvasTool.smelt),
+  (icon: Icons.edit_outlined,      label: 'Pen',   tip: 'Pen',          tool: CanvasTool.pen),
+  (icon: Icons.brush_outlined,     label: 'Brush', tip: 'Brush',        tool: CanvasTool.brush),
+  (icon: Icons.highlight_outlined, label: 'Mark',  tip: 'Highlighter',  tool: CanvasTool.highlighter),
+  (icon: Icons.auto_fix_high,      label: 'Erase', tip: 'Eraser',       tool: CanvasTool.eraser),
+  (icon: Icons.horizontal_rule,    label: 'Line',  tip: 'Straight line', tool: CanvasTool.straightLine),
+  (icon: Icons.text_fields_outlined, label: 'Text', tip: 'Text',       tool: CanvasTool.text),
+  (icon: Icons.category_outlined,  label: 'Shape', tip: 'Shape',        tool: CanvasTool.shape),
+  (icon: Icons.gesture,            label: 'Lasso', tip: 'Lasso',       tool: CanvasTool.lasso),
+  (icon: Icons.auto_awesome,       label: 'Smelt', tip: 'Smelt',       tool: CanvasTool.smelt),
 ];
 
 const List<Color> _palette = [
@@ -72,10 +72,10 @@ class CanvasToolbar extends ConsumerWidget {
 
       // ── Undo / Redo ────────────────────────────────────
       _ActionButton(
-          icon: Icons.undo_outlined, kanji: '↩', tip: 'Undo',
+          icon: Icons.undo_outlined, tip: 'Undo',
           isIcon: isIcon, action: CanvasTool.undo),
       _ActionButton(
-          icon: Icons.redo_outlined, kanji: '↪', tip: 'Redo',
+          icon: Icons.redo_outlined, tip: 'Redo',
           isIcon: isIcon, action: CanvasTool.redo),
       _sep(isHorizontal),
 
@@ -87,7 +87,7 @@ class CanvasToolbar extends ConsumerWidget {
       const _ThicknessDots(),
       _sep(isHorizontal),
 
-      // ── Display-mode toggle (icon ↔ kanji) ─────────────
+      // ── Display-mode toggle (icon ↔ label) ─────────────
       _DisplayModeToggle(isIcon: isIcon),
       _sep(isHorizontal),
 
@@ -100,22 +100,22 @@ class CanvasToolbar extends ConsumerWidget {
       height: isHorizontal ? null : double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
       decoration: BoxDecoration(
-        color: KotoTheme.cardSurface,
+        color: ScrapTheme.cardSurface,
         border: isHorizontal
             ? Border(
                 bottom: position == ToolbarPosition.top
-                    ? const BorderSide(color: KotoTheme.dividers)
+                    ? const BorderSide(color: ScrapTheme.dividers)
                     : BorderSide.none,
                 top: position == ToolbarPosition.bottom
-                    ? const BorderSide(color: KotoTheme.dividers)
+                    ? const BorderSide(color: ScrapTheme.dividers)
                     : BorderSide.none,
               )
             : Border(
                 right: position == ToolbarPosition.left
-                    ? const BorderSide(color: KotoTheme.dividers)
+                    ? const BorderSide(color: ScrapTheme.dividers)
                     : BorderSide.none,
                 left: position == ToolbarPosition.right
-                    ? const BorderSide(color: KotoTheme.dividers)
+                    ? const BorderSide(color: ScrapTheme.dividers)
                     : BorderSide.none,
               ),
       ),
@@ -129,9 +129,9 @@ class CanvasToolbar extends ConsumerWidget {
   }
 
   Widget _sep(bool isHorizontal) => isHorizontal
-      ? Container(width: 1, height: 20, color: KotoTheme.dividers,
+      ? Container(width: 1, height: 20, color: ScrapTheme.dividers,
           margin: const EdgeInsets.symmetric(horizontal: 6))
-      : Container(height: 1, width: 20, color: KotoTheme.dividers,
+      : Container(height: 1, width: 20, color: ScrapTheme.dividers,
           margin: const EdgeInsets.symmetric(vertical: 6));
 }
 
@@ -162,7 +162,7 @@ class _ModeToggle extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: isPenMode
-                ? KotoTheme.accent.withValues(alpha: 0.1)
+                ? ScrapTheme.accent.withValues(alpha: 0.1)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
           ),
@@ -170,13 +170,14 @@ class _ModeToggle extends ConsumerWidget {
               ? Icon(
                   isPenMode ? Icons.edit_outlined : Icons.pan_tool_alt_outlined,
                   size: 22,
-                  color: isPenMode ? KotoTheme.accent : KotoTheme.mutedText,
+                  color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
                 )
               : Text(
-                  isPenMode ? '描' : '移',
-                  style: KotoTextStyles.body.copyWith(
-                    fontSize: 18,
-                    color: isPenMode ? KotoTheme.accent : KotoTheme.mutedText,
+                  isPenMode ? 'Draw' : 'Move',
+                  style: ScrapTextStyles.label.copyWith(
+                    fontSize: 12,
+                    color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
         ),
@@ -186,7 +187,7 @@ class _ModeToggle extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Tool button (icon or kanji based on mode)
+// Tool button (icon or label based on mode)
 // Shape tool supports long-press to open the shape library.
 // ─────────────────────────────────────────────────────────────────
 class _ToolButton extends ConsumerWidget {
@@ -219,12 +220,12 @@ class _ToolButton extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: isActive
-                ? KotoTheme.accent.withValues(alpha: 0.12)
+                ? ScrapTheme.accent.withValues(alpha: 0.12)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
             border: isActive
                 ? Border.all(
-                    color: KotoTheme.accent.withValues(alpha: 0.35), width: 1)
+                    color: ScrapTheme.accent.withValues(alpha: 0.35), width: 1)
                 : null,
           ),
           child: Stack(
@@ -232,12 +233,12 @@ class _ToolButton extends ConsumerWidget {
             children: [
               isIcon
                   ? Icon(def.icon, size: 22,
-                      color: isActive ? KotoTheme.accent : KotoTheme.secondaryText)
-                  : Text(def.kanji,
-                      style: KotoTextStyles.body.copyWith(
-                        fontSize: 18,
-                        color: isActive ? KotoTheme.accent : KotoTheme.secondaryText,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText)
+                  : Text(def.label,
+                      style: ScrapTextStyles.label.copyWith(
+                        fontSize: 11,
+                        color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                       )),
               // Library shape indicator dot
               if (hasLibShape)
@@ -246,7 +247,7 @@ class _ToolButton extends ConsumerWidget {
                   child: Container(
                     width: 7, height: 7,
                     decoration: const BoxDecoration(
-                      color: KotoTheme.accent,
+                      color: ScrapTheme.accent,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -285,21 +286,21 @@ class _StrokeStyleChip extends ConsumerWidget {
           margin: const EdgeInsets.symmetric(horizontal: 2),
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-            color: isActive ? KotoTheme.accent.withValues(alpha: 0.12) : Colors.transparent,
+            color: isActive ? ScrapTheme.accent.withValues(alpha: 0.12) : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
             border: Border.all(
               color: isActive
-                  ? KotoTheme.accent.withValues(alpha: 0.35)
-                  : KotoTheme.dividers,
+                  ? ScrapTheme.accent.withValues(alpha: 0.35)
+                  : ScrapTheme.dividers,
               width: 1,
             ),
           ),
           child: Text(
             _labels[style]!,
-            style: KotoTextStyles.label.copyWith(
+            style: ScrapTextStyles.label.copyWith(
               fontSize: 13,
               letterSpacing: 1.5,
-              color: isActive ? KotoTheme.accent : KotoTheme.secondaryText,
+              color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
               fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
             ),
           ),
@@ -314,12 +315,11 @@ class _StrokeStyleChip extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────
 class _ActionButton extends ConsumerWidget {
   final IconData icon;
-  final String kanji;
   final String tip;
   final bool isIcon;
   final CanvasTool action;
   const _ActionButton(
-      {required this.icon, required this.kanji, required this.tip,
+      {required this.icon, required this.tip,
        required this.isIcon, required this.action});
 
   @override
@@ -334,7 +334,7 @@ class _ActionButton extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           // Always use icons for undo/redo — universally recognizable
-          child: Icon(icon, size: 20, color: KotoTheme.secondaryText),
+          child: Icon(icon, size: 20, color: ScrapTheme.secondaryText),
         ),
       ),
     );
@@ -399,8 +399,8 @@ class _ThicknessDots extends ConsumerWidget {
                 height: size,
                 decoration: BoxDecoration(
                   color: (mod - val).abs() < 0.3
-                      ? KotoTheme.accent
-                      : KotoTheme.dividers,
+                      ? ScrapTheme.accent
+                      : ScrapTheme.dividers,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -412,7 +412,7 @@ class _ThicknessDots extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────
-// Display-mode toggle  ↔  icon / kanji
+// Display-mode toggle  ↔  icon / label
 // ─────────────────────────────────────────────────────────
 class _DisplayModeToggle extends ConsumerWidget {
   final bool isIcon;
@@ -421,20 +421,20 @@ class _DisplayModeToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Tooltip(
-      message: isIcon ? 'Switch to kanji mode' : 'Switch to icon mode',
+      message: isIcon ? 'Switch to label mode' : 'Switch to icon mode',
       child: GestureDetector(
         onTap: () {
-          final next = isIcon ? ToolbarDisplayMode.kanji : ToolbarDisplayMode.icons;
+          final next = isIcon ? ToolbarDisplayMode.labels : ToolbarDisplayMode.icons;
           ref.read(toolbarDisplayModeProvider.notifier).state = next;
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
-            isIcon ? '文' : 'A',
-            style: KotoTextStyles.body.copyWith(
-              fontSize: 16,
-              color: KotoTheme.mutedText,
-              fontWeight: FontWeight.w500,
+            isIcon ? 'Aa' : '◆',
+            style: ScrapTextStyles.label.copyWith(
+              fontSize: 13,
+              color: ScrapTheme.mutedText,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -459,10 +459,13 @@ class _SettingsButton extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: isIcon
-              ? const Icon(Icons.tune_outlined, size: 22, color: KotoTheme.mutedText)
-              : Text('設',
-                  style: KotoTextStyles.body
-                      .copyWith(fontSize: 18, color: KotoTheme.mutedText)),
+              ? const Icon(Icons.tune_outlined, size: 22, color: ScrapTheme.mutedText)
+              : Text('Set',
+                  style: ScrapTextStyles.label.copyWith(
+                    fontSize: 11,
+                    color: ScrapTheme.mutedText,
+                    fontWeight: FontWeight.w600,
+                  )),
         ),
       ),
     );
@@ -471,7 +474,7 @@ class _SettingsButton extends ConsumerWidget {
   void _showSettings(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: KotoTheme.cardSurface,
+      backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
       builder: (_) => const _CanvasSettingsSheet(),
@@ -499,11 +502,11 @@ class _CanvasSettingsSheet extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Canvas Settings',
-              style: KotoTextStyles.heading.copyWith(fontSize: 18)),
+              style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 24),
 
           // Page layout
-          Text('PAGE STYLE', style: KotoTextStyles.label),
+          Text('PAGE STYLE', style: ScrapTextStyles.label),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -518,7 +521,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
           const SizedBox(height: 20),
 
           // Toolbar dock
-          Text('TOOLBAR POSITION', style: KotoTextStyles.label),
+          Text('TOOLBAR POSITION', style: ScrapTextStyles.label),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -540,16 +543,16 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PALM REJECTION', style: KotoTextStyles.label),
+                Text('PALM REJECTION', style: ScrapTextStyles.label),
                 Text('Touch = scroll/zoom, Stylus = write',
-                    style: KotoTextStyles.caption
-                        .copyWith(color: KotoTheme.mutedText)),
+                    style: ScrapTextStyles.caption
+                        .copyWith(color: ScrapTheme.mutedText)),
               ]),
               Switch(
                 value: palmReject,
                 onChanged: (v) =>
                     ref.read(stylusOnlyModeProvider.notifier).state = v,
-                activeTrackColor: KotoTheme.accent,
+                activeTrackColor: ScrapTheme.accent,
                 thumbColor: const WidgetStatePropertyAll(Colors.white),
               ),
             ],
@@ -564,15 +567,15 @@ class _CanvasSettingsSheet extends ConsumerWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? KotoTheme.accent : Colors.transparent,
+          color: selected ? ScrapTheme.accent : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-              color: selected ? KotoTheme.accent : KotoTheme.dividers),
+              color: selected ? ScrapTheme.accent : ScrapTheme.dividers),
         ),
         child: Text(
           label,
-          style: KotoTextStyles.caption.copyWith(
-            color: selected ? Colors.white : KotoTheme.secondaryText,
+          style: ScrapTextStyles.caption.copyWith(
+            color: selected ? Colors.white : ScrapTheme.secondaryText,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -596,9 +599,9 @@ class _StickerButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: isIcon
               ? const Icon(Icons.emoji_emotions_outlined, size: 20,
-                  color: KotoTheme.mutedText)
-              : Text('貼', style: KotoTextStyles.body.copyWith(
-                  fontSize: 16, color: KotoTheme.mutedText)),
+                  color: ScrapTheme.mutedText)
+              : Text('貼', style: ScrapTextStyles.body.copyWith(
+                  fontSize: 16, color: ScrapTheme.mutedText)),
         ),
       ),
     );

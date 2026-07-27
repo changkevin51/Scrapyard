@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 
 class ExpandingRingFeedback extends StatefulWidget {
   final Offset position;
@@ -60,7 +60,7 @@ class _ExpandingRingFeedbackState extends State<ExpandingRingFeedback> with Sing
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: KotoTheme.accent.withValues(alpha: _opacityAnim.value), // Thin brown ring, slow opacity
+                  color: ScrapTheme.accent.withValues(alpha: _opacityAnim.value), // Thin brown ring, slow opacity
                   width: 2.0,
                 ),
               ),

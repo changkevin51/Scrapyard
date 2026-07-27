@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../data/api_key_service.dart';
 import '../providers/smelt_provider.dart';
 
@@ -136,17 +136,17 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
     final canSave = _controller.text.trim().isNotEmpty && !busy;
 
     return Dialog(
-      backgroundColor: KotoTheme.cardSurface,
+      backgroundColor: ScrapTheme.cardSurface,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
       ),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 520),
         decoration: BoxDecoration(
-          color: KotoTheme.cardSurface,
-          borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
-          boxShadow: KotoTheme.subtleShadow,
+          color: ScrapTheme.cardSurface,
+          borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+          boxShadow: ScrapTheme.subtleShadow,
         ),
         padding: const EdgeInsets.fromLTRB(28, 28, 28, 20),
         child: SingleChildScrollView(
@@ -156,21 +156,21 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
             children: [
               Text(
                 '⟨ Gemini ⟩',
-                style: KotoTextStyles.label.copyWith(
-                  color: KotoTheme.accent,
+                style: ScrapTextStyles.label.copyWith(
+                  color: ScrapTheme.accent,
                   letterSpacing: 1.2,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Connect your AI key',
-                style: KotoTextStyles.heading.copyWith(fontSize: 22),
+                style: ScrapTextStyles.heading.copyWith(fontSize: 22),
               ),
               const SizedBox(height: 8),
               Text(
-                'Koto uses your own free Google AI Studio key, so Smelt costs nothing.',
-                style: KotoTextStyles.caption.copyWith(
-                  color: KotoTheme.secondaryText,
+                'Scrapyard uses your own free Google AI Studio key, so Smelt costs nothing.',
+                style: ScrapTextStyles.caption.copyWith(
+                  color: ScrapTheme.secondaryText,
                 ),
               ),
               const SizedBox(height: 20),
@@ -178,8 +178,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
               const SizedBox(height: 20),
               Text(
                 'API key',
-                style: KotoTextStyles.label.copyWith(
-                  color: KotoTheme.accent,
+                style: ScrapTextStyles.label.copyWith(
+                  color: ScrapTheme.accent,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -188,19 +188,19 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                 controller: _controller,
                 obscureText: _obscure,
                 enabled: !busy,
-                style: KotoTextStyles.body.copyWith(
+                style: ScrapTextStyles.body.copyWith(
                   fontFamily: 'monospace',
                   fontSize: 14,
                   letterSpacing: 0.4,
                 ),
                 decoration: InputDecoration(
                   hintText: 'AQ.Ab...',
-                  hintStyle: KotoTextStyles.caption.copyWith(
-                    color: KotoTheme.mutedText,
+                  hintStyle: ScrapTextStyles.caption.copyWith(
+                    color: ScrapTheme.mutedText,
                     fontFamily: 'monospace',
                   ),
                   filled: true,
-                  fillColor: KotoTheme.background,
+                  fillColor: ScrapTheme.background,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 14,
@@ -214,30 +214,30 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                       _obscure
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
-                      color: KotoTheme.mutedText,
+                      color: ScrapTheme.mutedText,
                       size: 20,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(
-                      KotoTheme.borderRadiusDefault,
+                      ScrapTheme.borderRadiusDefault,
                     ),
-                    borderSide: const BorderSide(color: KotoTheme.dividers),
+                    borderSide: const BorderSide(color: ScrapTheme.dividers),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(
-                      KotoTheme.borderRadiusDefault,
+                      ScrapTheme.borderRadiusDefault,
                     ),
                     borderSide: const BorderSide(
-                      color: KotoTheme.accent,
+                      color: ScrapTheme.accent,
                       width: 1.5,
                     ),
                   ),
                   disabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(
-                      KotoTheme.borderRadiusDefault,
+                      ScrapTheme.borderRadiusDefault,
                     ),
-                    borderSide: const BorderSide(color: KotoTheme.dividers),
+                    borderSide: const BorderSide(color: ScrapTheme.dividers),
                   ),
                 ),
               ),
@@ -253,11 +253,11 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                         ? null
                         : _test,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: KotoTheme.accent,
+                      foregroundColor: ScrapTheme.accent,
                       side: BorderSide(
                         color: (_controller.text.trim().isEmpty || busy)
-                            ? KotoTheme.dividers
-                            : KotoTheme.accent,
+                            ? ScrapTheme.dividers
+                            : ScrapTheme.accent,
                       ),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -265,7 +265,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
-                          KotoTheme.borderRadiusDefault,
+                          ScrapTheme.borderRadiusDefault,
                         ),
                       ),
                     ),
@@ -275,13 +275,13 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: KotoTheme.accent,
+                              color: ScrapTheme.accent,
                             ),
                           )
                         : Text(
                             'Test connection',
-                            style: KotoTextStyles.body.copyWith(
-                              color: KotoTheme.accent,
+                            style: ScrapTextStyles.body.copyWith(
+                              color: ScrapTheme.accent,
                               fontWeight: FontWeight.w500,
                               fontSize: 14,
                             ),
@@ -291,9 +291,9 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                   FilledButton(
                     onPressed: canSave ? _save : null,
                     style: FilledButton.styleFrom(
-                      backgroundColor: KotoTheme.accent,
+                      backgroundColor: ScrapTheme.accent,
                       disabledBackgroundColor:
-                          KotoTheme.accent.withValues(alpha: 0.35),
+                          ScrapTheme.accent.withValues(alpha: 0.35),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 20,
@@ -301,7 +301,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
-                          KotoTheme.borderRadiusDefault,
+                          ScrapTheme.borderRadiusDefault,
                         ),
                       ),
                     ),
@@ -316,7 +316,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                           )
                         : Text(
                             'Save',
-                            style: KotoTextStyles.body.copyWith(
+                            style: ScrapTextStyles.body.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -329,7 +329,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                       onPressed: busy ? null : _remove,
                       child: Text(
                         'Remove key',
-                        style: KotoTextStyles.caption.copyWith(
+                        style: ScrapTextStyles.caption.copyWith(
                           color: Colors.redAccent,
                         ),
                       ),
@@ -340,8 +340,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                         : () => Navigator.of(context).pop(false),
                     child: Text(
                       widget.allowSkip ? 'Not now' : 'Cancel',
-                      style: KotoTextStyles.caption.copyWith(
-                        color: KotoTheme.secondaryText,
+                      style: ScrapTextStyles.caption.copyWith(
+                        color: ScrapTheme.secondaryText,
                       ),
                     ),
                   ),
@@ -359,8 +359,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: KotoTheme.accentSurface,
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+        color: ScrapTheme.accentSurface,
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,7 +372,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
               children: [
                 Text(
                   'Open Google AI Studio',
-                  style: KotoTextStyles.body.copyWith(fontSize: 14),
+                  style: ScrapTextStyles.body.copyWith(fontSize: 14),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -380,8 +380,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                     Expanded(
                       child: SelectableText(
                         _aiStudioUrl,
-                        style: KotoTextStyles.caption.copyWith(
-                          color: KotoTheme.accent,
+                        style: ScrapTextStyles.caption.copyWith(
+                          color: ScrapTheme.accent,
                           fontSize: 12,
                         ),
                       ),
@@ -395,8 +395,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                       ),
                       child: Text(
                         _linkCopiedHint ?? 'Copy link',
-                        style: KotoTextStyles.label.copyWith(
-                          color: KotoTheme.accent,
+                        style: ScrapTextStyles.label.copyWith(
+                          color: ScrapTheme.accent,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -411,7 +411,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
             '2',
             Text(
               'Sign in with your Google account.',
-              style: KotoTextStyles.body.copyWith(fontSize: 14),
+              style: ScrapTextStyles.body.copyWith(fontSize: 14),
             ),
           ),
           const SizedBox(height: 12),
@@ -419,7 +419,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
             '3',
             Text(
               'Tap “Create API key” and pick or create a project.',
-              style: KotoTextStyles.body.copyWith(fontSize: 14),
+              style: ScrapTextStyles.body.copyWith(fontSize: 14),
             ),
           ),
           const SizedBox(height: 12),
@@ -427,14 +427,14 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
             '4',
             Text(
               'Copy the key (it starts with "AQ.") and paste it below.',
-              style: KotoTextStyles.body.copyWith(fontSize: 14),
+              style: ScrapTextStyles.body.copyWith(fontSize: 14),
             ),
           ),
           const SizedBox(height: 14),
           Text(
             'The free tier is enough for normal use. Your key stays on this device only.',
-            style: KotoTextStyles.caption.copyWith(
-              color: KotoTheme.mutedText,
+            style: ScrapTextStyles.caption.copyWith(
+              color: ScrapTheme.mutedText,
               fontSize: 12,
             ),
           ),
@@ -452,13 +452,13 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           height: 22,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: KotoTheme.accent.withValues(alpha: 0.12),
+            color: ScrapTheme.accent.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(11),
           ),
           child: Text(
             number,
-            style: KotoTextStyles.label.copyWith(
-              color: KotoTheme.accent,
+            style: ScrapTextStyles.label.copyWith(
+              color: ScrapTheme.accent,
               fontWeight: FontWeight.w700,
               fontSize: 11,
             ),
@@ -472,9 +472,9 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
 
   Widget _buildResultStrip(ApiKeyTestResult result) {
     final ok = result.success;
-    final color = ok ? KotoTheme.accent : Colors.redAccent;
+    final color = ok ? ScrapTheme.accent : Colors.redAccent;
     final bg = ok
-        ? KotoTheme.accent.withValues(alpha: 0.08)
+        ? ScrapTheme.accent.withValues(alpha: 0.08)
         : Colors.redAccent.withValues(alpha: 0.08);
 
     final detail = ok && result.modelReply != null && result.modelReply!.isNotEmpty
@@ -486,7 +486,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(KotoTheme.borderRadiusDefault),
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -500,7 +500,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           Expanded(
             child: Text(
               detail,
-              style: KotoTextStyles.caption.copyWith(color: color),
+              style: ScrapTextStyles.caption.copyWith(color: color),
             ),
           ),
         ],

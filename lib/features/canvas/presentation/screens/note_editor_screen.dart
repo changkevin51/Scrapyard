@@ -6,7 +6,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../providers/canvas_providers.dart';
@@ -1104,13 +1105,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: KotoTheme.dividers),
-                  boxShadow: KotoTheme.subtleShadow,
+                  border: Border.all(color: ScrapTheme.dividers),
+                  boxShadow: ScrapTheme.subtleShadow,
                 ),
                 child: Text(
                   'Drag to select',
-                  style: KotoTextStyles.caption.copyWith(
-                    color: KotoTheme.accent,
+                  style: ScrapTextStyles.caption.copyWith(
+                    color: ScrapTheme.accent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1141,59 +1142,58 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       );
     }
 
-    final canvasSurface = Expanded(
-      child: Stack(
-        children: [
-          SingleChildScrollView(
-            controller: _scrollController,
-            // In pen mode (or lasso), the HandwritingCanvas Listener handles all
-            // pointer events — the scroll view must not compete.  When stylus-only
-            // is on, the canvas also handles touch scrolling manually via jumpTo(),
-            // so the scroll view must stay out of the way.
-            physics: (isSelectionMode || isPenMode)
-                ? const NeverScrollableScrollPhysics()
-                : const ClampingScrollPhysics(),
-            child: ColoredBox(
-              color: canvasZoom <= 1.0
-                  ? KotoTheme.cardSurface
-                  : KotoTheme.background,
-              child: SizedBox(
-                width: double.infinity,
-                height: 5000 * canvasZoom,
-                child: Transform.scale(
-                  scale: canvasZoom,
-                  alignment: canvasZoom <= 1.0
-                      ? const Alignment(0, -1)
-                      : Alignment.topLeft,
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 5000,
-                    child: Listener(
-                      onPointerDown: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerDown
-                          : null,
-                      onPointerMove: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerMove
-                          : null,
-                      onPointerUp: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerUp
-                          : null,
-                      onPointerCancel: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerCancel
-                          : null,
-                      child: GestureDetector(
-                        onTapDown: _onCanvasTapDown,
-                        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
-                        onLongPressStart: _handleCanvasLongPressStart,
-                        onPanStart: allowSelectionDrag ? _startLasso : null,
-                        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
-                        onPanEnd: allowSelectionDrag ? _endLasso : null,
-                        child: Stack(
-                          children: [
-                            canvasStack,
-                            ...contentOverlays,
-                          ],
-                        ),
+    // Plain Stack — callers wrap in Expanded as needed (never nest Expanded).
+    final canvasSurface = Stack(
+      children: [
+        SingleChildScrollView(
+          controller: _scrollController,
+          // In pen mode (or lasso), the HandwritingCanvas Listener handles all
+          // pointer events — the scroll view must not compete.  When stylus-only
+          // is on, the canvas also handles touch scrolling manually via jumpTo(),
+          // so the scroll view must stay out of the way.
+          physics: (isSelectionMode || isPenMode)
+              ? const NeverScrollableScrollPhysics()
+              : const ClampingScrollPhysics(),
+          child: ColoredBox(
+            color: canvasZoom <= 1.0
+                ? ScrapTheme.cardSurface
+                : ScrapTheme.background,
+            child: SizedBox(
+              width: double.infinity,
+              height: 5000 * canvasZoom,
+              child: Transform.scale(
+                scale: canvasZoom,
+                alignment: canvasZoom <= 1.0
+                    ? const Alignment(0, -1)
+                    : Alignment.topLeft,
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 5000,
+                  child: Listener(
+                    onPointerDown: stylusOnly && isSelectionMode
+                        ? _onSelectionPointerDown
+                        : null,
+                    onPointerMove: stylusOnly && isSelectionMode
+                        ? _onSelectionPointerMove
+                        : null,
+                    onPointerUp: stylusOnly && isSelectionMode
+                        ? _onSelectionPointerUp
+                        : null,
+                    onPointerCancel: stylusOnly && isSelectionMode
+                        ? _onSelectionPointerCancel
+                        : null,
+                    child: GestureDetector(
+                      onTapDown: _onCanvasTapDown,
+                      onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+                      onLongPressStart: _handleCanvasLongPressStart,
+                      onPanStart: allowSelectionDrag ? _startLasso : null,
+                      onPanUpdate: allowSelectionDrag ? _updateLasso : null,
+                      onPanEnd: allowSelectionDrag ? _endLasso : null,
+                      child: Stack(
+                        children: [
+                          canvasStack,
+                          ...contentOverlays,
+                        ],
                       ),
                     ),
                   ),
@@ -1201,43 +1201,52 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               ),
             ),
           ),
-          // Smart action FAB — bottom right, always on screen
-          Positioned(
-            right: 16, bottom: 16,
-            child: CanvasSmartBar(
-              ocrTexts: ref.watch(ocrResultsProvider).map((r) => r.text).toList(),
-              ocrStrokeIds: const [],
-            ),
+        ),
+        // Smart action FAB — bottom right, always on screen
+        Positioned(
+          right: 16, bottom: 16,
+          child: CanvasSmartBar(
+            ocrTexts: ref.watch(ocrResultsProvider).map((r) => r.text).toList(),
+            ocrStrokeIds: const [],
           ),
-        ],
-      ),
+        ),
+      ],
     );
 
     Widget toolSurface;
     switch (toolbarPosition) {
       case ToolbarPosition.top:
         toolSurface = Column(children: [
-          // Removed SafeArea entirely
-          const CanvasToolbar(), 
+          const CanvasToolbar(),
           Expanded(child: canvasSurface),
         ]);
         break;
       case ToolbarPosition.bottom:
         toolSurface = Column(children: [
-          canvasSurface,
+          Expanded(child: canvasSurface),
           const SafeArea(top: false, child: CanvasToolbar()),
         ]);
         break;
       case ToolbarPosition.left:
-        toolSurface = SafeArea(child: Row(children: [const CanvasToolbar(), canvasSurface]));
+        toolSurface = SafeArea(
+          child: Row(children: [
+            const CanvasToolbar(),
+            Expanded(child: canvasSurface),
+          ]),
+        );
         break;
       case ToolbarPosition.right:
-        toolSurface = SafeArea(child: Row(children: [canvasSurface, const CanvasToolbar()]));
+        toolSurface = SafeArea(
+          child: Row(children: [
+            Expanded(child: canvasSurface),
+            const CanvasToolbar(),
+          ]),
+        );
         break;
     }
 
     return Scaffold(
-      backgroundColor: KotoTheme.background,
+      backgroundColor: ScrapTheme.background,
       body: Column(
         children: [
           const SafeArea(bottom: false, child: DocumentTabBar()),
@@ -1256,10 +1265,10 @@ class _LassoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final fill = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: 0.12)
+      ..color = ScrapTheme.accent.withValues(alpha: 0.12)
       ..style = PaintingStyle.fill;
     final border = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: 0.7)
+      ..color = ScrapTheme.accent.withValues(alpha: 0.7)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 
@@ -1325,10 +1334,10 @@ class _DetectedBoxPainter extends CustomPainter {
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
 
     final fill = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: 0.08)
+      ..color = ScrapTheme.accent.withValues(alpha: 0.08)
       ..style = PaintingStyle.fill;
     final border = Paint()
-      ..color = KotoTheme.accent.withValues(alpha: 0.55)
+      ..color = ScrapTheme.accent.withValues(alpha: 0.55)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6;
 
@@ -1376,8 +1385,8 @@ class _SelectionActionMenu extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: KotoTheme.dividers),
-            boxShadow: KotoTheme.subtleShadow,
+            border: Border.all(color: ScrapTheme.dividers),
+            boxShadow: ScrapTheme.subtleShadow,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1423,8 +1432,8 @@ class _SmeltActionMenu extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: KotoTheme.dividers),
-            boxShadow: KotoTheme.subtleShadow,
+            border: Border.all(color: ScrapTheme.dividers),
+            boxShadow: ScrapTheme.subtleShadow,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1456,8 +1465,8 @@ class _ManualSelectActionMenu extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: KotoTheme.dividers),
-          boxShadow: KotoTheme.subtleShadow,
+          border: Border.all(color: ScrapTheme.dividers),
+          boxShadow: ScrapTheme.subtleShadow,
         ),
         child: _ManualSelectButton(onTap: onSelect),
       ),
@@ -1479,12 +1488,12 @@ class _ManualSelectButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: KotoTheme.dividers),
+          border: Border.all(color: ScrapTheme.dividers),
         ),
         child: Text(
           'Select manually',
-          style: KotoTextStyles.caption.copyWith(
-            color: KotoTheme.secondaryText,
+          style: ScrapTextStyles.caption.copyWith(
+            color: ScrapTheme.secondaryText,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1516,19 +1525,20 @@ class _SmeltPillButtonState extends State<_SmeltPillButton> {
       onTapCancel: () => setState(() => _pressed = false),
       child: AnimatedScale(
         scale: _pressed ? 0.96 : 1.0,
-        duration: const Duration(milliseconds: 90),
+        duration: ScrapMotion.press,
+        curve: ScrapMotion.pressCurve,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [KotoTheme.accent, Color(0xFF8A6A55)],
+              colors: [ScrapTheme.accent, Color(0xFF8A6A55)],
             ),
             borderRadius: BorderRadius.circular(999),
             boxShadow: [
               BoxShadow(
-                color: KotoTheme.accent.withValues(alpha: 0.28),
+                color: ScrapTheme.accent.withValues(alpha: 0.28),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -1541,7 +1551,7 @@ class _SmeltPillButtonState extends State<_SmeltPillButton> {
               const SizedBox(width: 6),
               Text(
                 'Smelt',
-                style: KotoTextStyles.body.copyWith(
+                style: ScrapTextStyles.body.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.2,
@@ -1574,8 +1584,8 @@ class _MenuButton extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: KotoTextStyles.caption.copyWith(
-            color: danger ? const Color(0xFFB84444) : KotoTheme.primaryText,
+          style: ScrapTextStyles.caption.copyWith(
+            color: danger ? const Color(0xFFB84444) : ScrapTheme.primaryText,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -1600,13 +1610,13 @@ class _PasteMenu extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: KotoTheme.dividers),
-            boxShadow: KotoTheme.subtleShadow,
+            border: Border.all(color: ScrapTheme.dividers),
+            boxShadow: ScrapTheme.subtleShadow,
           ),
           child: Text(
             'Paste',
-            style: KotoTextStyles.caption.copyWith(
-              color: KotoTheme.accent,
+            style: ScrapTextStyles.caption.copyWith(
+              color: ScrapTheme.accent,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1649,8 +1659,8 @@ class _SelectionCornerHandle extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
-            border: Border.all(color: KotoTheme.accent, width: 1.5),
-            boxShadow: KotoTheme.subtleShadow,
+            border: Border.all(color: ScrapTheme.accent, width: 1.5),
+            boxShadow: ScrapTheme.subtleShadow,
           ),
         ),
       ),

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Example providers for settings
@@ -27,10 +27,10 @@ class LanguageSettingsPanel extends ConsumerWidget {
         Row(
            mainAxisAlignment: MainAxisAlignment.spaceBetween,
            children: [
-             Text('Native Language', style: KotoTextStyles.body),
+             Text('Native Language', style: ScrapTextStyles.body),
              DropdownButton<String>(
                 value: nativeLang,
-                items: ['English', 'Spanish', 'French'].map((e) => DropdownMenuItem(value: e, child: Text(e, style: KotoTextStyles.body))).toList(),
+                items: ['English', 'Spanish', 'French'].map((e) => DropdownMenuItem(value: e, child: Text(e, style: ScrapTextStyles.body))).toList(),
                 onChanged: (v) {
                    if (v != null) ref.read(nativeLanguageProvider.notifier).state = v;
                 },
@@ -51,8 +51,8 @@ class LanguageSettingsPanel extends ConsumerWidget {
   Widget _buildSectionHeader(String text) {
      return Text(
          text.toUpperCase(),
-         style: KotoTextStyles.label.copyWith(
-            color: KotoTheme.accent,
+         style: ScrapTextStyles.label.copyWith(
+            color: ScrapTheme.accent,
             fontWeight: FontWeight.bold,
          ),
      );
@@ -62,11 +62,11 @@ class LanguageSettingsPanel extends ConsumerWidget {
      return Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-           Text(title, style: KotoTextStyles.body),
+           Text(title, style: ScrapTextStyles.body),
            Switch(
               value: current,
               onChanged: onChanged,
-              activeColor: KotoTheme.accent,
+              activeColor: ScrapTheme.accent,
            ),
         ],
      );

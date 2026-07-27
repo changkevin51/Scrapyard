@@ -39,6 +39,7 @@ class SmeltService {
   static const List<String> _models = [
     'gemini-3.5-flash',
     'gemini-3-flash-preview',
+    'gemini-3.5-flash-lite'
     'gemini-3.1-flash-lite',
   ];
 
@@ -100,7 +101,7 @@ class SmeltService {
     final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
 
     const systemPrompt = '''
-You are Koto's AI smelt engine. Analyze the handwritten content in the image.
+You are Scrapyard's AI smelt engine. Analyze the handwritten content in the image.
 
 IMPORTANT RULES:
 1. If this is a MATH question/problem:

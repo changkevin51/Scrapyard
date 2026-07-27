@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../ai_engine/data/api_key_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
@@ -19,31 +19,31 @@ class SettingsScreen extends ConsumerWidget {
         : 'Not set — tap to add';
 
     return Scaffold(
-      backgroundColor: KotoTheme.background,
+      backgroundColor: ScrapTheme.background,
       appBar: AppBar(
         title: Text(
           'Settings',
-          style: KotoTextStyles.heading.copyWith(fontSize: 20),
+          style: ScrapTextStyles.heading.copyWith(fontSize: 20),
         ),
-        backgroundColor: KotoTheme.background,
+        backgroundColor: ScrapTheme.background,
         elevation: 0,
-        iconTheme: const IconThemeData(color: KotoTheme.primaryText),
+        iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         children: [
           ListTile(
-            title: Text('Gemini API Key', style: KotoTextStyles.body),
+            title: Text('Gemini API Key', style: ScrapTextStyles.body),
             subtitle: Text(
               subtitle,
-              style: KotoTextStyles.caption.copyWith(
-                color: hasKey ? KotoTheme.secondaryText : KotoTheme.mutedText,
+              style: ScrapTextStyles.caption.copyWith(
+                color: hasKey ? ScrapTheme.secondaryText : ScrapTheme.mutedText,
                 fontFamily: hasKey ? 'monospace' : null,
               ),
             ),
             trailing: const Icon(
               Icons.chevron_right,
-              color: KotoTheme.mutedText,
+              color: ScrapTheme.mutedText,
             ),
             onTap: () async {
               final saved = await showApiKeyDialog(context, allowSkip: false);
@@ -56,31 +56,31 @@ class SettingsScreen extends ConsumerWidget {
                       nowHasKey
                           ? (hasKey ? 'API key updated' : 'API key saved')
                           : 'API key removed',
-                      style: KotoTextStyles.body.copyWith(color: Colors.white),
+                      style: ScrapTextStyles.body.copyWith(color: Colors.white),
                     ),
-                    backgroundColor: KotoTheme.accent,
+                    backgroundColor: ScrapTheme.accent,
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
               }
             },
           ),
-          const Divider(color: KotoTheme.dividers),
+          const Divider(color: ScrapTheme.dividers),
           ListTile(
-            title: Text('Gestures', style: KotoTextStyles.body),
+            title: Text('Gestures', style: ScrapTextStyles.body),
             subtitle: Text(
               'Configure shortcut edge motions',
-              style: KotoTextStyles.caption.copyWith(
-                color: KotoTheme.mutedText,
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
               ),
             ),
             trailing: const Icon(
               Icons.chevron_right,
-              color: KotoTheme.mutedText,
+              color: ScrapTheme.mutedText,
             ),
             onTap: () => context.push('/settings/gestures'),
           ),
-          const Divider(color: KotoTheme.dividers),
+          const Divider(color: ScrapTheme.dividers),
         ],
       ),
     );

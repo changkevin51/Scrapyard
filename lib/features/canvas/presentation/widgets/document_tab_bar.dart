@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/theme/scrap_motion.dart';
 import '../providers/canvas_providers.dart';
 
 // ─────────────────────────────────────────────────────────────────
 // Document Tab Bar
-// Koto-themed open note tabs — NOT browser-style.
+// Scrapyard-themed open scrap tabs — NOT browser-style.
 //
 // Design: Horizontal scrollable strip of bookmark-style pill cards.
 // Each tab has a 3px colored left-stripe, note title, and close ×.
@@ -26,23 +27,14 @@ class DocumentTabBar extends ConsumerWidget {
     return Container(
       height: 44,
       decoration: const BoxDecoration(
-        color: KotoTheme.cardSurface,
-        border: Border(bottom: BorderSide(color: KotoTheme.dividers, width: 0.5)),
+        color: ScrapTheme.cardSurface,
+        border: Border(bottom: BorderSide(color: ScrapTheme.dividers, width: 0.5)),
       ),
       child: Row(
         children: [
           // Back button - navigate to home
-          GestureDetector(
+          _BackHomeButton(
             onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 36, height: 36,
-              margin: const EdgeInsets.only(left: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: KotoTheme.dividers),
-              ),
-              child: const Icon(Icons.arrow_back, size: 16, color: KotoTheme.mutedText),
-            ),
           ),
           Expanded(
             child: ListView.builder(
@@ -85,9 +77,9 @@ class DocumentTabBar extends ConsumerWidget {
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: KotoTheme.dividers),
+                border: Border.all(color: ScrapTheme.dividers),
               ),
-              child: const Icon(Icons.add, size: 16, color: KotoTheme.mutedText),
+              child: const Icon(Icons.add, size: 16, color: ScrapTheme.mutedText),
             ),
           ),
         ],
@@ -104,7 +96,7 @@ class DocumentTabBar extends ConsumerWidget {
   ) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: KotoTheme.cardSurface,
+      backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
       builder: (_) => _TabMenuSheet(tab: tab, tabs: tabs, groups: groups),
@@ -146,13 +138,13 @@ class _TabChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
           border: Border(
             left: BorderSide(
-              color: isActive ? tab.accent : KotoTheme.dividers,
+              color: isActive ? tab.accent : ScrapTheme.dividers,
               width: isActive ? 2.5 : 1.5,
             ),
-            top: const BorderSide(color: KotoTheme.dividers, width: 0.5),
-            right: const BorderSide(color: KotoTheme.dividers, width: 0.5),
+            top: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
+            right: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
             bottom: BorderSide(
-              color: isActive ? tab.accent.withValues(alpha: 0.4) : KotoTheme.dividers,
+              color: isActive ? tab.accent.withValues(alpha: 0.4) : ScrapTheme.dividers,
               width: 0.5,
             ),
           ),
@@ -174,9 +166,9 @@ class _TabChip extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 100),
               child: Text(
                 tab.title,
-                style: KotoTextStyles.body.copyWith(
+                style: ScrapTextStyles.body.copyWith(
                   fontSize: 12,
-                  color: isActive ? KotoTheme.primaryText : KotoTheme.secondaryText,
+                  color: isActive ? ScrapTheme.primaryText : ScrapTheme.secondaryText,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -198,7 +190,7 @@ class _TabChip extends StatelessWidget {
               child: Icon(
                 Icons.close,
                 size: 12,
-                color: isActive ? KotoTheme.secondaryText : KotoTheme.mutedText,
+                color: isActive ? ScrapTheme.secondaryText : ScrapTheme.mutedText,
               ),
             ),
           ],
@@ -233,7 +225,7 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
                 decoration: BoxDecoration(color: widget.tab.accent, shape: BoxShape.circle)),
             const SizedBox(width: 10),
             Flexible(child: Text(widget.tab.title,
-                style: KotoTextStyles.heading.copyWith(fontSize: 16))),
+                style: ScrapTextStyles.heading.copyWith(fontSize: 16))),
           ]),
           const SizedBox(height: 20),
 
@@ -261,14 +253,14 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: KotoTheme.cardSurface,
-        title: Text('Group with', style: KotoTextStyles.heading.copyWith(fontSize: 16)),
+        backgroundColor: ScrapTheme.cardSurface,
+        title: Text('Group with', style: ScrapTextStyles.heading.copyWith(fontSize: 16)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: others.map((other) => ListTile(
             leading: Container(width: 8, height: 8,
                 decoration: BoxDecoration(color: other.accent, shape: BoxShape.circle)),
-            title: Text(other.title, style: KotoTextStyles.body),
+            title: Text(other.title, style: ScrapTextStyles.body),
             onTap: () {
               final groupId = 'grp_${DateTime.now().millisecondsSinceEpoch}';
               final newGroup = TabGroup(id: groupId, name: '${widget.tab.title[0]}${other.title[0]}');
@@ -287,6 +279,48 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
   }
 }
 
+class _BackHomeButton extends StatefulWidget {
+  final VoidCallback onTap;
+
+  const _BackHomeButton({required this.onTap});
+
+  @override
+  State<_BackHomeButton> createState() => _BackHomeButtonState();
+}
+
+class _BackHomeButtonState extends State<_BackHomeButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.92 : 1.0,
+        duration: ScrapMotion.press,
+        curve: Curves.easeOut,
+        child: Container(
+          width: 36,
+          height: 36,
+          margin: const EdgeInsets.only(left: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: ScrapTheme.dividers),
+          ),
+          child: const Icon(
+            Icons.arrow_back,
+            size: 16,
+            color: ScrapTheme.mutedText,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MenuItem extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -295,8 +329,8 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListTile(
-    leading: Icon(icon, size: 20, color: KotoTheme.secondaryText),
-    title: Text(label, style: KotoTextStyles.body),
+    leading: Icon(icon, size: 20, color: ScrapTheme.secondaryText),
+    title: Text(label, style: ScrapTextStyles.body),
     contentPadding: EdgeInsets.zero,
     dense: true,
     onTap: onTap,

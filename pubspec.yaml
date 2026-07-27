@@ -1,5 +1,5 @@
-name: koto
-description: A tablet-first Android study app.
+name: scrapyard
+description: A digital scrap paper workspace with built-in AI.
 publish_to: "none"
 
 version: 1.0.0+1

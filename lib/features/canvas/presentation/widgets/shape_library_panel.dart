@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
 
@@ -31,7 +31,7 @@ class ShapeLibraryPanel extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       decoration: const BoxDecoration(
-        color: KotoTheme.cardSurface,
+        color: ScrapTheme.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
       child: Column(
@@ -42,16 +42,16 @@ class ShapeLibraryPanel extends ConsumerWidget {
             child: Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: KotoTheme.dividers,
+                color: ScrapTheme.dividers,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 20),
-          Text('Shape Library', style: KotoTextStyles.heading.copyWith(fontSize: 18)),
+          Text('Shape Library', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 6),
           Text('Tap to place  ·  or draw your own',
-              style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+              style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
@@ -75,11 +75,11 @@ class ShapeLibraryPanel extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
                     color: isActive
-                        ? KotoTheme.accent.withValues(alpha: 0.12)
-                        : KotoTheme.background,
+                        ? ScrapTheme.accent.withValues(alpha: 0.12)
+                        : ScrapTheme.background,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: isActive ? KotoTheme.accent : KotoTheme.dividers,
+                      color: isActive ? ScrapTheme.accent : ScrapTheme.dividers,
                       width: isActive ? 1.5 : 1,
                     ),
                   ),
@@ -90,15 +90,15 @@ class ShapeLibraryPanel extends ConsumerWidget {
                         s.glyph,
                         style: TextStyle(
                           fontSize: 28,
-                          color: isActive ? KotoTheme.accent : KotoTheme.secondaryText,
+                          color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         s.label,
-                        style: KotoTextStyles.caption.copyWith(
+                        style: ScrapTextStyles.caption.copyWith(
                           fontSize: 11,
-                          color: isActive ? KotoTheme.accent : KotoTheme.mutedText,
+                          color: isActive ? ScrapTheme.accent : ScrapTheme.mutedText,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -110,12 +110,12 @@ class ShapeLibraryPanel extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           if (selected != null) ...[
-            const Divider(color: KotoTheme.dividers, height: 24),
+            const Divider(color: ScrapTheme.dividers, height: 24),
             Row(
               children: [
                 Text(
                   'Tap canvas to place selected shape',
-                  style: KotoTextStyles.caption.copyWith(color: KotoTheme.accent),
+                  style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.accent),
                 ),
                 const Spacer(),
                 GestureDetector(
@@ -124,7 +124,7 @@ class ShapeLibraryPanel extends ConsumerWidget {
                     Navigator.pop(context);
                   },
                   child: Text('Clear',
-                      style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+                      style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
                 ),
               ],
             ),

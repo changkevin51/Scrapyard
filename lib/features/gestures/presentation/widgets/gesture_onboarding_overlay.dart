@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 
 class GestureOnboardingOverlay extends StatefulWidget {
   final VoidCallback onComplete;
@@ -17,22 +17,22 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
   final List<Map<String, dynamic>> _pages = [
     {
       'illustration': Icons.pan_tool_alt_outlined,
-      'caption': 'Swipes: migi e (navigator), hidari e (AI)',
+      'caption': 'Edge swipes',
       'desc': 'Swipe from the absolute screen edges.',
     },
     {
       'illustration': Icons.radio_button_checked,
-      'caption': 'Tap-hold: hirogeru',
+      'caption': 'Tap-hold to expand',
       'desc': 'Hold on any text to expand the AI analysis scope.',
     },
     {
       'illustration': Icons.touch_app_outlined,
-      'caption': 'Multi-finger: yubi o tsukau',
+      'caption': 'Multi-finger gestures',
       'desc': '3-finger tap for AI. 4-finger swipe for focus.',
     },
     {
       'illustration': Icons.more_horiz,
-      'caption': 'Morse: ton-tsuu',
+      'caption': 'Morse corner',
       'desc': 'Tap dot/dash down in the bottom left corner.',
     },
   ];
@@ -57,9 +57,9 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
               child: GestureDetector(
                 onTap: widget.onComplete,
                 child: Text(
-                  'Hajimeru — 始める',
-                  style: KotoTextStyles.caption.copyWith(
-                    color: KotoTheme.accent,
+                  'Start scribbling',
+                  style: ScrapTextStyles.caption.copyWith(
+                    color: ScrapTheme.accent,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -85,7 +85,7 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
                          const SizedBox(height: 32),
                          Text(
                            item['caption'] as String,
-                           style: KotoTextStyles.heading.copyWith(
+                           style: ScrapTextStyles.heading.copyWith(
                              color: Colors.white,
                              fontSize: 17,
                              fontStyle: FontStyle.italic,
@@ -94,7 +94,7 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
                          const SizedBox(height: 12),
                          Text(
                            item['desc'] as String,
-                           style: KotoTextStyles.body.copyWith(
+                           style: ScrapTextStyles.body.copyWith(
                              color: Colors.white70,
                              fontSize: 15,
                            ),
@@ -120,7 +120,7 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: _currentPage == index ? KotoTheme.accent : KotoTheme.dividers,
+                      color: _currentPage == index ? ScrapTheme.accent : ScrapTheme.dividers,
                     ),
                   )
                 ),

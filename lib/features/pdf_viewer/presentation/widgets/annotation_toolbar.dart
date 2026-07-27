@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../providers/pdf_providers.dart';
 
 class AnnotationToolbar extends ConsumerStatefulWidget {
@@ -40,10 +40,10 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
-            color: KotoTheme.cardSurface,
+            color: ScrapTheme.cardSurface,
             borderRadius: BorderRadius.circular(_isExpanded ? 20 : 25),
-            border: Border.all(color: KotoTheme.dividers, width: 1.0),
-            boxShadow: KotoTheme.subtleShadow,
+            border: Border.all(color: ScrapTheme.dividers, width: 1.0),
+            boxShadow: ScrapTheme.subtleShadow,
           ),
           child: _isExpanded ? _buildExpandedToolbar() : _buildIdleDot(),
         ),
@@ -65,7 +65,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
             width: 12,
             height: 12,
             decoration: const BoxDecoration(
-              color: KotoTheme.accent,
+              color: ScrapTheme.accent,
               shape: BoxShape.circle,
             ),
           ),
@@ -91,7 +91,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
                 _buildToolIcon(Icons.crop_square_outlined, AnnotationTool.shape),
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 20, color: KotoTheme.mutedText),
+                  icon: const Icon(Icons.close, size: 20, color: ScrapTheme.mutedText),
                   onPressed: () => setState(() => _isExpanded = false),
                   splashRadius: 20,
                 )
@@ -122,7 +122,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
             Icon(
               icon,
               size: 24,
-              color: isActive ? KotoTheme.primaryText : KotoTheme.mutedText,
+              color: isActive ? ScrapTheme.primaryText : ScrapTheme.mutedText,
             ),
             if (isActive) ...[
               const SizedBox(height: 4),
@@ -130,7 +130,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
                 width: 4,
                 height: 4,
                 decoration: const BoxDecoration(
-                  color: KotoTheme.accent,
+                  color: ScrapTheme.accent,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -156,7 +156,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: isSelected ? Border.all(color: KotoTheme.primaryText, width: 2.0) : Border.all(color: Colors.transparent),
+          border: isSelected ? Border.all(color: ScrapTheme.primaryText, width: 2.0) : Border.all(color: Colors.transparent),
         ),
       ),
     );

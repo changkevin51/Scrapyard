@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../../domain/models/gesture_action.dart';
 import '../providers/gesture_providers.dart';
 
@@ -92,7 +92,7 @@ class _MorseGestureZoneState extends ConsumerState<MorseGestureZone> {
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: isActive ? KotoTheme.accent.withValues(alpha: 0.5) : KotoTheme.accent,
+              color: isActive ? ScrapTheme.accent.withValues(alpha: 0.5) : ScrapTheme.accent,
               shape: BoxShape.circle,
             ),
           ),

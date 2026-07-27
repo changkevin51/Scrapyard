@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────
 // Canvas Sticker model — an emoji/decorative sticker placed on canvas
@@ -110,7 +110,7 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
     return Container(
       height: MediaQuery.of(context).size.height * 0.55,
       decoration: const BoxDecoration(
-        color: KotoTheme.cardSurface,
+        color: ScrapTheme.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
@@ -120,7 +120,7 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
             margin: const EdgeInsets.only(top: 12),
             width: 36, height: 4,
             decoration: BoxDecoration(
-              color: KotoTheme.dividers,
+              color: ScrapTheme.dividers,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -130,9 +130,9 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                Text('Stickers', style: KotoTextStyles.heading.copyWith(fontSize: 18)),
+                Text('Stickers', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
                 const Spacer(),
-                Text('Tap to place', style: KotoTextStyles.caption.copyWith(color: KotoTheme.mutedText)),
+                Text('Tap to place', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
               ],
             ),
           ),
@@ -156,17 +156,17 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                     decoration: BoxDecoration(
-                      color: isActive ? KotoTheme.accent : KotoTheme.background,
+                      color: isActive ? ScrapTheme.accent : ScrapTheme.background,
                       borderRadius: BorderRadius.circular(100),
                       border: Border.all(
-                        color: isActive ? KotoTheme.accent : KotoTheme.dividers,
+                        color: isActive ? ScrapTheme.accent : ScrapTheme.dividers,
                       ),
                     ),
                     child: Text(
                       _stickerLibrary[i].category,
-                      style: KotoTextStyles.caption.copyWith(
+                      style: ScrapTextStyles.caption.copyWith(
                         fontSize: 11,
-                        color: isActive ? Colors.white : KotoTheme.secondaryText,
+                        color: isActive ? Colors.white : ScrapTheme.secondaryText,
                         fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
                       ),
                     ),
@@ -176,7 +176,7 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
             ),
           ),
           const SizedBox(height: 16),
-          const Divider(color: KotoTheme.dividers, height: 1),
+          const Divider(color: ScrapTheme.dividers, height: 1),
           // Sticker grid
           Expanded(
             child: GridView.builder(
@@ -200,7 +200,7 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
                       duration: const Duration(milliseconds: 100),
                       decoration: BoxDecoration(
                         color: isHov
-                            ? KotoTheme.accent.withValues(alpha: 0.08)
+                            ? ScrapTheme.accent.withValues(alpha: 0.08)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -305,7 +305,7 @@ class _CanvasStickerOverlayState extends ConsumerState<CanvasStickerOverlay> {
                 child: Container(
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: KotoTheme.accent.withValues(alpha: 0.6),
+                      color: ScrapTheme.accent.withValues(alpha: 0.6),
                       width: 1.5,
                     ),
                     borderRadius: BorderRadius.circular(4),
@@ -321,13 +321,13 @@ class _CanvasStickerOverlayState extends ConsumerState<CanvasStickerOverlay> {
                   child: Container(
                     width: 24, height: 24,
                     decoration: BoxDecoration(
-                      color: KotoTheme.cardSurface,
+                      color: ScrapTheme.cardSurface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: KotoTheme.dividers),
-                      boxShadow: KotoTheme.subtleShadow,
+                      border: Border.all(color: ScrapTheme.dividers),
+                      boxShadow: ScrapTheme.subtleShadow,
                     ),
                     child: const Icon(Icons.close, size: 14,
-                        color: KotoTheme.secondaryText),
+                        color: ScrapTheme.secondaryText),
                   ),
                 ),
               ),
@@ -343,9 +343,9 @@ class _CanvasStickerOverlayState extends ConsumerState<CanvasStickerOverlay> {
                   child: Container(
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      color: KotoTheme.accent,
+                      color: ScrapTheme.accent,
                       shape: BoxShape.circle,
-                      boxShadow: KotoTheme.subtleShadow,
+                      boxShadow: ScrapTheme.subtleShadow,
                     ),
                     child: const Icon(Icons.open_in_full, size: 12, color: Colors.white),
                   ),
@@ -363,13 +363,13 @@ class _CanvasStickerOverlayState extends ConsumerState<CanvasStickerOverlay> {
                   child: Container(
                     width: 22, height: 22,
                     decoration: BoxDecoration(
-                      color: KotoTheme.cardSurface,
+                      color: ScrapTheme.cardSurface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: KotoTheme.accent),
-                      boxShadow: KotoTheme.subtleShadow,
+                      border: Border.all(color: ScrapTheme.accent),
+                      boxShadow: ScrapTheme.subtleShadow,
                     ),
                     child: const Icon(Icons.rotate_right, size: 12,
-                        color: KotoTheme.accent),
+                        color: ScrapTheme.accent),
                   ),
                 ),
               ),

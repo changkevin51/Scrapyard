@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
-import '../../../../core/theme/koto_theme.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
 import '../providers/pdf_providers.dart';
 import '../widgets/annotation_toolbar.dart';
 import '../widgets/split_screen_layout.dart';
@@ -39,20 +39,20 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
     final isSplitScreen = ref.watch(isSplitScreenProvider);
 
     return Scaffold(
-      backgroundColor: KotoTheme.cardSurface,
+      backgroundColor: ScrapTheme.cardSurface,
       appBar: AppBar(
-        backgroundColor: KotoTheme.background,
+        backgroundColor: ScrapTheme.background,
         elevation: 0,
         title: Text(
           'Document',
-          style: KotoTextStyles.heading.copyWith(fontSize: 18),
+          style: ScrapTextStyles.heading.copyWith(fontSize: 18),
         ),
-        iconTheme: const IconThemeData(color: KotoTheme.primaryText),
+        iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
         actions: [
           IconButton(
             icon: Icon(
               isSplitScreen ? Icons.vertical_split : Icons.vertical_split_outlined,
-              color: isSplitScreen ? KotoTheme.accent : KotoTheme.secondaryText,
+              color: isSplitScreen ? ScrapTheme.accent : ScrapTheme.secondaryText,
             ),
             onPressed: () {
               ref.read(isSplitScreenProvider.notifier).state = !isSplitScreen;
@@ -81,7 +81,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
       'assets/sample.pdf', // Requires adding a default asset or switching to empty state
       controller: _pdfController,
       params: PdfViewerParams(
-        backgroundColor: KotoTheme.codeSurface,
+        backgroundColor: ScrapTheme.codeSurface,
         // Custom page processing can be added here
         viewerOverlayBuilder: (context, size, params) {
           return [

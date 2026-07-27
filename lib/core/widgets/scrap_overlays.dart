@@ -59,33 +59,36 @@ Future<T?> showScrapDialog<T>({
 }
 
 /// Scrap-styled modal bottom sheet with a snappier transition.
+///
+/// Uses [sheetAnimationStyle] instead of a custom
+/// [AnimationController] so barrier-tap and drag-to-dismiss keep working.
 Future<T?> showScrapSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = false,
   bool useSafeArea = false,
+  bool isDismissible = true,
+  bool enableDrag = true,
   Color? backgroundColor,
   ShapeBorder? shape,
-}) async {
-  final controller = AnimationController(
-    vsync: Navigator.of(context),
-    duration: ScrapMotion.overlay,
-    reverseDuration: ScrapMotion.overlay,
+}) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: isScrollControlled,
+    useSafeArea: useSafeArea,
+    isDismissible: isDismissible,
+    enableDrag: enableDrag,
+    backgroundColor: backgroundColor ?? ScrapTheme.cardSurface,
+    shape: shape ??
+        const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+    sheetAnimationStyle: AnimationStyle(
+      duration: ScrapMotion.overlay,
+      reverseDuration: ScrapMotion.overlay,
+      curve: ScrapMotion.overlayCurve,
+      reverseCurve: ScrapMotion.exitCurve,
+    ),
+    builder: builder,
   );
-  try {
-    return await showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: isScrollControlled,
-      useSafeArea: useSafeArea,
-      backgroundColor: backgroundColor ?? ScrapTheme.cardSurface,
-      shape: shape ??
-          const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-          ),
-      transitionAnimationController: controller,
-      builder: builder,
-    );
-  } finally {
-    controller.dispose();
-  }
 }

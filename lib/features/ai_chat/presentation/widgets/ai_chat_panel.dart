@@ -197,17 +197,71 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
     final hasKey = apiKey != null && apiKey.isNotEmpty;
     final visible = chat.visibleMessages;
 
+    const tearSeed = 17;
+    const tearAmp = 5.5;
+
     return Material(
       color: Colors.transparent,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Drag handle for resize
+          // Soft shadow that follows the deckle (outside the clip).
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: TornEdgeShadowPainter(
+                  seed: tearSeed,
+                  amplitude: tearAmp,
+                  edge: TornEdge.left,
+                ),
+              ),
+            ),
+          ),
+          // Paper sheet clipped to an organic left tear.
+          ClipPath(
+            clipper: const TornEdgeClipper(
+              edge: TornEdge.left,
+              seed: tearSeed,
+              amplitude: tearAmp,
+            ),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: ScrapTheme.cardSurface,
+              ),
+              child: Column(
+                children: [
+                  _buildHeader(modelLabel),
+                  const Divider(height: 1, color: ScrapTheme.dividers),
+                  Expanded(
+                    child: !hasKey
+                        ? _buildNoKeyState()
+                        : visible.isEmpty && !chat.isStreaming
+                            ? _buildEmptyState()
+                            : _buildMessageList(chat, visible),
+                  ),
+                  if (hasKey) _buildComposer(chat.isStreaming),
+                ],
+              ),
+            ),
+          ),
+          // Hairline along the tear (above the sheet).
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: TornEdgeStrokePainter(
+                  seed: tearSeed,
+                  amplitude: tearAmp,
+                  edge: TornEdge.left,
+                ),
+              ),
+            ),
+          ),
+          // Drag handle for resize — sits on the torn edge.
           Positioned(
             left: 0,
             top: 0,
             bottom: 0,
-            width: 8,
+            width: 14,
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onHorizontalDragUpdate: (d) {
@@ -217,49 +271,6 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
               child: const MouseRegion(
                 cursor: SystemMouseCursors.resizeLeftRight,
                 child: SizedBox.expand(),
-              ),
-            ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(left: 4),
-            decoration: const BoxDecoration(
-              color: ScrapTheme.cardSurface,
-              border: Border(
-                left: BorderSide(color: ScrapTheme.dividers),
-              ),
-              boxShadow: ScrapTheme.subtleShadow,
-            ),
-            child: Column(
-              children: [
-                _buildHeader(modelLabel),
-                const Divider(height: 1, color: ScrapTheme.dividers),
-                Expanded(
-                  child: !hasKey
-                      ? _buildNoKeyState()
-                      : visible.isEmpty && !chat.isStreaming
-                          ? _buildEmptyState()
-                          : _buildMessageList(chat, visible),
-                ),
-                if (hasKey) _buildComposer(chat.isStreaming),
-              ],
-            ),
-          ),
-          // Torn left edge
-          const Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 8,
-            child: IgnorePointer(
-              child: RotatedBox(
-                quarterTurns: 1,
-                child: CustomPaint(
-                  painter: TornEdgePainter(
-                    seed: 17,
-                    amplitude: 2.5,
-                    fillColor: Color(0xFFF5F4F0),
-                  ),
-                ),
               ),
             ),
           ),

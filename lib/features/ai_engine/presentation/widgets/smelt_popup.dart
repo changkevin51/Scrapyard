@@ -1,16 +1,17 @@
-import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_math_fork/flutter_math.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
+import '../../../ai_chat/presentation/providers/chat_providers.dart';
+import '../../../ai_chat/presentation/widgets/chat_suggestion_chips.dart';
+import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
-import '../../_debug_log_helper.dart';
 import '../providers/smelt_provider.dart';
 import 'api_key_dialog.dart';
+import 'latex_markdown_view.dart';
 
 /// Popup widget that displays the smelt AI response
 class SmeltPopup extends ConsumerStatefulWidget {
@@ -293,9 +294,6 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildResponseContent(SmeltResponse response, bool showSteps) {
-    // Clean the answer - remove stray sigma or other unwanted characters
-    final cleanedAnswer = _cleanAnswer(response.answer);
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -306,7 +304,7 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
               color: ScrapTheme.accentSurface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: _buildMathAnswer(cleanedAnswer),
+            child: _buildMathAnswer(response.answer),
           ),
         ] else ...[
           SelectableText(
@@ -357,8 +355,74 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
             ),
           ],
         ],
+        const SizedBox(height: 12),
+        _buildChatHandoff(response),
         const SizedBox(height: 8),
         _buildModelFinePrint(response.modelUsed),
+      ],
+    );
+  }
+
+  void _openChat({String? autoSend}) {
+    final smelt = ref.read(smeltProvider);
+    final response = smelt.response;
+    if (response == null) return;
+
+    final noteId = ref.read(activeNoteIdProvider);
+    final tabs = ref.read(openedTabsProvider);
+    String? noteTitle;
+    for (final t in tabs) {
+      if (t.id == noteId) {
+        noteTitle = t.title;
+        break;
+      }
+    }
+
+    ref.read(pendingChatSeedProvider.notifier).state = ChatSeed(
+      smeltAnswer: response.answer,
+      smeltSteps: response.steps,
+      image: smelt.lastImageBytes,
+      autoSend: autoSend,
+      noteId: noteId,
+      noteTitle: noteTitle,
+    );
+    ref.read(chatPanelOpenProvider.notifier).state = true;
+    widget.onDismiss();
+  }
+
+  Widget _buildChatHandoff(SmeltResponse response) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (response.suggestions.isNotEmpty) ...[
+          Text(
+            'Ask next',
+            style: ScrapTextStyles.stamp.copyWith(fontSize: 10),
+          ),
+          const SizedBox(height: 8),
+          ChatSuggestionChips(
+            suggestions: response.suggestions,
+            onSelected: (q) => _openChat(autoSend: q),
+          ),
+          const SizedBox(height: 10),
+        ],
+        GestureDetector(
+          onTap: () => _openChat(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Continue in chat',
+                style: ScrapTextStyles.caption.copyWith(
+                  color: ScrapTheme.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_forward, size: 14, color: ScrapTheme.accent),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -391,463 +455,24 @@ class _SmeltPopupState extends ConsumerState<SmeltPopup>
     return model;
   }
 
-  /// Clean the answer by removing stray characters like sigma
-  String _cleanAnswer(String answer) {
-    return _prepareAnswerLatex(answer);
-  }
-
-  /// Strip math delimiters and leading sigma, then normalize for KaTeX.
-  String _prepareAnswerLatex(String answer) {
-    var latex = answer.trim();
-    latex = _stripMathDelimiters(latex);
-    latex = _stripLeadingSigma(latex);
-    latex = latex.replaceAll(RegExp(r'^\$+|\$+$'), '').trim();
-    return _normalizeUnicodeMath(latex);
-  }
-
-  String _stripMathDelimiters(String text) {
-    var t = text.trim();
-    if (t.startsWith(r'$$') && t.endsWith(r'$$') && t.length > 4) {
-      return t.substring(2, t.length - 2).trim();
-    }
-    if (t.startsWith(r'\[') && t.endsWith(r'\]') && t.length > 4) {
-      return t.substring(2, t.length - 2).trim();
-    }
-    if (t.startsWith(r'\(') && t.endsWith(r'\)') && t.length > 4) {
-      return t.substring(2, t.length - 2).trim();
-    }
-    if (t.startsWith(r'$') && t.endsWith(r'$') && t.length > 2) {
-      return t.substring(1, t.length - 1).trim();
-    }
-    return t;
-  }
-
-  String _stripLeadingSigma(String text) {
-    var cleaned = text.trim();
-    while (true) {
-      final before = cleaned;
-      cleaned = cleaned.replaceAll(RegExp(r'^[Σσ∑]\s*'), '');
-      cleaned = cleaned.replaceAll(RegExp(r'^\$?\\?[Ss]igma\$?\s*'), '');
-      cleaned = cleaned.replaceAll(RegExp(r'^\\Sigma\s*'), '');
-      cleaned = cleaned.trim();
-      if (cleaned == before) break;
-    }
-    return cleaned;
-  }
-
-  String _normalizeUnicodeMath(String text) {
-    return text
-        .replaceAll('π', r'\pi')
-        .replaceAll('θ', r'\theta')
-        .replaceAll('∞', r'\infty')
-        .replaceAll('±', r'\pm')
-        .replaceAll('×', r'\times')
-        .replaceAll('÷', r'\div');
-  }
-
-  /// Build math answer with LaTeX rendering
+  /// Build math answer — uses the same delimiter-aware renderer as steps,
+  /// because answers often look like `\(x=1\) or \(x=2\)` (not a single Math.tex blob).
   Widget _buildMathAnswer(String answer) {
-    return _LatexDisplay(latex: answer);
+    return LatexMarkdownView(
+      text: answer,
+      baseStyle: ScrapTextStyles.body.copyWith(
+        fontSize: 16,
+        height: 1.4,
+        color: ScrapTheme.accent,
+        fontWeight: FontWeight.w600,
+      ),
+    );
   }
 
   /// Build math steps with LaTeX rendering
   Widget _buildMathSteps(String steps) {
-    return _LatexStepsRenderer(text: steps);
+    return LatexMarkdownView(text: steps);
   }
-}
-
-/// Widget to display a single LaTeX expression
-class _LatexDisplay extends StatelessWidget {
-  final String latex;
-
-  const _LatexDisplay({required this.latex});
-
-  /// [inherit: false] prevents DefaultTextStyle (Noto) from merging into KaTeX.
-  static const _mathTextStyle = TextStyle(
-    inherit: false,
-    fontSize: 18,
-    height: 1.2,
-    fontWeight: FontWeight.normal,
-    color: ScrapTheme.accent,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Math.tex(
-        latex,
-        mathStyle: MathStyle.display,
-        textStyle: _mathTextStyle,
-        onErrorFallback: (error) {
-          return SelectableText(
-            latex,
-            style: _mathTextStyle,
-          );
-        },
-      ),
-    );
-  }
-}
-
-int _latexStepsBuildCount = 0;
-
-/// Renders steps with true inline LaTeX (WidgetSpan) and centered display math.
-class _LatexStepsRenderer extends StatelessWidget {
-  final String text;
-
-  const _LatexStepsRenderer({required this.text});
-
-  static final _baseTextStyle = TextStyle(
-    inherit: false,
-    fontSize: 13,
-    height: 1.5,
-    fontWeight: FontWeight.normal,
-    color: ScrapTheme.bodyText,
-    // Prose uses the app caption font; math widgets use KaTeX via Math.tex.
-    fontFamily: ScrapTextStyles.caption.fontFamily,
-  );
-
-  static const _mathOnlyStyle = TextStyle(
-    inherit: false,
-    fontSize: 13,
-    height: 1.2,
-    fontWeight: FontWeight.normal,
-    color: ScrapTheme.bodyText,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = _coalesceOrphanBullets(text.split('\n'));
-
-    // #region agent log
-    _latexStepsBuildCount++;
-    dlog('H5_build_count', '_LatexStepsRenderer.build() invocation count', {
-      'buildCount': _latexStepsBuildCount,
-      'inputTextJsonEncoded': jsonEncode(text),
-      'lineCount': lines.length,
-    });
-    // #endregion
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < lines.length; i++) _buildLine(lines[i]),
-      ],
-    );
-  }
-
-  /// Merge `-` / `*` alone on a line with the following math-only line so
-  /// equations sit on the same row as the bullet.
-  List<String> _coalesceOrphanBullets(List<String> lines) {
-    final result = <String>[];
-    for (var i = 0; i < lines.length; i++) {
-      final trimmed = lines[i].trim();
-      final isOrphanBullet = RegExp(r'^[-*•]\s*$').hasMatch(trimmed);
-      if (isOrphanBullet && i + 1 < lines.length) {
-        final next = lines[i + 1].trim();
-        if (_isMathOnlyLine(next)) {
-          result.add('- ${_asInlineMathLine(next)}');
-          i++;
-          continue;
-        }
-      }
-      result.add(lines[i]);
-    }
-    return result;
-  }
-
-  bool _isMathOnlyLine(String line) {
-    final tokens = _parseLineTokens(line);
-    if (tokens.isEmpty) return false;
-    return tokens.every(
-      (t) =>
-          t.kind == _TokenKind.inlineMath ||
-          t.kind == _TokenKind.displayMath ||
-          (t.kind == _TokenKind.text && t.content.trim().isEmpty),
-    );
-  }
-
-  /// Prefer inline delimiters so bullet math stays on one line.
-  String _asInlineMathLine(String line) {
-    return line
-        .replaceAllMapped(
-          RegExp(r'\$\$(.+?)\$\$', dotAll: true),
-          (m) => '\\(${m.group(1)}\\)',
-        )
-        .replaceAllMapped(
-          RegExp(r'\\\[(.+?)\\\]', dotAll: true),
-          (m) => '\\(${m.group(1)}\\)',
-        );
-  }
-
-  Widget _buildLine(String line) {
-    final trimmed = line.trim();
-    if (trimmed.isEmpty) {
-      return const SizedBox(height: 8);
-    }
-
-    final tokens = _parseLineTokens(trimmed);
-
-    // Standalone display math → scrollable block on its own line
-    final onlyDisplay = tokens.length == 1 &&
-        tokens.single.kind == _TokenKind.displayMath;
-    if (onlyDisplay) {
-      return _buildDisplayMath(tokens.single.content);
-    }
-
-    // Bullet list
-    if (trimmed.startsWith('-') ||
-        trimmed.startsWith('*') ||
-        trimmed.startsWith('•')) {
-      final body = trimmed.substring(1).trimLeft();
-      return _buildBulletRow(body);
-    }
-
-    // Numbered list
-    final numberMatch = RegExp(r'^(\d+)\.\s*(.*)').firstMatch(trimmed);
-    if (numberMatch != null) {
-      final body = numberMatch.group(2) ?? '';
-      return Padding(
-        padding: const EdgeInsets.only(left: 8, bottom: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${numberMatch.group(1)}. ',
-              style: _baseTextStyle.copyWith(
-                fontWeight: FontWeight.w600,
-                color: ScrapTheme.primaryText,
-              ),
-            ),
-            Expanded(child: _buildInlineOrMathOnly(body)),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: _buildInlineRich(tokens),
-    );
-  }
-
-  Widget _buildBulletRow(String body) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text('• ', style: _baseTextStyle),
-          Expanded(child: _buildInlineOrMathOnly(body)),
-        ],
-      ),
-    );
-  }
-
-  /// Math-only bodies sit in a Row (not WidgetSpan) so they stay beside the bullet.
-  Widget _buildInlineOrMathOnly(String body) {
-    final tokens = _parseLineTokens(body);
-    final mathTokens = tokens
-        .where((t) =>
-            t.kind == _TokenKind.inlineMath ||
-            t.kind == _TokenKind.displayMath)
-        .toList();
-    final hasProse = tokens.any(
-      (t) => t.kind == _TokenKind.text && t.content.trim().isNotEmpty,
-    );
-
-    if (!hasProse && mathTokens.length == 1) {
-      return _buildScrollableMath(mathTokens.single.content);
-    }
-    return _buildInlineRich(tokens);
-  }
-
-  Widget _buildScrollableMath(String latex) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Math.tex(
-        latex,
-        mathStyle: MathStyle.text,
-        textStyle: _mathOnlyStyle,
-        onErrorFallback: (_) => Text(
-          latex,
-          style: _mathOnlyStyle.copyWith(color: ScrapTheme.accent),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDisplayMath(String latex) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: Center(
-                child: Math.tex(
-                  latex,
-                  mathStyle: MathStyle.display,
-                  textStyle: _mathOnlyStyle.copyWith(fontSize: 14),
-                  onErrorFallback: (_) => Text(
-                    latex,
-                    style: _mathOnlyStyle.copyWith(
-                      fontSize: 14,
-                      color: ScrapTheme.accent,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  /// Mix of prose + inline (and mid-sentence display) math on one line.
-  Widget _buildInlineRich(List<_LineToken> tokens) {
-    if (tokens.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final spans = <InlineSpan>[];
-    for (final token in tokens) {
-      switch (token.kind) {
-        case _TokenKind.text:
-          spans.addAll(_textSpansWithBoldAndItalics(token.content));
-        case _TokenKind.inlineMath:
-        case _TokenKind.displayMath:
-          // Mid-sentence display delimiters still render inline so they
-          // don't break the line.
-          spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.middle,
-              child: Math.tex(
-                token.content,
-                mathStyle: MathStyle.text,
-                textStyle: _mathOnlyStyle,
-                onErrorFallback: (_) => Text(
-                  token.content,
-                  style: _mathOnlyStyle.copyWith(color: ScrapTheme.accent),
-                ),
-              ),
-            ),
-          );
-      }
-    }
-
-    return Text.rich(
-      TextSpan(style: _baseTextStyle, children: spans),
-    );
-  }
-
-  /// Split a line into text / inline-math / display-math tokens.
-  List<_LineToken> _parseLineTokens(String line) {
-    final tokens = <_LineToken>[];
-    // Order matters: $$ and \[ \] before $ and \( \)
-    final mathRegex = RegExp(
-      r'\$\$(.+?)\$\$|\\\[(.+?)\\\]|\\\((.+?)\\\)|\$(.+?)\$',
-      dotAll: true,
-    );
-
-    var start = 0;
-    for (final match in mathRegex.allMatches(line)) {
-      if (match.start > start) {
-        tokens.add(_LineToken(
-          content: line.substring(start, match.start),
-          kind: _TokenKind.text,
-        ));
-      }
-
-      final isDisplay =
-          match.group(1) != null || match.group(2) != null;
-      final latex =
-          match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4) ?? '';
-      tokens.add(_LineToken(
-        content: latex,
-        kind: isDisplay ? _TokenKind.displayMath : _TokenKind.inlineMath,
-      ));
-      start = match.end;
-    }
-
-    if (start < line.length) {
-      tokens.add(_LineToken(
-        content: line.substring(start),
-        kind: _TokenKind.text,
-      ));
-    }
-
-    return tokens;
-  }
-
-  /// Bold (`**...**`) + italicize standalone numbers in prose.
-  List<InlineSpan> _textSpansWithBoldAndItalics(String text) {
-    if (!text.contains('**')) {
-      return [_italicizeNumbers(text)];
-    }
-
-    final spans = <InlineSpan>[];
-    final parts = text.split('**');
-    for (var i = 0; i < parts.length; i++) {
-      final part = parts[i];
-      if (part.isEmpty) continue;
-      if (i.isOdd) {
-        spans.add(TextSpan(
-          style: _baseTextStyle.copyWith(
-            fontWeight: FontWeight.w600,
-            color: ScrapTheme.primaryText,
-          ),
-          children: [_italicizeNumbers(part)],
-        ));
-      } else {
-        spans.add(_italicizeNumbers(part));
-      }
-    }
-    return spans;
-  }
-
-  /// Italicize standalone numbers (not part of words).
-  TextSpan _italicizeNumbers(String text) {
-    final numberRegex = RegExp(r'(?<!\w)(-?\d+\.?\d*)(?!\w)');
-    final spans = <TextSpan>[];
-    var lastEnd = 0;
-
-    for (final match in numberRegex.allMatches(text)) {
-      if (match.start > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, match.start)));
-      }
-      spans.add(TextSpan(
-        text: match.group(0),
-        style: const TextStyle(fontStyle: FontStyle.italic),
-      ));
-      lastEnd = match.end;
-    }
-
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd)));
-    }
-
-    if (spans.isEmpty) {
-      return TextSpan(text: text);
-    }
-    if (spans.length == 1) {
-      return spans.single;
-    }
-    return TextSpan(children: spans);
-  }
-}
-
-enum _TokenKind { text, inlineMath, displayMath }
-
-class _LineToken {
-  final String content;
-  final _TokenKind kind;
-
-  const _LineToken({required this.content, required this.kind});
 }
 
 /// Animated thinking dots for loading state

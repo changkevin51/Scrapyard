@@ -4,6 +4,7 @@ import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../providers/canvas_providers.dart';
+import 'canvas_smart_widgets.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
 import 'sticker_library.dart';
@@ -604,6 +605,41 @@ class _CanvasSettingsSheet extends ConsumerWidget {
           Text('Canvas Settings',
               style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 24),
+
+          // Insert tools (relocated from the ✦ FAB)
+          Text('INSERT', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                  showInsertTableDialog(context);
+                },
+                child: _chip('TABLE', false),
+              ),
+              if (ref.watch(ocrResultsProvider).isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    final texts = ref
+                        .read(ocrResultsProvider)
+                        .map((r) => r.text)
+                        .toList();
+                    Navigator.pop(context);
+                    convertOcrToTextNode(
+                      ref,
+                      context,
+                      ocrTexts: texts,
+                      ocrStrokeIds: const [],
+                    );
+                  },
+                  child: _chip('HANDWRITING → TEXT', false),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
 
           // Page layout
           Text('PAGE STYLE', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),

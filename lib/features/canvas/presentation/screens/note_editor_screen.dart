@@ -12,6 +12,7 @@ import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
+import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/smelt_detection_provider.dart';
 import '../widgets/handwriting_canvas.dart';
@@ -23,9 +24,6 @@ import '../widgets/sticker_library.dart';
 import '../../domain/models/stroke.dart';
 import '../../data/canvas_ocr_service.dart';
 
-
-// Provides OCR results dynamically over the canvas
-final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 
 class NoteEditorScreen extends ConsumerStatefulWidget {
   const NoteEditorScreen({super.key});
@@ -1230,13 +1228,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             ),
           ),
         ),
-        // Smart action FAB — bottom right, always on screen
-        Positioned(
-          right: 16, bottom: 16,
-          child: CanvasSmartBar(
-            ocrTexts: ref.watch(ocrResultsProvider).map((r) => r.text).toList(),
-            ocrStrokeIds: const [],
-          ),
+        // AI chat FAB — bottom right, always on screen
+        const Positioned(
+          right: 16,
+          bottom: 16,
+          child: CanvasSmartBar(),
         ),
       ],
     );
@@ -1275,10 +1271,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     return Scaffold(
       backgroundColor: ScrapTheme.background,
-      body: Column(
+      body: Stack(
         children: [
-          const SafeArea(bottom: false, child: DocumentTabBar()),
-          Expanded(child: toolSurface),
+          Column(
+            children: [
+              const SafeArea(bottom: false, child: DocumentTabBar()),
+              Expanded(child: toolSurface),
+            ],
+          ),
+          const AiChatPanel(),
         ],
       ),
     );

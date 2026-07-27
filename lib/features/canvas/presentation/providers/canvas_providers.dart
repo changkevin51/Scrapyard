@@ -4,6 +4,7 @@ import '../../domain/models/stroke.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../../data/stroke_repository.dart';
 import '../../data/pen_engine.dart';
+import '../../data/canvas_ocr_service.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
@@ -41,6 +42,7 @@ class CanvasTextItem {
 
 final canvasTextNodesProvider = StateProvider<List<CanvasTextItem>>((ref) => []);
 final canvasTablesProvider = StateProvider<List<CanvasTable>>((ref) => []);
+final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 
 class StrokesNotifier extends StateNotifier<List<Stroke>> {
   final StrokeRepository _repository;

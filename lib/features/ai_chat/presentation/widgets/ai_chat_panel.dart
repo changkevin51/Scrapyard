@@ -1,0 +1,532 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/torn_edge_clipper.dart';
+import '../../../ai_engine/data/smelt_service.dart';
+import '../../../ai_engine/presentation/providers/smelt_provider.dart';
+import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../canvas/presentation/providers/canvas_providers.dart';
+import '../../domain/models/chat_message.dart';
+import '../../domain/models/gemini_model.dart';
+import '../providers/chat_providers.dart';
+import 'chat_history_sheet.dart';
+import 'chat_message_bubble.dart';
+import 'chat_suggestion_chips.dart';
+import 'model_picker_sheet.dart';
+
+/// Sliding right-side AI chat panel over the note editor.
+class AiChatPanel extends ConsumerStatefulWidget {
+  const AiChatPanel({super.key});
+
+  @override
+  ConsumerState<AiChatPanel> createState() => _AiChatPanelState();
+}
+
+class _AiChatPanelState extends ConsumerState<AiChatPanel>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<Offset> _slide;
+  final _composer = TextEditingController();
+  final _scrollController = ScrollController();
+  final _focusNode = FocusNode();
+  final _keyboardFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: ScrapMotion.panel);
+    _slide = Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: ScrapMotion.panelCurve));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _composer.dispose();
+    _scrollController.dispose();
+    _focusNode.dispose();
+    _keyboardFocus.dispose();
+    super.dispose();
+  }
+
+  void _syncOpen(bool open) {
+    if (open) {
+      if (_ctrl.status != AnimationStatus.completed &&
+          _ctrl.status != AnimationStatus.forward) {
+        _ctrl.forward();
+      }
+    } else {
+      if (_ctrl.status != AnimationStatus.dismissed &&
+          _ctrl.status != AnimationStatus.reverse) {
+        _ctrl.reverse();
+      }
+    }
+  }
+
+  Future<void> _handlePendingSeed() async {
+    final seed = ref.read(pendingChatSeedProvider);
+    if (seed == null) return;
+    ref.read(pendingChatSeedProvider.notifier).state = null;
+    await ref.read(activeChatProvider.notifier).consumeSeed(seed);
+  }
+
+  void _close() {
+    ref.read(chatPanelOpenProvider.notifier).state = false;
+  }
+
+  Future<void> _send([String? override]) async {
+    final text = (override ?? _composer.text).trim();
+    if (text.isEmpty) return;
+    if (override == null) _composer.clear();
+    await ref.read(activeChatProvider.notifier).send(text);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  bool get _isDesktop {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.linux;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final open = ref.watch(chatPanelOpenProvider);
+    _syncOpen(open);
+
+    ref.listen(chatPanelOpenProvider, (prev, next) {
+      if (next == true && prev != true) {
+        _handlePendingSeed();
+      }
+    });
+
+    // Also consume seed if panel was already open when seed was set
+    ref.listen(pendingChatSeedProvider, (prev, next) {
+      if (next != null && ref.read(chatPanelOpenProvider)) {
+        _handlePendingSeed();
+      }
+    });
+
+    final widthPref = ref.watch(chatPanelWidthProvider);
+    final screenW = MediaQuery.of(context).size.width;
+    final panelW = math.min(widthPref, screenW * 0.92).clamp(280.0, 560.0);
+
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        if (_ctrl.value == 0 && !open) {
+          return const SizedBox.shrink();
+        }
+        return Stack(
+          children: [
+            // Scrim
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _close,
+                child: Opacity(
+                  opacity: 0.35 * _ctrl.value,
+                  child: const ColoredBox(color: Colors.black),
+                ),
+              ),
+            ),
+            // Panel
+            Align(
+              alignment: Alignment.centerRight,
+              child: SlideTransition(
+                position: _slide,
+                child: SizedBox(
+                  width: panelW,
+                  height: double.infinity,
+                  child: child,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      child: _buildPanel(panelW),
+    );
+  }
+
+  Widget _buildPanel(double panelW) {
+    final chat = ref.watch(activeChatProvider);
+    final modelId = ref.watch(chatModelProvider);
+    final modelLabel = GeminiChatModel.displayLabel(modelId);
+    final apiKey = ref.watch(apiKeyProvider).valueOrNull;
+    final hasKey = apiKey != null && apiKey.isNotEmpty;
+    final visible = chat.visibleMessages;
+
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Drag handle for resize
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragUpdate: (d) {
+                final next = panelW - d.delta.dx;
+                ref.read(chatPanelWidthProvider.notifier).setWidth(next);
+              },
+              child: const MouseRegion(
+                cursor: SystemMouseCursors.resizeLeftRight,
+                child: SizedBox.expand(),
+              ),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(left: 4),
+            decoration: const BoxDecoration(
+              color: ScrapTheme.cardSurface,
+              border: Border(
+                left: BorderSide(color: ScrapTheme.dividers),
+              ),
+              boxShadow: ScrapTheme.subtleShadow,
+            ),
+            child: Column(
+              children: [
+                _buildHeader(modelLabel),
+                const Divider(height: 1, color: ScrapTheme.dividers),
+                Expanded(
+                  child: !hasKey
+                      ? _buildNoKeyState()
+                      : visible.isEmpty && !chat.isStreaming
+                          ? _buildEmptyState()
+                          : _buildMessageList(chat, visible),
+                ),
+                if (hasKey) _buildComposer(chat.isStreaming),
+              ],
+            ),
+          ),
+          // Torn left edge
+          const Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            child: IgnorePointer(
+              child: RotatedBox(
+                quarterTurns: 1,
+                child: CustomPaint(
+                  painter: TornEdgePainter(
+                    seed: 17,
+                    amplitude: 2.5,
+                    fillColor: Color(0xFFF5F4F0),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(String modelLabel) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 10),
+      child: Column(
+        children: [
+          Transform.rotate(
+            angle: -1.2 * math.pi / 180,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: ScrapTheme.tape,
+                borderRadius: BorderRadius.circular(2),
+                border: Border.all(
+                  color: ScrapTheme.kraft.withValues(alpha: 0.6),
+                  width: 0.5,
+                ),
+              ),
+              child: const Center(
+                child: ScrapStampLabel(text: '⟨ Ask ⟩', tiltDegrees: 0),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => showModelPickerSheet(context),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.accentSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: ScrapTheme.dividers),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        modelLabel,
+                        style: ScrapTextStyles.caption.copyWith(
+                          fontSize: 11,
+                          color: ScrapTheme.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.expand_more,
+                          size: 14, color: ScrapTheme.accent),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: 'History',
+                icon: const Icon(Icons.history, size: 20),
+                color: ScrapTheme.secondaryText,
+                onPressed: () {
+                  showChatHistorySheet(
+                    context,
+                    onOpen: (c) {
+                      ref
+                          .read(activeChatProvider.notifier)
+                          .openConversation(c.id);
+                    },
+                  );
+                },
+              ),
+              IconButton(
+                tooltip: 'New chat',
+                icon: const Icon(Icons.add, size: 22),
+                color: ScrapTheme.secondaryText,
+                onPressed: () {
+                  final noteId = ref.read(activeNoteIdProvider);
+                  final tabs = ref.read(openedTabsProvider);
+                  String? title;
+                  for (final t in tabs) {
+                    if (t.id == noteId) {
+                      title = t.title;
+                      break;
+                    }
+                  }
+                  ref.read(activeChatProvider.notifier).newChat(
+                        noteId: noteId,
+                        noteTitle: title,
+                      );
+                },
+              ),
+              IconButton(
+                tooltip: 'Close',
+                icon: const Icon(Icons.close, size: 20),
+                color: ScrapTheme.mutedText,
+                onPressed: _close,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoKeyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              SmeltService.missingApiKeyMessage,
+              textAlign: TextAlign.center,
+              style: ScrapTextStyles.body.copyWith(color: ScrapTheme.bodyText),
+            ),
+            const SizedBox(height: 16),
+            GestureDetector(
+              onTap: () => showApiKeyDialog(context, allowSkip: false),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: ScrapTheme.accent,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Add API key',
+                  style: ScrapTextStyles.body.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Ask anything about your notes',
+              style: ScrapTextStyles.body.copyWith(
+                color: ScrapTheme.secondaryText,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ChatSuggestionChips(
+              suggestions: const [
+                'Explain my notes',
+                'Quiz me',
+                'Summarize this page',
+              ],
+              onSelected: (s) => _send(s),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageList(ChatState chat, List<ChatMessage> visible) {
+    // Reverse list so newest is at bottom visually with reverse:true
+    final items = visible.reversed.toList();
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      itemCount: items.length + (chat.isStreaming ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (chat.isStreaming && index == 0) {
+          // Streaming bubble as a synthetic assistant message
+          return ChatMessageBubble(
+            message: ChatMessage(
+              id: 'streaming',
+              conversationId: chat.conversation?.id ?? '',
+              role: ChatRole.assistant,
+              content: chat.streamingText,
+              createdAt: DateTime.now(),
+            ),
+            isStreaming: true,
+            streamingOverride: chat.streamingText.isEmpty
+                ? '…'
+                : chat.streamingText,
+          );
+        }
+        final msgIndex = chat.isStreaming ? index - 1 : index;
+        final msg = items[msgIndex];
+        return ChatMessageBubble(
+          message: msg,
+          onSuggestionTap: (s) => _send(s),
+        );
+      },
+    );
+  }
+
+  Widget _buildComposer(bool isStreaming) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: ScrapTheme.dividers)),
+          color: ScrapTheme.cardSurface,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: ScrapTheme.codeSurface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ScrapTheme.dividers),
+                ),
+                child: KeyboardListener(
+                  focusNode: _keyboardFocus,
+                  onKeyEvent: (event) {
+                    if (!_isDesktop) return;
+                    if (event is KeyDownEvent &&
+                        event.logicalKey == LogicalKeyboardKey.enter &&
+                        !HardwareKeyboard.instance.isShiftPressed) {
+                      _send();
+                    }
+                  },
+                  child: TextField(
+                    controller: _composer,
+                    focusNode: _focusNode,
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: _isDesktop
+                        ? TextInputAction.send
+                        : TextInputAction.newline,
+                    onSubmitted: _isDesktop ? (_) => _send() : null,
+                    style: ScrapTextStyles.body.copyWith(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Ask a question…',
+                      hintStyle: ScrapTextStyles.body.copyWith(
+                        color: ScrapTheme.mutedText,
+                        fontSize: 14,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: isStreaming
+                  ? () => ref.read(activeChatProvider.notifier).stop()
+                  : () => _send(),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: ScrapTheme.accent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -2,30 +2,44 @@
 class SmeltResponse {
   /// The direct answer (for math questions, this is the final answer)
   final String answer;
-  
+
   /// Step-by-step solution in markdown with LaTeX support
   /// Empty string if no steps are needed
   final String steps;
-  
+
   /// Whether this is a math question
   final bool isMath;
-  
+
   /// The model that was used to generate this response
   final String modelUsed;
+
+  /// Short follow-up questions (2–3) for continuing in chat
+  final List<String> suggestions;
 
   const SmeltResponse({
     required this.answer,
     required this.steps,
     required this.isMath,
     required this.modelUsed,
+    this.suggestions = const [],
   });
 
   factory SmeltResponse.fromJson(Map<String, dynamic> json, String modelUsed) {
+    List<String> suggestions = const [];
+    final raw = json['suggestions'];
+    if (raw is List) {
+      suggestions = raw
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .take(3)
+          .toList();
+    }
     return SmeltResponse(
       answer: json['answer'] as String? ?? '',
       steps: json['steps'] as String? ?? '',
       isMath: json['isMath'] as bool? ?? false,
       modelUsed: modelUsed,
+      suggestions: suggestions,
     );
   }
 }

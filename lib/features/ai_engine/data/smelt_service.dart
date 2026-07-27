@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../ai_chat/domain/models/gemini_model.dart';
 import '../domain/models/smelt_response.dart';
 import '../_debug_log_helper.dart';
 
@@ -12,6 +13,7 @@ import '../_debug_log_helper.dart';
 typedef SmeltProgressCallback = void Function({
   String? partialAnswer,
   String? partialSteps,
+  List<String>? partialSuggestions,
   bool isComplete,
   String? error,
 });
@@ -35,16 +37,11 @@ class SmeltService {
   static const String missingApiKeyMessage =
       'No Gemini API key set. Open Settings > Gemini API Key to add your free key.';
 
-  // Gemini models in priority order (fallback chain)
-  static const List<String> _models = [
-    'gemini-3.5-flash',
-    'gemini-3-flash-preview',
-    'gemini-3.5-flash-lite'
-    'gemini-3.1-flash-lite',
-  ];
+  // Gemini models in priority order (fallback chain) — shared catalog
+  static List<String> get _models => GeminiChatModel.ids;
 
-  /// Cheapest model in the fallback chain — used for API key testing.
-  static String get cheapestModel => _models.last;
+  /// Cheapest / default model — used for API key testing.
+  static String get cheapestModel => GeminiChatModel.defaultModel.id;
 
   SmeltService(this._storage);
 
@@ -72,7 +69,8 @@ class SmeltService {
     }
 
     // Try each model in order until one succeeds
-    for (final model in _models) {
+    final models = _models;
+    for (final model in models) {
       try {
         final response = await _callGemini(apiKey, model, base64Image, onProgress);
         return response;
@@ -83,7 +81,7 @@ class SmeltService {
             e.toString().contains('quota')) {
           continue;
         }
-        if (model == _models.last) {
+        if (model == models.last) {
           throw Exception('All Gemini models failed: $e');
         }
       }
@@ -137,11 +135,15 @@ IMPORTANT RULES:
 
 4. Be concise and clear. The answer should be immediately useful to a student.
 
+5. Always include 2–3 short follow-up questions a student would ask next in "suggestions".
+   Each question max 6 words. Examples: "Explain in more detail", "Why the chain rule?", "Show another example".
+
 You MUST respond with ONLY a JSON object in this exact format:
 {
   "answer": "The direct answer here",
   "steps": "Step-by-step in markdown with LaTeX (or empty string if not needed)",
-  "isMath": true or false
+  "isMath": true or false,
+  "suggestions": ["Short question 1", "Short question 2"]
 }
 ''';
 
@@ -220,6 +222,7 @@ You MUST respond with ONLY a JSON object in this exact format:
         onProgress?.call(
           partialAnswer: jsonResponse['answer'] as String?,
           partialSteps: jsonResponse['steps'] as String?,
+          partialSuggestions: _parseSuggestions(jsonResponse['suggestions']),
           isComplete: true,
         );
 
@@ -252,6 +255,7 @@ You MUST respond with ONLY a JSON object in this exact format:
           onProgress?.call(
             partialAnswer: jsonResponse['answer'] as String?,
             partialSteps: jsonResponse['steps'] as String?,
+            partialSuggestions: _parseSuggestions(jsonResponse['suggestions']),
             isComplete: true,
           );
 
@@ -277,6 +281,16 @@ You MUST respond with ONLY a JSON object in this exact format:
   /// Worker function for JSON parsing in isolate
   static Map<String, dynamic> _parseJsonWorker(String content) {
     return jsonDecode(content) as Map<String, dynamic>;
+  }
+
+  static List<String>? _parseSuggestions(dynamic raw) {
+    if (raw is! List) return null;
+    final list = raw
+        .map((e) => e.toString().trim())
+        .where((s) => s.isNotEmpty)
+        .take(3)
+        .toList();
+    return list.isEmpty ? null : list;
   }
 
   /// Worker function for fixing and parsing JSON in isolate

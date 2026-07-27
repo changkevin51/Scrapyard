@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../providers/canvas_providers.dart';
 
@@ -39,7 +40,6 @@ class CanvasTableOverlay extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Table header row with delete button
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: const BoxDecoration(
@@ -63,13 +63,12 @@ class CanvasTableOverlay extends ConsumerWidget {
                         ref.read(canvasTablesProvider.notifier).state =
                             tables.where((t) => t.id != table.id).toList();
                       },
-                      child: const Icon(Icons.close, size: 14,
-                          color: ScrapTheme.mutedText),
+                      child: const Icon(Icons.close,
+                          size: 14, color: ScrapTheme.mutedText),
                     ),
                   ],
                 ),
               ),
-              // Cell grid
               for (int r = 0; r < table.rows; r++)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -129,169 +128,70 @@ class _TableCell extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Smart Action Bar — sits at the bottom-right of the canvas
-// Provides: Insert Table | Convert OCR | Beautify Shapes
-// ─────────────────────────────────────────────────────────────────
-class CanvasSmartBar extends ConsumerStatefulWidget {
-  final List<String> ocrTexts;
-  final List<String> ocrStrokeIds; // stroke ids that produced the OCR text
-
-  const CanvasSmartBar({
-    super.key,
-    required this.ocrTexts,
-    required this.ocrStrokeIds,
-  });
-
-  @override
-  ConsumerState<CanvasSmartBar> createState() => _CanvasSmartBarState();
+/// Convert OCR text results into a canvas text node and hide source strokes.
+void convertOcrToTextNode(
+  WidgetRef ref,
+  BuildContext context, {
+  required List<String> ocrTexts,
+  required List<String> ocrStrokeIds,
+}) {
+  if (ocrTexts.isEmpty) return;
+  final combined = ocrTexts.join(' ');
+  final node = CanvasTextItem(
+    id: DateTime.now().millisecondsSinceEpoch.toString(),
+    position: const Offset(80, 200),
+    text: combined,
+  );
+  ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, node]);
+  ref.read(strokesProvider.notifier).hideStrokes(ocrStrokeIds);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Converted to text node', style: ScrapTextStyles.caption),
+      backgroundColor: ScrapTheme.accent,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    ),
+  );
 }
 
-class _CanvasSmartBarState extends ConsumerState<CanvasSmartBar>
-    with SingleTickerProviderStateMixin {
-  bool _expanded = false;
-  late AnimationController _ctrl;
-  late Animation<double> _anim;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 250));
-    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    setState(() => _expanded = !_expanded);
-    _expanded ? _ctrl.forward() : _ctrl.reverse();
-  }
-
-  void _insertTable(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => _InsertTableDialog(),
-    );
-  }
-
-  void _convertOcr() {
-    if (widget.ocrTexts.isEmpty) return;
-    // Combine all OCR results into one text node centered on canvas
-    final combined = widget.ocrTexts.join(' ');
-    final node = CanvasTextItem(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      position: const Offset(80, 200),
-      text: combined,
-    );
-    ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, node]);
-    // Hide source strokes
-    ref.read(strokesProvider.notifier).hideStrokes(widget.ocrStrokeIds);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Converted to text node', style: ScrapTextStyles.caption),
-        backgroundColor: ScrapTheme.accent,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Action buttons (animated expand)
-        SizeTransition(
-          sizeFactor: _anim,
-          axisAlignment: -1,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _SmartButton(
-                label: 'Insert Table',
-                icon: Icons.table_chart_outlined,
-                onTap: () { _toggle(); _insertTable(context); },
-              ),
-              const SizedBox(height: 8),
-              if (widget.ocrTexts.isNotEmpty)
-                _SmartButton(
-                  label: 'Convert Handwriting → Text',
-                  icon: Icons.text_snippet_outlined,
-                  onTap: () { _toggle(); _convertOcr(); },
-                ),
-              if (widget.ocrTexts.isNotEmpty) const SizedBox(height: 8),
-            ],
-          ),
-        ),
-        // Main FAB toggle
-        GestureDetector(
-          onTap: _toggle,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: _expanded ? ScrapTheme.accent : ScrapTheme.cardSurface,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: ScrapTheme.dividers),
-              boxShadow: ScrapTheme.subtleShadow,
-            ),
-            child: Center(
-              child: Text(
-                '✦',
-                style: ScrapTextStyles.body.copyWith(
-                  fontSize: 18,
-                  color: _expanded ? Colors.white : ScrapTheme.accent,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+Future<void> showInsertTableDialog(BuildContext context) {
+  return showDialog(
+    context: context,
+    builder: (_) => const InsertTableDialog(),
+  );
 }
 
-class _SmartButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _SmartButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
+// ─────────────────────────────────────────────────────────────────
+// AI Chat FAB — bottom-right, opens the Ask panel
+// ─────────────────────────────────────────────────────────────────
+class CanvasSmartBar extends ConsumerWidget {
+  const CanvasSmartBar({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final open = ref.watch(chatPanelOpenProvider);
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      onTap: () {
+        ref.read(chatPanelOpenProvider.notifier).state = !open;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: ScrapTheme.cardSurface,
+          color: open ? ScrapTheme.accent : ScrapTheme.cardSurface,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: ScrapTheme.dividers),
           boxShadow: ScrapTheme.subtleShadow,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: ScrapTheme.accent),
-            const SizedBox(width: 8),
-            Text(label,
-                style: ScrapTextStyles.body.copyWith(
-                    fontSize: 13, color: ScrapTheme.primaryText)),
-          ],
+        child: Center(
+          child: Text(
+            '✦',
+            style: ScrapTextStyles.body.copyWith(
+              fontSize: 18,
+              color: open ? Colors.white : ScrapTheme.accent,
+            ),
+          ),
         ),
       ),
     );
@@ -301,12 +201,14 @@ class _SmartButton extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────
 // Insert Table dialog
 // ─────────────────────────────────────────────────────────────────
-class _InsertTableDialog extends ConsumerStatefulWidget {
+class InsertTableDialog extends ConsumerStatefulWidget {
+  const InsertTableDialog({super.key});
+
   @override
-  ConsumerState<_InsertTableDialog> createState() => _InsertTableDialogState();
+  ConsumerState<InsertTableDialog> createState() => _InsertTableDialogState();
 }
 
-class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
+class _InsertTableDialogState extends ConsumerState<InsertTableDialog> {
   int _rows = 3;
   int _cols = 4;
 
@@ -329,7 +231,8 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text('Cancel',
-              style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText)),
+              style:
+                  ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText)),
         ),
         GestureDetector(
           onTap: () {
@@ -339,7 +242,9 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
               rows: _rows,
               cols: _cols,
             );
-            ref.read(canvasTablesProvider.notifier).update((s) => [...s, table]);
+            ref
+                .read(canvasTablesProvider.notifier)
+                .update((s) => [...s, table]);
             Navigator.pop(context);
           },
           child: Container(
@@ -373,7 +278,8 @@ class _InsertTableDialogState extends ConsumerState<_InsertTableDialog> {
             width: 30,
             child: Text('$value',
                 textAlign: TextAlign.center,
-                style: ScrapTextStyles.body.copyWith(fontWeight: FontWeight.w600)),
+                style: ScrapTextStyles.body
+                    .copyWith(fontWeight: FontWeight.w600)),
           ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline, size: 22),

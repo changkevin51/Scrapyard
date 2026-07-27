@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../ai_chat/domain/models/gemini_model.dart';
+import '../../../ai_chat/presentation/providers/chat_providers.dart';
+import '../../../ai_chat/presentation/widgets/chat_history_sheet.dart';
+import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_engine/data/api_key_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
@@ -17,6 +21,11 @@ class SettingsScreen extends ConsumerWidget {
     final subtitle = hasKey
         ? ApiKeyService.mask(key)
         : 'Not set — tap to add';
+
+    final modelId = ref.watch(chatModelProvider);
+    final modelLabel = GeminiChatModel.displayLabel(modelId);
+    final conversations = ref.watch(conversationsProvider);
+    final chatCount = conversations.valueOrNull?.length ?? 0;
 
     return Scaffold(
       backgroundColor: ScrapTheme.background,
@@ -64,6 +73,100 @@ class SettingsScreen extends ConsumerWidget {
                 );
               }
             },
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text('AI Model', style: ScrapTextStyles.body),
+            subtitle: Text(
+              modelLabel,
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.secondaryText,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: ScrapTheme.mutedText,
+            ),
+            onTap: () => showModelPickerSheet(context),
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text('Chat History', style: ScrapTextStyles.body),
+            subtitle: Text(
+              chatCount == 0
+                  ? 'No conversations yet'
+                  : '$chatCount conversation${chatCount == 1 ? '' : 's'}',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: ScrapTheme.mutedText,
+            ),
+            onTap: () => showChatHistorySheet(context),
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text(
+              'Delete all chat history',
+              style: ScrapTextStyles.body.copyWith(color: Colors.redAccent),
+            ),
+            subtitle: Text(
+              'Crush every saved conversation',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+              ),
+            ),
+            onTap: chatCount == 0
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: ScrapTheme.cardSurface,
+                        title: Text('Delete all chats?',
+                            style: ScrapTextStyles.heading),
+                        content: Text(
+                          'This will permanently crush all chat history. This cannot be undone.',
+                          style: ScrapTextStyles.body,
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: Text('Cancel',
+                                style: ScrapTextStyles.body
+                                    .copyWith(color: ScrapTheme.mutedText)),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text('Crush all',
+                                style: ScrapTextStyles.body
+                                    .copyWith(color: Colors.redAccent)),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await ref
+                          .read(conversationsProvider.notifier)
+                          .deleteAll();
+                      ref.read(activeChatProvider.notifier).clear();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Chat history deleted',
+                              style: ScrapTextStyles.body
+                                  .copyWith(color: Colors.white),
+                            ),
+                            backgroundColor: ScrapTheme.accent,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    }
+                  },
           ),
           const Divider(color: ScrapTheme.dividers),
           ListTile(

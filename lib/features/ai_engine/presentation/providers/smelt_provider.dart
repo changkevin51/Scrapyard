@@ -62,12 +62,15 @@ class SmeltState {
   final SmeltResponse? response;
   final String? error;
   final bool showSteps;
+  /// Last canvas capture used for smelt (for chat handoff).
+  final Uint8List? lastImageBytes;
 
   const SmeltState({
     this.isLoading = false,
     this.response,
     this.error,
     this.showSteps = false,
+    this.lastImageBytes,
   });
 
   SmeltState copyWith({
@@ -77,12 +80,14 @@ class SmeltState {
     bool clearResponse = false,
     bool clearError = false,
     bool? showSteps,
+    Uint8List? lastImageBytes,
   }) {
     return SmeltState(
       isLoading: isLoading ?? this.isLoading,
       response: clearResponse ? null : (response ?? this.response),
       error: clearError ? null : (error ?? this.error),
       showSteps: showSteps ?? this.showSteps,
+      lastImageBytes: lastImageBytes ?? this.lastImageBytes,
     );
   }
 }
@@ -132,11 +137,17 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   /// Streaming smelt that shows results as soon as they arrive
   Future<void> smelt({Uint8List? imageBytes}) async {
     try {
-      state = const SmeltState(isLoading: true);
+      state = SmeltState(isLoading: true, lastImageBytes: imageBytes);
 
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
-        onProgress: ({partialAnswer = '', partialSteps = '', isComplete = false, error}) {
+        onProgress: ({
+          partialAnswer = '',
+          partialSteps = '',
+          partialSuggestions,
+          isComplete = false,
+          error,
+        }) {
           _onProgressCallCount++;
           // #region agent log
           dlog(
@@ -146,41 +157,30 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
                 'callCount': _onProgressCallCount,
                 'isComplete': isComplete,
                 'partialStepsJsonEncoded': jsonEncode(partialSteps ?? ''),
-                'cleanedStepsJsonEncoded': jsonEncode(_cleanSteps(partialSteps ?? '')),
+                'cleanedStepsJsonEncoded':
+                    jsonEncode(_cleanSteps(partialSteps ?? '')),
               });
           // #endregion
-          if (isComplete && partialAnswer != null && partialAnswer.isNotEmpty) {
-            final isMath = RegExp(r'[\\{}^_]|frac|sqrt|pm|int|sum|lim|pi|theta')
-                .hasMatch(partialAnswer);
-
-            final finalResponse = SmeltResponse(
-              answer: partialAnswer,
-              steps: _cleanSteps(partialSteps ?? ''),
-              isMath: isMath,
-              modelUsed: 'gemini-3.5-flash',
-            );
-            state = SmeltState(
-              isLoading: false,
-              response: finalResponse,
-            );
-          }
         },
       );
 
-      // If we haven't updated state yet (no streaming progress), set final state
-      if (state.isLoading) {
-        state = SmeltState(
-          isLoading: false,
-          response: SmeltResponse(
-            answer: result.response.answer,
-            steps: _cleanSteps(result.response.steps),
-            isMath: result.response.isMath,
-            modelUsed: result.response.modelUsed,
-          ),
-        );
-      }
+      state = SmeltState(
+        isLoading: false,
+        lastImageBytes: imageBytes,
+        response: SmeltResponse(
+          answer: result.response.answer,
+          steps: _cleanSteps(result.response.steps),
+          isMath: result.response.isMath,
+          modelUsed: result.response.modelUsed,
+          suggestions: result.response.suggestions,
+        ),
+      );
     } catch (e) {
-      state = SmeltState(isLoading: false, error: e.toString());
+      state = SmeltState(
+        isLoading: false,
+        error: e.toString(),
+        lastImageBytes: imageBytes,
+      );
     }
   }
 

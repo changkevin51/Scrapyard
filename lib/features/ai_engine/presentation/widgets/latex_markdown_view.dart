@@ -81,10 +81,14 @@ class LatexMarkdownView extends StatelessWidget {
   final String text;
   final TextStyle? baseStyle;
 
+  /// Tighter line spacing for compact surfaces (e.g. Smelt answer box).
+  final bool compact;
+
   const LatexMarkdownView({
     super.key,
     required this.text,
     this.baseStyle,
+    this.compact = false,
   });
 
   TextStyle get _baseTextStyle {
@@ -218,7 +222,7 @@ class LatexMarkdownView extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: EdgeInsets.only(bottom: compact ? 0 : 4),
       child: _buildInlineRich(tokens),
     );
   }
@@ -270,7 +274,7 @@ class LatexMarkdownView extends StatelessWidget {
 
   Widget _buildDisplayMath(String latex) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: EdgeInsets.symmetric(vertical: compact ? 0 : 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
           return SingleChildScrollView(
@@ -281,13 +285,10 @@ class LatexMarkdownView extends StatelessWidget {
                 child: Math.tex(
                   latex,
                   mathStyle: MathStyle.display,
-                  textStyle: _mathOnlyStyle.copyWith(fontSize: 14),
+                  textStyle: _mathOnlyStyle,
                   onErrorFallback: (_) => Text(
                     latex,
-                    style: _mathOnlyStyle.copyWith(
-                      fontSize: 14,
-                      color: ScrapTheme.accent,
-                    ),
+                    style: _mathOnlyStyle.copyWith(color: ScrapTheme.accent),
                   ),
                 ),
               ),

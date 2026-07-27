@@ -261,7 +261,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
       children: [
         if (response.isMath) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
             decoration: BoxDecoration(
               color: ScrapTheme.accentSurface,
               borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
@@ -470,9 +470,10 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   Widget _buildMathAnswer(String answer) {
     return LatexMarkdownView(
       text: answer,
+      compact: true,
       baseStyle: ScrapTextStyles.body.copyWith(
-        fontSize: 16,
-        height: 1.4,
+        fontSize: 25,
+        height: 1.1,
         color: ScrapTheme.accent,
         fontWeight: FontWeight.w600,
       ),

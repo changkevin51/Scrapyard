@@ -11,6 +11,7 @@ import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_tilt.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/home_node.dart';
 import '../providers/home_providers.dart' show
@@ -131,6 +132,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     return Scaffold(
+      // Keep the sidebar layout stable while modal dialogs (e.g. API key) are open.
+      resizeToAvoidBottomInset: false,
       body: Row(
         children: [
           // Left Sidebar
@@ -738,6 +741,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _renameNode(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    final newTitle = await showScrapDialog<String>(
+      context: context,
+      builder: (ctx) => _RenameNodeDialog(initialTitle: node.title),
+    );
+
+    if (newTitle == null || !mounted) return;
+
+    await ref
+        .read(currentHomeNodesProvider.notifier)
+        .renameNode(node, newTitle);
+
+    final trimmed = newTitle.trim();
+    final path = ref.read(folderPathProvider);
+    if (path.any((n) => n.id == node.id)) {
+      ref.read(folderPathProvider.notifier).state = path
+          .map((n) => n.id == node.id ? n.copyWith(title: trimmed) : n)
+          .toList();
+    }
+
+    if (node.type == NodeType.note) {
+      final tabs = ref.read(openedTabsProvider);
+      if (tabs.any((t) => t.id == node.id)) {
+        ref.read(openedTabsProvider.notifier).state = tabs
+            .map(
+              (t) => t.id == node.id
+                  ? OpenedTab(
+                      id: t.id,
+                      title: trimmed,
+                      accent: t.accent,
+                      groupId: t.groupId,
+                    )
+                  : t,
+            )
+            .toList();
+      }
+    }
+  }
+
   Widget _cardHeader(
     BuildContext context,
     WidgetRef ref,
@@ -764,11 +810,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           elevation: 1,
           color: ScrapTheme.cardSurface,
           onSelected: (val) {
-            if (val == 'delete') {
+            if (val == 'rename') {
+              _renameNode(context, ref, node);
+            } else if (val == 'delete') {
               ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
             }
           },
           itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'rename',
+              child: Text('Rename'),
+            ),
             const PopupMenuItem(
               value: 'delete',
               child: Text(
@@ -777,6 +829,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class _RenameNodeDialog extends StatefulWidget {
+  final String initialTitle;
+
+  const _RenameNodeDialog({required this.initialTitle});
+
+  @override
+  State<_RenameNodeDialog> createState() => _RenameNodeDialogState();
+}
+
+class _RenameNodeDialogState extends State<_RenameNodeDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialTitle);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isNotEmpty) Navigator.pop(context, trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: ScrapTheme.cardSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+      ),
+      title: Text(
+        'Rename',
+        style: ScrapTextStyles.heading.copyWith(fontSize: 18),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: ScrapTextStyles.body,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          hintText: 'Name',
+          filled: true,
+          fillColor: ScrapTheme.background,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 14,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius:
+                BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+            borderSide: const BorderSide(color: ScrapTheme.dividers),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius:
+                BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+            borderSide: const BorderSide(
+              color: ScrapTheme.accent,
+              width: 1.5,
+            ),
+          ),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText),
+          ),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text(
+            'Rename',
+            style: ScrapTextStyles.body.copyWith(
+              color: ScrapTheme.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ],
     );

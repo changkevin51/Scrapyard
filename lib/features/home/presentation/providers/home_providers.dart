@@ -81,6 +81,14 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
      await _repository.deleteNode(id);
      await _loadNodes();
   }
+
+  Future<void> renameNode(HomeNode node, String newTitle) async {
+    final trimmed = newTitle.trim();
+    if (trimmed.isEmpty || trimmed == node.title) return;
+    final updated = node.copyWith(title: trimmed, updatedAt: DateTime.now());
+    await _repository.updateNode(updated);
+    await _loadNodes();
+  }
 }
 
 final currentHomeNodesProvider = StateNotifierProvider.autoDispose<HomeNodesNotifier, AsyncValue<List<HomeNode>>>((ref) {

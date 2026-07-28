@@ -269,7 +269,7 @@ class _CodeExecutionToggle extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Prompt the model to run code to check its answer',
+                  'May not be available for all responses',
                   style: ScrapTextStyles.caption.copyWith(
                     color: ScrapTheme.mutedText,
                   ),

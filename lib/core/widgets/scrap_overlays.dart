@@ -39,6 +39,13 @@ Future<T?> showScrapDialog<T>({
       final settle = Tween<double>(begin: 1.5 * math.pi / 180, end: 0).animate(
         curved,
       );
+      final viewInsets = MediaQuery.viewInsetsOf(context);
+      final safePadding = MediaQuery.paddingOf(context);
+      final maxHeight = MediaQuery.sizeOf(context).height -
+          viewInsets.bottom -
+          safePadding.top -
+          48;
+
       return Stack(
         children: [
           Positioned.fill(
@@ -48,20 +55,34 @@ Future<T?> showScrapDialog<T>({
             ),
           ),
           Center(
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, -0.02),
-                end: Offset.zero,
-              ).animate(curved),
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-                child: AnimatedBuilder(
-                  animation: settle,
-                  builder: (context, child) => Transform.rotate(
-                    angle: settle.value,
-                    child: child,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                24 + viewInsets.bottom,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: maxHeight,
+                  maxWidth: 560,
+                ),
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, -0.02),
+                    end: Offset.zero,
+                  ).animate(curved),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+                    child: AnimatedBuilder(
+                      animation: settle,
+                      builder: (context, child) => Transform.rotate(
+                        angle: settle.value,
+                        child: child,
+                      ),
+                      child: child,
+                    ),
                   ),
-                  child: child,
                 ),
               ),
             ),

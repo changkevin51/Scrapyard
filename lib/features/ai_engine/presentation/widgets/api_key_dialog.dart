@@ -38,6 +38,8 @@ class ApiKeyDialog extends ConsumerStatefulWidget {
 
 class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
   late final TextEditingController _controller;
+  late final FocusNode _keyFocusNode;
+  final _keyFieldKey = GlobalKey();
   bool _obscure = true;
   bool _testing = false;
   bool _saving = false;
@@ -49,6 +51,8 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
     super.initState();
     final existing = ref.read(apiKeyProvider).valueOrNull;
     _controller = TextEditingController(text: existing ?? '');
+    _keyFocusNode = FocusNode();
+    _keyFocusNode.addListener(_scrollKeyFieldIntoView);
     _controller.addListener(() {
       if (_testResult != null) {
         setState(() => _testResult = null);
@@ -58,8 +62,24 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
     });
   }
 
+  void _scrollKeyFieldIntoView() {
+    if (!_keyFocusNode.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final fieldContext = _keyFieldKey.currentContext;
+      if (fieldContext == null || !mounted) return;
+      Scrollable.ensureVisible(
+        fieldContext,
+        alignment: 0.2,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   @override
   void dispose() {
+    _keyFocusNode.removeListener(_scrollKeyFieldIntoView);
+    _keyFocusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -151,6 +171,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           grain: true,
           grainOpacity: 0.015,
           child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(28, 12, 28, 20),
               child: Column(
@@ -181,8 +202,11 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
+              KeyedSubtree(
+                key: _keyFieldKey,
+                child: TextField(
                 controller: _controller,
+                focusNode: _keyFocusNode,
                 obscureText: _obscure,
                 enabled: !busy,
                 style: ScrapTextStyles.body.copyWith(
@@ -237,6 +261,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                     borderSide: const BorderSide(color: ScrapTheme.dividers),
                   ),
                 ),
+              ),
               ),
               if (_testResult != null) ...[
                 const SizedBox(height: 12),

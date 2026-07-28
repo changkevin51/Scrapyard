@@ -152,28 +152,31 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildCard(SmeltState state) {
-    return SizedBox(
-      width: _popupWidth(),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 400),
-        child: TornSheet(
-          seed: 42,
-          edges: const {TornEdge.bottom, TornEdge.right},
-          amplitude: 3.5,
-          grain: true,
-          grainOpacity: 0.018,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const TapeStrip(label: '⟨ Smelt ⟩', tiltDegrees: -1.5),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                  child: _buildContent(state),
+    return Material(
+      type: MaterialType.transparency,
+      child: SizedBox(
+        width: _popupWidth(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 400),
+          child: TornSheet(
+            seed: 42,
+            edges: const {TornEdge.bottom, TornEdge.right},
+            amplitude: 3.5,
+            grain: true,
+            grainOpacity: 0.018,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const TapeStrip(label: '⟨ Smelt ⟩', tiltDegrees: -1.5),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                    child: _buildContent(state),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -261,7 +264,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
       children: [
         if (response.isMath) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: ScrapTheme.accentSurface,
               borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),

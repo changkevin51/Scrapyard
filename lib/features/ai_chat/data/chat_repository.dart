@@ -60,17 +60,31 @@ class ChatRepository {
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
-          await db.execute(
-            'ALTER TABLE $_messagesTable ADD COLUMN image TEXT',
-          );
+          await _addColumnIfMissing(db, _messagesTable, 'image', 'TEXT');
         }
         if (oldVersion < 3) {
-          await db.execute(
-            'ALTER TABLE $_messagesTable ADD COLUMN model_fallback_note TEXT',
+          await _addColumnIfMissing(
+            db,
+            _messagesTable,
+            'model_fallback_note',
+            'TEXT',
           );
         }
       },
     );
+  }
+
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
   }
 
   Future<List<ChatConversation>> listConversations() async {

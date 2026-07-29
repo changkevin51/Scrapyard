@@ -15,11 +15,6 @@ final gestureActionProvider = StateNotifierProvider<GestureActionNotifier, Gestu
   return GestureActionNotifier();
 });
 
-final morseEnabledProvider = StateProvider<bool>((ref) => true);
 final edgeSwipesEnabledProvider = StateProvider<bool>((ref) => true);
 final tapHoldExpandEnabledProvider = StateProvider<bool>((ref) => true);
 final multiFingerEnabledProvider = StateProvider<bool>((ref) => true);
-
-final morseMappingsProvider = StateProvider<Map<MorsePattern, GestureAction>>((ref) {
-  return {};
-});

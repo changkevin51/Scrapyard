@@ -21,9 +21,6 @@ enum ToolbarPosition { top, bottom, left, right }
 final pageLayoutProvider = StateProvider<PageLayout>((ref) => PageLayout.ruled);
 final toolbarPositionProvider = StateProvider<ToolbarPosition>((ref) => ToolbarPosition.top);
 
-enum ToolbarDisplayMode { icons, labels }
-final toolbarDisplayModeProvider = StateProvider<ToolbarDisplayMode>((ref) => ToolbarDisplayMode.icons);
-
 class CanvasTextItem {
   final String id;
   final Offset position;

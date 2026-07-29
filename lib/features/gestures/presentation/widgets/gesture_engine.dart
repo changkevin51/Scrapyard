@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/gesture_action.dart';
 import '../providers/gesture_providers.dart';
 import 'expanding_ring_feedback.dart';
-import 'morse_gesture_zone.dart';
 
 class GestureEngine extends ConsumerStatefulWidget {
   final Widget child;
@@ -34,10 +33,6 @@ class _GestureEngineState extends ConsumerState<GestureEngine> {
   // Swipe velocity is calculated upon PointerUp across all tracked points.
 
   void _onPointerDown(PointerDownEvent event) {
-    // If it's bottom-left corner and morse is enabled, let morse zone handle it if we wanted strict exclusivity.
-    // However, Listener captures all touches. We don't want to cancel canvas ink. 
-    // In a full app, HitTestBehavior avoids stealing from Canvas, but we just want gesture recognition.
-    
     _activePointers[event.pointer] = event;
 
     if (_activePointers.length == 1) {
@@ -159,9 +154,6 @@ class _GestureEngineState extends ConsumerState<GestureEngine> {
         // Visual Feedback Layer
         if (_holdStage > 0 && _holdPosition != null)
            ExpandingRingFeedback(position: _holdPosition!, stage: _holdStage),
-
-        // Morse zone overlays on top of the tree, bottom-left
-        const MorseGestureZone(),
       ],
     );
   }

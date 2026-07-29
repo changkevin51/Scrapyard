@@ -286,8 +286,7 @@ class _ConcentrationPreview extends StatelessWidget {
 // Compact inline pen-settings button for the toolbar
 // ─────────────────────────────────────────────────────────────────
 class PenSettingsButton extends ConsumerWidget {
-  final bool isIcon;
-  const PenSettingsButton({super.key, required this.isIcon});
+  const PenSettingsButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -315,13 +314,8 @@ class PenSettingsButton extends ConsumerWidget {
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
           ),
-          child: isIcon
-              ? Icon(Icons.tune, size: 18,
-                  color: isPen ? ScrapTheme.accent : ScrapTheme.mutedText)
-              : Text('調',
-                  style: ScrapTextStyles.body.copyWith(
-                      fontSize: 16,
-                      color: isPen ? ScrapTheme.accent : ScrapTheme.mutedText)),
+          child: Icon(Icons.tune, size: 18,
+              color: isPen ? ScrapTheme.accent : ScrapTheme.mutedText),
         ),
       ),
     );

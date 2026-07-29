@@ -99,22 +99,20 @@ class CanvasToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isPenMode    = ref.watch(isPenModeActiveProvider);
     final position     = ref.watch(toolbarPositionProvider);
-    final displayMode  = ref.watch(toolbarDisplayModeProvider);
     final strokeStyle  = ref.watch(strokeStyleProvider);
     final isHorizontal = position == ToolbarPosition.top || position == ToolbarPosition.bottom;
-    final isIcon       = displayMode == ToolbarDisplayMode.icons;
 
     final children = <Widget>[
       // ── Draw / Scroll mode toggle ──────────────────────
-      _ModeToggle(isPenMode: isPenMode, isIcon: isIcon),
+      _ModeToggle(isPenMode: isPenMode),
       _sep(isHorizontal),
 
       // ── All drawing tools – always exposed ─────────────
       for (final t in _tools)
-        _ToolButton(def: t, isIcon: isIcon),
-      PenSettingsButton(isIcon: isIcon),
+        _ToolButton(def: t),
+      const PenSettingsButton(),
       // Sticker library button
-      _StickerButton(isIcon: isIcon),
+      const _StickerButton(),
       _sep(isHorizontal),
 
       // ── Stroke style chips – inline ────────────────────
@@ -125,10 +123,10 @@ class CanvasToolbar extends ConsumerWidget {
       // ── Undo / Redo ────────────────────────────────────
       _ActionButton(
           icon: Icons.undo_outlined, tip: 'Undo',
-          isIcon: isIcon, action: CanvasTool.undo),
+          action: CanvasTool.undo),
       _ActionButton(
           icon: Icons.redo_outlined, tip: 'Redo',
-          isIcon: isIcon, action: CanvasTool.redo),
+          action: CanvasTool.redo),
       _sep(isHorizontal),
 
       // ── Colour palette ─────────────────────────────────
@@ -137,10 +135,6 @@ class CanvasToolbar extends ConsumerWidget {
 
       // ── Thickness dots ──────────────────────────────────
       const _ThicknessDots(),
-      _sep(isHorizontal),
-
-      // ── Display-mode toggle (icon ↔ label) ─────────────
-      _DisplayModeToggle(isIcon: isIcon),
       _sep(isHorizontal),
 
       // ── Settings sheet ─────────────────────────────────
@@ -221,8 +215,7 @@ class CanvasToolbar extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────
 class _ModeToggle extends ConsumerWidget {
   final bool isPenMode;
-  final bool isIcon;
-  const _ModeToggle({required this.isPenMode, required this.isIcon});
+  const _ModeToggle({required this.isPenMode});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -246,19 +239,11 @@ class _ModeToggle extends ConsumerWidget {
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
           ),
-          child: isIcon
-              ? Icon(
-                  isPenMode ? Icons.edit_outlined : Icons.pan_tool_alt_outlined,
-                  size: 22,
-                  color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
-                )
-              : Text(
-                  isPenMode ? 'Draw' : 'Move',
-                  style: ScrapTextStyles.stamp.copyWith(
-                    fontSize: 11,
-                    color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
-                  ),
-                ),
+          child: Icon(
+            isPenMode ? Icons.edit_outlined : Icons.pan_tool_alt_outlined,
+            size: 22,
+            color: isPenMode ? ScrapTheme.accent : ScrapTheme.mutedText,
+          ),
         ),
       ),
     );
@@ -271,8 +256,7 @@ class _ModeToggle extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────────────
 class _ToolButton extends ConsumerWidget {
   final _ToolDef def;
-  final bool isIcon;
-  const _ToolButton({required this.def, required this.isIcon});
+  const _ToolButton({required this.def});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -310,14 +294,8 @@ class _ToolButton extends ConsumerWidget {
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  isIcon
-                      ? Icon(def.icon, size: 22,
-                          color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText)
-                      : Text(def.label,
-                          style: ScrapTextStyles.stamp.copyWith(
-                            fontSize: 11,
-                            color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
-                          )),
+                  Icon(def.icon, size: 22,
+                      color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText),
                   // Highlighter-swipe underline under active tool
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
@@ -406,11 +384,10 @@ class _StrokeStyleChip extends ConsumerWidget {
 class _ActionButton extends ConsumerWidget {
   final IconData icon;
   final String tip;
-  final bool isIcon;
   final CanvasTool action;
   const _ActionButton(
       {required this.icon, required this.tip,
-       required this.isIcon, required this.action});
+       required this.action});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -507,37 +484,6 @@ class _ThicknessDots extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────
-// Display-mode toggle  ↔  icon / label
-// ─────────────────────────────────────────────────────────
-class _DisplayModeToggle extends ConsumerWidget {
-  final bool isIcon;
-  const _DisplayModeToggle({required this.isIcon});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Tooltip(
-      message: isIcon ? 'Switch to label mode' : 'Switch to icon mode',
-      child: _ToolPressable(
-        onTap: () {
-          final next = isIcon ? ToolbarDisplayMode.labels : ToolbarDisplayMode.icons;
-          ref.read(toolbarDisplayModeProvider.notifier).state = next;
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            isIcon ? 'Aa' : '◆',
-            style: ScrapTextStyles.stamp.copyWith(
-              fontSize: 12,
-              color: ScrapTheme.mutedText,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────
 // Settings button  →  opens bottom sheet
 // ─────────────────────────────────────────────────────────
 class _SettingsButton extends ConsumerWidget {
@@ -545,20 +491,13 @@ class _SettingsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isIcon = ref.watch(toolbarDisplayModeProvider) == ToolbarDisplayMode.icons;
     return Tooltip(
       message: 'Canvas settings',
       child: _ToolPressable(
         onTap: () => _showSettings(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: isIcon
-              ? const Icon(Icons.tune_outlined, size: 22, color: ScrapTheme.mutedText)
-              : Text('Set',
-                  style: ScrapTextStyles.stamp.copyWith(
-                    fontSize: 11,
-                    color: ScrapTheme.mutedText,
-                  )),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Icon(Icons.tune_outlined, size: 22, color: ScrapTheme.mutedText),
         ),
       ),
     );
@@ -726,8 +665,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
 // Sticker library toolbar button
 // ─────────────────────────────────────────────────────────────────
 class _StickerButton extends StatelessWidget {
-  final bool isIcon;
-  const _StickerButton({required this.isIcon});
+  const _StickerButton();
 
   @override
   Widget build(BuildContext context) {
@@ -735,13 +673,10 @@ class _StickerButton extends StatelessWidget {
       message: 'Sticker library',
       child: _ToolPressable(
         onTap: () => showStickerLibrary(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: isIcon
-              ? const Icon(Icons.emoji_emotions_outlined, size: 20,
-                  color: ScrapTheme.mutedText)
-              : Text('貼', style: ScrapTextStyles.body.copyWith(
-                  fontSize: 16, color: ScrapTheme.mutedText)),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Icon(Icons.emoji_emotions_outlined, size: 20,
+              color: ScrapTheme.mutedText),
         ),
       ),
     );

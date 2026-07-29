@@ -30,11 +30,6 @@ class _GestureOnboardingOverlayState extends State<GestureOnboardingOverlay> {
       'caption': 'Multi-finger gestures',
       'desc': '3-finger tap for AI. 4-finger swipe for focus.',
     },
-    {
-      'illustration': Icons.more_horiz,
-      'caption': 'Morse corner',
-      'desc': 'Tap dot/dash down in the bottom left corner.',
-    },
   ];
 
   @override

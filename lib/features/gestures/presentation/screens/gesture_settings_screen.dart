@@ -38,22 +38,6 @@ class GestureSettingsScreen extends ConsumerWidget {
            _buildToggleRow('Multi-Finger Actions', ref.watch(multiFingerEnabledProvider), (val) {
              ref.read(multiFingerEnabledProvider.notifier).state = val;
            }),
-           const Padding(
-             padding: EdgeInsets.symmetric(vertical: 24.0),
-             child: Divider(height: 1, color: ScrapTheme.dividers),
-           ),
-
-           _buildSectionHeader('Morse Action Corner'),
-           _buildToggleRow('Enable Morse Input', ref.watch(morseEnabledProvider), (val) {
-             ref.read(morseEnabledProvider.notifier).state = val;
-           }),
-           const SizedBox(height: 16),
-           Text('Bottom left corner, 52x52px zone.', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
-           const SizedBox(height: 16),
-           _buildMorseActionRow('· ·', 'AI Popup on last word'),
-           _buildMorseActionRow('· —', 'Language Sidebar'),
-           _buildMorseActionRow('— ·', 'Summarise Document'),
-           _buildMorseActionRow('— —', 'AI Agent Panel'),
         ],
       ),
     );
@@ -86,16 +70,4 @@ class GestureSettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMorseActionRow(String pattern, String actionDesc) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(pattern, style: ScrapTextStyles.heading.copyWith(fontWeight: FontWeight.bold, color: ScrapTheme.primaryText)),
-          Text(actionDesc, style: ScrapTextStyles.body.copyWith(color: ScrapTheme.secondaryText)),
-        ],
-      ),
-    );
-  }
 }

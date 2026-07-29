@@ -20,8 +20,8 @@ class SplashGate extends ConsumerStatefulWidget {
 }
 
 class _SplashGateState extends ConsumerState<SplashGate> {
-  static const _hardTimeout = Duration(seconds: 4);
-  static const _loadingHintAfter = Duration(milliseconds: 2500);
+  static const _hardTimeout = Duration(seconds: 6);
+  static const _loadingHintAfter = Duration(milliseconds: 3500);
 
   final GlobalKey<SplashScreenState> _splashKey = GlobalKey();
 

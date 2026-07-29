@@ -39,6 +39,29 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.4.11
   riverpod_generator: ^2.4.0
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/branding/app_icon.png
+  web:
+    generate: true
+  windows:
+    generate: true
+  macos:
+    generate: true
+
+flutter_native_splash:
+  color: "#E8DCC8"
+  image: assets/branding/app_icon_transparent.png
+  android: true
+  ios: true
+  web: true
+  android_12:
+    color: "#E8DCC8"
+    image: assets/branding/app_icon_android12.png
 
 flutter:
   uses-material-design: true

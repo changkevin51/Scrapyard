@@ -42,6 +42,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   Timer? _ocrDebounce;
   OverlayEntry? _smeltPopupEntry;
+  bool _smeltPopupPinned = false;
   final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
   Rect? _lassoPreviewRect;
@@ -105,6 +106,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _onCanvasTapDown(TapDownDetails details) {
     if (_selectionRect != null && !_selectionRect!.contains(details.localPosition)) {
+      // Keep the selection highlight while a pinned smelt popup is open.
+      if (_smeltPopupPinned && _smeltPopupEntry != null) return;
       _clearSelectionState();
       _hidePasteMenu();
       return;
@@ -158,6 +161,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     if (cluster == null) {
       if (ref.read(stylusOnlyModeProvider)) return;
+      if (_smeltPopupPinned && _smeltPopupEntry != null) return;
 
       _hidePasteMenu();
       setState(() {
@@ -405,6 +409,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _clearSelectionState() {
+    if (_smeltPopupPinned && _smeltPopupEntry != null) return;
     if (_selectionRect == null &&
         _selectedStrokeIds.isEmpty &&
         !_showSelectionMenu &&
@@ -808,28 +813,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     return bytes;
   }
 
-  /// Convert canvas-local rect to global screen coordinates
+  /// Convert canvas-local rect to global screen coordinates.
+  /// Uses [RenderBox.localToGlobal] so scroll and zoom are applied once.
   Rect _convertToGlobalRect(Rect localRect) {
-    // Get the scroll offset
-    final scrollOffset = _scrollController.offset;
-    
-    // Get the canvas position on screen
-    final renderBox = _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null) return localRect;
-    
-    // Get the global position of the canvas origin
-    final globalOffset = renderBox.localToGlobal(Offset.zero);
-    
-    // Convert: globalY = localY - scrollOffset + canvasGlobalY
-    // The scroll offset shifts content up, so we subtract it
-    return localRect.translate(
-      globalOffset.dx,
-      globalOffset.dy - scrollOffset,
-    );
+    final renderBox =
+        _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return localRect;
+
+    final topLeft = renderBox.localToGlobal(localRect.topLeft);
+    final bottomRight = renderBox.localToGlobal(localRect.bottomRight);
+    return Rect.fromPoints(topLeft, bottomRight);
   }
 
   void _showSmeltPopup(Rect selectionRect) {
     _smeltPopupEntry?.remove();
+    _smeltPopupPinned = false;
     if (_showSelectionMenu) {
       _showSelectionMenu = false;
     }
@@ -841,12 +839,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _smeltPopupEntry = OverlayEntry(
       builder: (context) => Stack(
         children: [
-          // Tap outside to dismiss
+          // Tap outside to dismiss — disabled while pinned so canvas stays usable.
           Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: _dismissSmeltPopup,
-              child: const SizedBox.expand(),
+            child: IgnorePointer(
+              ignoring: _smeltPopupPinned,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _dismissSmeltPopup,
+                child: const SizedBox.expand(),
+              ),
             ),
           ),
           SmeltPopup(
@@ -855,6 +856,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             onDismiss: _removeSmeltPopup,
             onCollapse: _collapseSmeltPopup,
             onTryAnotherModel: _tryAnotherModelFromSmelt,
+            onPinnedChanged: (pinned) {
+              _smeltPopupPinned = pinned;
+              _smeltPopupEntry?.markNeedsBuild();
+            },
             screenSize: MediaQuery.of(context).size,
           ),
         ],
@@ -866,6 +871,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _dismissSmeltPopup() {
+    if (_smeltPopupPinned) return;
     final state = _smeltPopupKey.currentState;
     if (state != null) {
       state.dismiss();
@@ -877,6 +883,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _collapseSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
+    _smeltPopupPinned = false;
     if (mounted) setState(() {});
   }
 
@@ -934,6 +941,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _removeSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
+    _smeltPopupPinned = false;
     ref.read(smeltProvider.notifier).clearState();
     // Rebuild so action-menu gating re-evaluates after popup closes.
     if (mounted) setState(() {});

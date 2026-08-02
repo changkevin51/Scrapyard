@@ -65,8 +65,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   bool _selectionPointerIsStylus = false;
   /// True while the chat panel has requested a canvas region for attachment.
   bool _chatCaptureMode = false;
+  bool _isMovingSelection = false;
+  Offset? _lastSelectionDragGlobal;
+  Offset? _lastEdgeScrollTickPointer;
+  Timer? _selectionEdgeScrollTimer;
 
   static const double _selectionDragSlop = 8.0;
+  static const double _selectionEdgeScrollMargin = 48.0;
+  static const double _selectionEdgeScrollMinSpeed = 6.0;
 
   bool _isStylusPointer(PointerDeviceKind kind) =>
       kind == PointerDeviceKind.stylus ||
@@ -98,6 +104,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void dispose() {
     _ocrDebounce?.cancel();
     _manualHintTimer?.cancel();
+    _selectionEdgeScrollTimer?.cancel();
     _ocrService.dispose();
     _scrollController.dispose();
     _smeltPopupEntry?.remove();
@@ -584,6 +591,158 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     });
   }
 
+  /// Convert canvas-local rect to global screen coordinates.
+  /// Uses [RenderBox.localToGlobal] so scroll and zoom are applied once.
+  Rect _convertToGlobalRect(Rect localRect) {
+    final renderBox =
+        _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return localRect;
+
+    final topLeft = renderBox.localToGlobal(localRect.topLeft);
+    final bottomRight = renderBox.localToGlobal(localRect.bottomRight);
+    return Rect.fromPoints(topLeft, bottomRight);
+  }
+
+  Rect? _scrollViewportGlobalRect() {
+    if (!_scrollController.hasClients) return null;
+    final scrollBox = _scrollController.position.context.storageContext
+        .findRenderObject() as RenderBox?;
+    if (scrollBox == null || !scrollBox.hasSize) return null;
+    final topLeft = scrollBox.localToGlobal(Offset.zero);
+    return topLeft &
+        Size(scrollBox.size.width, _scrollController.position.viewportDimension);
+  }
+
+  Offset _globalDeltaToCanvas(Offset globalDelta) {
+    final renderBox =
+        _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return globalDelta;
+    final origin = renderBox.globalToLocal(Offset.zero);
+    final tip = renderBox.globalToLocal(globalDelta);
+    return tip - origin;
+  }
+
+  void _startSelectionEdgeScrollTimer(double canvasZoom) {
+    _selectionEdgeScrollTimer?.cancel();
+    _selectionEdgeScrollTimer =
+        Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!_isMovingSelection || !mounted) return;
+      final pointer = _lastSelectionDragGlobal;
+      if (pointer == null) return;
+      _tickSelectionEdgeScroll(pointer, canvasZoom);
+    });
+  }
+
+  void _stopSelectionEdgeScrollTimer() {
+    _selectionEdgeScrollTimer?.cancel();
+    _selectionEdgeScrollTimer = null;
+    _lastEdgeScrollTickPointer = null;
+  }
+
+  void _tickSelectionEdgeScroll(Offset globalPointer, double canvasZoom) {
+    if (_selectionRect == null || !_scrollController.hasClients) return;
+
+    // Active drags are handled in [_handleSelectionDrag]; only auto-scroll
+    // here when the pointer has stopped moving but is still held at the edge.
+    if (_lastEdgeScrollTickPointer != globalPointer) {
+      _lastEdgeScrollTickPointer = globalPointer;
+      return;
+    }
+
+    final viewport = _scrollViewportGlobalRect();
+    if (viewport == null) return;
+
+    final globalRect = _convertToGlobalRect(_selectionRect!);
+    final scrollDelta = _edgeScrollDeltaForDrag(
+      globalPointer: globalPointer,
+      globalSelectionRect: globalRect,
+      viewport: viewport,
+      canvasDelta: Offset.zero,
+      canvasZoom: canvasZoom,
+    );
+    if (scrollDelta == 0) return;
+
+    final scroll = _scrollController;
+    final newOffset =
+        (scroll.offset + scrollDelta).clamp(0.0, scroll.position.maxScrollExtent);
+    final actualScroll = newOffset - scroll.offset;
+    if (actualScroll == 0) return;
+
+    scroll.jumpTo(newOffset);
+    _moveSelection(Offset(0, actualScroll / canvasZoom));
+  }
+
+  double _edgeScrollDeltaForDrag({
+    required Offset globalPointer,
+    required Rect globalSelectionRect,
+    required Rect viewport,
+    required Offset canvasDelta,
+    required double canvasZoom,
+  }) {
+    const margin = _selectionEdgeScrollMargin;
+    final atBottom = globalSelectionRect.bottom >= viewport.bottom - margin ||
+        globalPointer.dy >= viewport.bottom - margin;
+    final atTop = globalSelectionRect.top <= viewport.top + margin ||
+        globalPointer.dy <= viewport.top + margin;
+
+    if (atBottom && canvasDelta.dy >= 0) {
+      return canvasDelta.dy > 0
+          ? canvasDelta.dy * canvasZoom
+          : _selectionEdgeScrollMinSpeed;
+    }
+    if (atTop && canvasDelta.dy <= 0) {
+      return canvasDelta.dy < 0
+          ? canvasDelta.dy * canvasZoom
+          : -_selectionEdgeScrollMinSpeed;
+    }
+    return 0;
+  }
+
+  void _handleSelectionDrag(
+    Offset canvasDelta,
+    Offset globalPointer,
+    double canvasZoom,
+  ) {
+    _lastSelectionDragGlobal = globalPointer;
+    if (_selectionRect == null || !_scrollController.hasClients) {
+      _moveSelection(canvasDelta);
+      return;
+    }
+
+    final viewport = _scrollViewportGlobalRect();
+    if (viewport == null) {
+      _moveSelection(canvasDelta);
+      return;
+    }
+
+    final predictedGlobalRect =
+        _convertToGlobalRect(_selectionRect!.shift(canvasDelta));
+    final scrollDelta = _edgeScrollDeltaForDrag(
+      globalPointer: globalPointer,
+      globalSelectionRect: predictedGlobalRect,
+      viewport: viewport,
+      canvasDelta: canvasDelta,
+      canvasZoom: canvasZoom,
+    );
+
+    var totalCanvasDelta = canvasDelta;
+    if (scrollDelta != 0) {
+      final scroll = _scrollController;
+      final newOffset = (scroll.offset + scrollDelta)
+          .clamp(0.0, scroll.position.maxScrollExtent);
+      final actualScroll = newOffset - scroll.offset;
+      if (actualScroll != 0) {
+        scroll.jumpTo(newOffset);
+        totalCanvasDelta = Offset(
+          canvasDelta.dx,
+          canvasDelta.dy + actualScroll / canvasZoom,
+        );
+      }
+    }
+
+    _moveSelection(totalCanvasDelta);
+  }
+
   void _finishSelectionMove() {
     if (_selectionRect == null) return;
     _refreshSelectionBounds(showMenu: true);
@@ -811,18 +970,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     return bytes;
-  }
-
-  /// Convert canvas-local rect to global screen coordinates.
-  /// Uses [RenderBox.localToGlobal] so scroll and zoom are applied once.
-  Rect _convertToGlobalRect(Rect localRect) {
-    final renderBox =
-        _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.hasSize) return localRect;
-
-    final topLeft = renderBox.localToGlobal(localRect.topLeft);
-    final bottomRight = renderBox.localToGlobal(localRect.bottomRight);
-    return Rect.fromPoints(topLeft, bottomRight);
   }
 
   void _showSmeltPopup(Rect selectionRect) {
@@ -1235,6 +1382,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             scrollController: _scrollController,
             zoomLevel: canvasZoom,
             onZoomChanged: (v) => ref.read(canvasZoomProvider.notifier).state = v,
+            suppressTouchScroll: _isMovingSelection,
           ),
           // Soft paper grain — cached 64×64 tile, one drawRect, IgnorePointer
           const Positioned.fill(
@@ -1294,13 +1442,38 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 Positioned.fromRect(
                   rect: _selectionRect!,
                   child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanStart: (_) {
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (details) {
                       _hideSelectionMenu();
                       _hidePasteMenu();
+                      _lastSelectionDragGlobal = details.globalPosition;
+                      _lastEdgeScrollTickPointer = null;
+                      setState(() => _isMovingSelection = true);
+                      _startSelectionEdgeScrollTimer(canvasZoom);
                     },
-                    onPanUpdate: (details) => _moveSelection(details.delta),
-                    onPanEnd: (_) => _finishSelectionMove(),
+                    onPanUpdate: (details) {
+                      final prevGlobal =
+                          _lastSelectionDragGlobal ?? details.globalPosition;
+                      final globalDelta =
+                          details.globalPosition - prevGlobal;
+                      final canvasDelta = _globalDeltaToCanvas(globalDelta);
+                      _handleSelectionDrag(
+                        canvasDelta,
+                        details.globalPosition,
+                        canvasZoom,
+                      );
+                    },
+                    onPanEnd: (_) {
+                      _stopSelectionEdgeScrollTimer();
+                      _lastSelectionDragGlobal = null;
+                      _finishSelectionMove();
+                      setState(() => _isMovingSelection = false);
+                    },
+                    onPanCancel: () {
+                      _stopSelectionEdgeScrollTimer();
+                      _lastSelectionDragGlobal = null;
+                      setState(() => _isMovingSelection = false);
+                    },
                     child: const SizedBox.expand(),
                   ),
                 ),

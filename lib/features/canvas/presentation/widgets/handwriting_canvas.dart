@@ -52,12 +52,14 @@ class HandwritingCanvas extends ConsumerStatefulWidget {
   final ScrollController scrollController;
   final double zoomLevel;
   final ValueChanged<double> onZoomChanged;
+  final bool suppressTouchScroll;
 
   const HandwritingCanvas({
     super.key,
     required this.scrollController,
     required this.zoomLevel,
     required this.onZoomChanged,
+    this.suppressTouchScroll = false,
   });
 
   @override
@@ -299,7 +301,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         final newZoom = _pinchInitialZoom! * (currentDistance / _pinchInitialDistance!);
         widget.onZoomChanged(newZoom.clamp(0.5, 3.0));
       }
-    } else if (previous != null && widget.scrollController.hasClients) {
+    } else if (previous != null &&
+        !widget.suppressTouchScroll &&
+        widget.scrollController.hasClients) {
       // Only scroll manually in pen mode — in touch mode the
       // ScrollView's AlwaysScrollableScrollPhysics handles it.
       if (ref.read(isPenModeActiveProvider)) {

@@ -171,6 +171,16 @@ bool _shouldMerge(_StrokeInfo a, _StrokeInfo b, double unit) {
     return true;
   }
 
+  // Diagonal bridge for continuous writing: a raised mark (e.g. ²) may sit
+  // too high for the center-Y check and leave a small gap before the next
+  // baseline stroke (+), so neither rule above fires. Only apply while the
+  // strokes were written close in time so older nearby ink stays separate.
+  if (timeGapMs <= 2000 &&
+      horizontalGap <= threshold &&
+      verticalGap <= 0.45 * unit) {
+    return true;
+  }
+
   return false;
 }
 

@@ -1394,11 +1394,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           ),
           // Empty-sheet affordance
           if (strokes.isEmpty)
-            const Positioned(
+            Positioned(
               top: 80,
               left: 0,
               right: 0,
-              child: _FreshScrapHint(),
+              child: _FreshScrapHint(
+                ephemeral: ref
+                    .watch(ephemeralNoteIdsProvider)
+                    .contains(ref.watch(activeNoteIdProvider)),
+              ),
             ),
           // Transparent text annotations — tap to edit, drag to move
           ...ref.watch(canvasTextNodesProvider)
@@ -2141,7 +2145,9 @@ class _PaperChit extends StatelessWidget {
 }
 
 class _FreshScrapHint extends StatefulWidget {
-  const _FreshScrapHint();
+  final bool ephemeral;
+
+  const _FreshScrapHint({this.ephemeral = false});
 
   @override
   State<_FreshScrapHint> createState() => _FreshScrapHintState();
@@ -2168,10 +2174,17 @@ class _FreshScrapHintState extends State<_FreshScrapHint> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const ScrapStampLabel(text: '⟨ fresh scrap ⟩'),
+            ScrapStampLabel(
+              text: widget.ephemeral
+                  ? '⟨ loose scrap ⟩'
+                  : '⟨ fresh scrap ⟩',
+              color: widget.ephemeral ? ScrapTheme.mutedText : null,
+            ),
             const SizedBox(height: 10),
             Text(
-              'scribble anything — Smelt figures it out',
+              widget.ephemeral
+                  ? 'scribble freely — this sheet won\'t be filed'
+                  : 'scribble anything — Smelt figures it out',
               textAlign: TextAlign.center,
               style: ScrapTextStyles.stamp.copyWith(
                 fontSize: 11,

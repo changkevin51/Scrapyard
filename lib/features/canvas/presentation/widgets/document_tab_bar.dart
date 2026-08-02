@@ -21,6 +21,7 @@ class DocumentTabBar extends ConsumerWidget {
     final tabs     = ref.watch(openedTabsProvider);
     final activeId = ref.watch(activeTabIdProvider);
     final groups   = ref.watch(tabGroupsProvider);
+    final ephemeralIds = ref.watch(ephemeralNoteIdsProvider);
 
     if (tabs.isEmpty) return const SizedBox.shrink();
 
@@ -44,16 +45,22 @@ class DocumentTabBar extends ConsumerWidget {
               itemBuilder: (ctx, i) {
                 final tab      = tabs[i];
                 final isActive = tab.id == activeId;
+                final isEphemeral = ephemeralIds.contains(tab.id);
                 final group    = groups.firstWhereOrNull((g) => g.id == tab.groupId);
                 return _TabChip(
                   tab: tab,
                   isActive: isActive,
+                  isEphemeral: isEphemeral,
                   groupName: group?.name,
                   onTap: () {
                     ref.read(activeTabIdProvider.notifier).state = tab.id;
                     ref.read(activeNoteIdProvider.notifier).state = tab.id;
                   },
                   onClose: () {
+                    if (isEphemeral) {
+                      discardEphemeralNote(ref, tab.id);
+                      return;
+                    }
                     final updated = tabs.where((t) => t.id != tab.id).toList();
                     ref.read(openedTabsProvider.notifier).state = updated;
                     if (activeId == tab.id) {
@@ -110,6 +117,7 @@ class DocumentTabBar extends ConsumerWidget {
 class _TabChip extends StatelessWidget {
   final OpenedTab tab;
   final bool isActive;
+  final bool isEphemeral;
   final String? groupName;
   final VoidCallback onTap;
   final VoidCallback onClose;
@@ -118,6 +126,7 @@ class _TabChip extends StatelessWidget {
   const _TabChip({
     required this.tab,
     required this.isActive,
+    required this.isEphemeral,
     required this.onTap,
     required this.onClose,
     required this.onLongPress,
@@ -126,17 +135,31 @@ class _TabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        margin: EdgeInsets.only(right: 4, top: isActive ? 0 : 3),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-        decoration: BoxDecoration(
-          color: isActive ? ScrapTheme.cardSurface : ScrapTheme.codeSurface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-          border: Border(
+    final borderStyle = isEphemeral
+        ? Border(
+            top: BorderSide(
+              color: isActive
+                  ? tab.accent.withValues(alpha: 0.7)
+                  : ScrapTheme.dividers,
+              width: isActive ? 2 : 1,
+              style: BorderStyle.solid,
+            ),
+            left: BorderSide(
+              color: ScrapTheme.dividers.withValues(alpha: 0.85),
+              width: 0.5,
+            ),
+            right: BorderSide(
+              color: ScrapTheme.dividers.withValues(alpha: 0.85),
+              width: 0.5,
+            ),
+            bottom: isActive
+                ? BorderSide.none
+                : BorderSide(
+                    color: ScrapTheme.dividers.withValues(alpha: 0.85),
+                    width: 0.5,
+                  ),
+          )
+        : Border(
             top: BorderSide(
               color: isActive ? tab.accent : ScrapTheme.dividers,
               width: isActive ? 3 : 1,
@@ -147,11 +170,39 @@ class _TabChip extends StatelessWidget {
             bottom: isActive
                 ? BorderSide.none
                 : const BorderSide(color: ScrapTheme.dividers, width: 0.5),
-          ),
+          );
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: EdgeInsets.only(right: 4, top: isActive ? 0 : 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        decoration: BoxDecoration(
+          color: isActive
+              ? (isEphemeral
+                  ? ScrapTheme.codeSurface
+                  : ScrapTheme.cardSurface)
+              : ScrapTheme.codeSurface.withValues(
+                  alpha: isEphemeral ? 0.65 : 1,
+                ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          border: borderStyle,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (isEphemeral) ...[
+              Text(
+                '~',
+                style: ScrapTextStyles.stamp.copyWith(
+                  fontSize: 11,
+                  color: ScrapTheme.mutedText,
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 100),
               child: Text(
@@ -159,12 +210,20 @@ class _TabChip extends StatelessWidget {
                 style: isActive
                     ? ScrapTextStyles.body.copyWith(
                         fontSize: 12,
-                        color: ScrapTheme.primaryText,
+                        color: isEphemeral
+                            ? ScrapTheme.secondaryText
+                            : ScrapTheme.primaryText,
                         fontWeight: FontWeight.w600,
+                        fontStyle: isEphemeral
+                            ? FontStyle.italic
+                            : FontStyle.normal,
                       )
                     : ScrapTextStyles.stamp.copyWith(
                         fontSize: 10,
                         color: ScrapTheme.secondaryText,
+                        fontStyle: isEphemeral
+                            ? FontStyle.italic
+                            : FontStyle.normal,
                       ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
@@ -207,6 +266,9 @@ class _TabMenuSheet extends ConsumerStatefulWidget {
 class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
   @override
   Widget build(BuildContext context) {
+    final isEphemeral =
+        ref.watch(ephemeralNoteIdsProvider).contains(widget.tab.id);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
       child: Column(
@@ -237,12 +299,29 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
             Navigator.pop(context);
             _groupDialog(context);
           }),
-          _MenuItem(icon: Icons.close, label: 'Close this tab', onTap: () {
-            final updated = widget.tabs.where((t) => t.id != widget.tab.id).toList();
-            ref.read(openedTabsProvider.notifier).state = updated;
-            Navigator.pop(context);
-          }),
+          if (isEphemeral)
+            _MenuItem(
+              icon: Icons.delete_outline,
+              label: 'Crush loose scrap',
+              onTap: () {
+                discardEphemeralNote(ref, widget.tab.id);
+                Navigator.pop(context);
+              },
+            )
+          else
+            _MenuItem(icon: Icons.close, label: 'Close this tab', onTap: () {
+              final updated = widget.tabs.where((t) => t.id != widget.tab.id).toList();
+              ref.read(openedTabsProvider.notifier).state = updated;
+              Navigator.pop(context);
+            }),
           _MenuItem(icon: Icons.close_fullscreen_outlined, label: 'Close all other tabs', onTap: () {
+            // Crush other loose scraps when keeping this tab alone.
+            final ephemeral = ref.read(ephemeralNoteIdsProvider);
+            for (final t in widget.tabs) {
+              if (t.id != widget.tab.id && ephemeral.contains(t.id)) {
+                discardEphemeralNote(ref, t.id);
+              }
+            }
             ref.read(openedTabsProvider.notifier).state = [widget.tab];
             ref.read(activeTabIdProvider.notifier).state = widget.tab.id;
             Navigator.pop(context);

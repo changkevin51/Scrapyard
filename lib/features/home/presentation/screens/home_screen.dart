@@ -109,6 +109,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     openNoteTab(ref, node.id, node.title);
     context.push('/note_editor').then((_) {
       invalidateNoteThumbnail(ref, node.id);
+      discardAllEphemeralNotes(ref);
+    });
+  }
+
+  void _openLooseScrap() {
+    ScrapFeedback.action();
+    final id = 'loose-${DateTime.now().microsecondsSinceEpoch}';
+    openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
+    context.push('/note_editor').then((_) {
+      final hadLoose = ref.read(ephemeralNoteIdsProvider).isNotEmpty;
+      discardAllEphemeralNotes(ref);
+      if (hadLoose && mounted) {
+        showPaperToast(context, 'Loose scrap drifted off');
+      }
     });
   }
 
@@ -230,6 +244,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         scale: 0.96,
                         onTap: () {
                           ScrapFeedback.tap();
+                          _openLooseScrap();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text(
+                            '~  Loose scrap',
+                            style: ScrapTextStyles.body.copyWith(
+                              color: ScrapTheme.mutedText,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      ScrapPressable(
+                        scale: 0.96,
+                        onTap: () {
+                          ScrapFeedback.tap();
                           ref
                               .read(currentHomeNodesProvider.notifier)
                               .importDocument();
@@ -259,193 +290,201 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               color: ScrapTheme.background,
               child: Padding(
                 padding: const EdgeInsets.all(48.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                child: CustomScrollView(
+                  slivers: [
                     if (showBanner) ...[
-                      _ApiKeyBanner(
-                        onSetup: _openApiKeyDialog,
-                        onDismiss: () =>
-                            setState(() => _bannerDismissed = true),
+                      SliverToBoxAdapter(
+                        child: _ApiKeyBanner(
+                          onSetup: _openApiKeyDialog,
+                          onDismiss: () =>
+                              setState(() => _bannerDismissed = true),
+                        ),
                       ),
-                      const SizedBox(height: 24),
+                      const SliverToBoxAdapter(child: SizedBox(height: 24)),
                     ],
-
-                    _NewScrapButton(onTap: _createAndOpenScrap),
-                    const SizedBox(height: 40),
+                    SliverToBoxAdapter(
+                      child: _NewScrapButton(
+                        onTap: _createAndOpenScrap,
+                        onLooseTap: _openLooseScrap,
+                      ),
+                    ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 40)),
 
                     // Breadcrumb Navigation
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: AnimatedSlide(
-                            duration: ScrapMotion.panel,
-                            curve: ScrapMotion.panelCurve,
-                            offset: currentFolder == 'root'
-                                ? const Offset(-0.35, 0)
-                                : Offset.zero,
-                            child: AnimatedOpacity(
+                    SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: AnimatedSlide(
                               duration: ScrapMotion.panel,
                               curve: ScrapMotion.panelCurve,
-                              opacity: currentFolder == 'root' ? 0.0 : 1.0,
-                              child: IgnorePointer(
-                                ignoring: currentFolder == 'root',
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  icon: const Icon(
-                                    Icons.arrow_back,
-                                    color: ScrapTheme.primaryText,
+                              offset: currentFolder == 'root'
+                                  ? const Offset(-0.35, 0)
+                                  : Offset.zero,
+                              child: AnimatedOpacity(
+                                duration: ScrapMotion.panel,
+                                curve: ScrapMotion.panelCurve,
+                                opacity:
+                                    currentFolder == 'root' ? 0.0 : 1.0,
+                                child: IgnorePointer(
+                                  ignoring: currentFolder == 'root',
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(
+                                      Icons.arrow_back,
+                                      color: ScrapTheme.primaryText,
+                                    ),
+                                    onPressed: () {
+                                      final path =
+                                          ref.read(folderPathProvider);
+                                      if (path.length > 1) {
+                                        ref
+                                            .read(currentFolderIdProvider
+                                                .notifier)
+                                            .state = path[path.length - 2].id;
+                                        ref
+                                            .read(folderPathProvider.notifier)
+                                            .state = path.sublist(
+                                                0, path.length - 1);
+                                      } else {
+                                        ref
+                                            .read(currentFolderIdProvider
+                                                .notifier)
+                                            .state = 'root';
+                                        ref
+                                            .read(folderPathProvider.notifier)
+                                            .state = [];
+                                      }
+                                    },
                                   ),
-                                  onPressed: () {
-                                    final path = ref.read(folderPathProvider);
-                                    if (path.length > 1) {
-                                      ref
-                                          .read(currentFolderIdProvider
-                                              .notifier)
-                                          .state = path[path.length - 2].id;
-                                      ref
-                                          .read(folderPathProvider.notifier)
-                                          .state = path.sublist(
-                                              0, path.length - 1);
-                                    } else {
-                                      ref
-                                          .read(currentFolderIdProvider
-                                              .notifier)
-                                          .state = 'root';
-                                      ref
-                                          .read(folderPathProvider.notifier)
-                                          .state = [];
-                                    }
-                                  },
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: ScrapMotion.panel,
-                            switchInCurve: ScrapMotion.panelCurve,
-                            switchOutCurve: ScrapMotion.panelCurve,
-                            layoutBuilder: (currentChild, previousChildren) {
-                              return Stack(
-                                alignment: Alignment.centerLeft,
-                                children: [
-                                  ...previousChildren,
-                                  if (currentChild != null) currentChild,
-                                ],
-                              );
-                            },
-                            transitionBuilder: (child, animation) {
-                              final fade = CurvedAnimation(
-                                parent: animation,
-                                curve: const Interval(0.45, 1.0),
-                              );
-                              return FadeTransition(
-                                opacity: fade,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, 0.12),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Text(
-                              currentFolder == 'root'
-                                  ? 'All Files'
-                                  : folderPath.last.title,
-                              key: ValueKey(currentFolder),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: ScrapTextStyles.heading
-                                  .copyWith(fontSize: 24),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: AnimatedSwitcher(
+                              duration: ScrapMotion.panel,
+                              switchInCurve: ScrapMotion.panelCurve,
+                              switchOutCurve: ScrapMotion.panelCurve,
+                              layoutBuilder:
+                                  (currentChild, previousChildren) {
+                                return Stack(
+                                  alignment: Alignment.centerLeft,
+                                  children: [
+                                    ...previousChildren,
+                                    if (currentChild != null) currentChild,
+                                  ],
+                                );
+                              },
+                              transitionBuilder: (child, animation) {
+                                final fade = CurvedAnimation(
+                                  parent: animation,
+                                  curve: const Interval(0.45, 1.0),
+                                );
+                                return FadeTransition(
+                                  opacity: fade,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.12),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                currentFolder == 'root'
+                                    ? 'All Files'
+                                    : folderPath.last.title,
+                                key: ValueKey(currentFolder),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ScrapTextStyles.heading
+                                    .copyWith(fontSize: 24),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 32),
+                    const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
                     // Grid View of Nodes — remount on folder change so
                     // cards get a brief staggered scrap entrance.
-                    Expanded(
-                      child: KeyedSubtree(
-                        key: ValueKey(currentFolder),
-                        child: AnimatedSwitcher(
-                          duration: ScrapMotion.fast,
-                          switchInCurve: ScrapMotion.panelCurve,
-                          switchOutCurve: ScrapMotion.exitCurve,
-                          transitionBuilder: (child, animation) {
-                            // Fade only leaf states (spinner / empty / error).
-                            // Grid entrance is transform-only via ScrapCardEntrance.
-                            if (child.key == const ValueKey('grid')) {
-                              return child;
-                            }
-                            return FadeTransition(
-                              opacity: animation,
-                              child: child,
-                            );
-                          },
-                          child: nodesAsync.when(
-                            loading: () => const Center(
-                              key: ValueKey('loading'),
-                              child: PaperDots(),
-                            ),
-                            error: (err, stack) => Center(
-                              key: const ValueKey('error'),
-                              child: Text('Error: $err'),
-                            ),
-                            data: (nodes) {
-                              if (nodes.isEmpty) {
-                                return Center(
-                                  key: const ValueKey('empty'),
+                    ...nodesAsync.when(
+                      loading: () => [
+                        const SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: 240,
+                            child: Center(child: PaperDots()),
+                          ),
+                        ),
+                      ],
+                      error: (err, stack) => [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 48),
+                            child: Center(child: Text('Error: $err')),
+                          ),
+                        ),
+                      ],
+                      data: (nodes) {
+                        if (nodes.isEmpty) {
+                          return [
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 48),
+                                child: Center(
                                   child: Text(
                                     'Empty folder. Grab a scrap above, or import a doc.',
                                     style: ScrapTextStyles.caption.copyWith(
                                       color: ScrapTheme.mutedText,
                                     ),
                                   ),
-                                );
-                              }
-
-                              return GridView.builder(
-                                key: const ValueKey('grid'),
-                                cacheExtent: 800,
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 3,
-                                  crossAxisSpacing: 32,
-                                  mainAxisSpacing: 32,
-                                  childAspectRatio: 1.1,
                                 ),
-                                itemCount: nodes.length,
-                                itemBuilder: (context, index) {
-                                  final node = nodes[index];
-                                  return ScrapCardEntrance(
-                                    index: index,
-                                    stagger:
-                                        const Duration(milliseconds: 28),
-                                    child: RepaintBoundary(
-                                      child: ScrapTilt(
-                                        key: ValueKey(node.id),
-                                        seed: node.id.hashCode,
-                                        child: _buildNodeCard(
-                                            context, ref, node),
-                                      ),
+                              ),
+                            ),
+                          ];
+                        }
+
+                        return [
+                          SliverGrid(
+                            key: ValueKey(currentFolder),
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 3,
+                              crossAxisSpacing: 32,
+                              mainAxisSpacing: 32,
+                              childAspectRatio: 1.1,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final node = nodes[index];
+                                return ScrapCardEntrance(
+                                  index: index,
+                                  stagger:
+                                      const Duration(milliseconds: 28),
+                                  child: RepaintBoundary(
+                                    child: ScrapTilt(
+                                      key: ValueKey(node.id),
+                                      seed: node.id.hashCode,
+                                      child: _buildNodeCard(
+                                          context, ref, node),
                                     ),
-                                  );
-                                },
-                              );
-                            },
+                                  ),
+                                );
+                              },
+                              childCount: nodes.length,
+                            ),
                           ),
-                        ),
-                      ),
+                        ];
+                      },
                     ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 16)),
                   ],
                 ),
               ),
@@ -480,6 +519,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           openNoteTab(ref, node.id, node.title);
           context.push('/note_editor').then((_) {
             invalidateNoteThumbnail(ref, node.id);
+            discardAllEphemeralNotes(ref);
           });
         }
       },
@@ -768,6 +808,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (node.type == NodeType.note) {
       final tabs = ref.read(openedTabsProvider);
       if (tabs.any((t) => t.id == node.id)) {
+        final ephemeral = ref.read(ephemeralNoteIdsProvider);
         ref.read(openedTabsProvider.notifier).state = tabs
             .map(
               (t) => t.id == node.id
@@ -776,6 +817,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       title: trimmed,
                       accent: t.accent,
                       groupId: t.groupId,
+                      isEphemeral: ephemeral.contains(t.id),
                     )
                   : t,
             )
@@ -1017,8 +1059,12 @@ class _PileStackGraphic extends StatelessWidget {
 
 class _NewScrapButton extends StatefulWidget {
   final VoidCallback onTap;
+  final VoidCallback onLooseTap;
 
-  const _NewScrapButton({required this.onTap});
+  const _NewScrapButton({
+    required this.onTap,
+    required this.onLooseTap,
+  });
 
   @override
   State<_NewScrapButton> createState() => _NewScrapButtonState();
@@ -1027,162 +1073,361 @@ class _NewScrapButton extends StatefulWidget {
 class _NewScrapButtonState extends State<_NewScrapButton> {
   bool _hovered = false;
   bool _pressed = false;
+  bool _looseHovered = false;
+  bool _loosePressed = false;
 
   @override
   Widget build(BuildContext context) {
     final lift = _pressed ? 0.0 : (_hovered ? -2.0 : 0.0);
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() {
-        _hovered = false;
-        _pressed = false;
-      }),
-      child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: ScrapMotion.press,
-          curve: Curves.easeOut,
-          transform: Matrix4.translationValues(0, lift, 0),
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
-          decoration: BoxDecoration(
-            color: _hovered
-                ? const Color(0xFFFAF8F5)
-                : ScrapTheme.cardSurface,
-            borderRadius:
-                BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-            border: Border.all(
-              color: _hovered
-                  ? ScrapTheme.accent.withValues(alpha: 0.35)
-                  : ScrapTheme.dividers,
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Color(_hovered ? 0x0C000000 : 0x06000000),
-                offset: Offset(0, _hovered ? 8 : 4),
-                blurRadius: _hovered ? 20 : 12,
-              ),
-            ],
+    return AnimatedContainer(
+      duration: ScrapMotion.press,
+      curve: Curves.easeOut,
+      transform: Matrix4.translationValues(0, lift, 0),
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _hovered
+            ? const Color(0xFFFAF8F5)
+            : ScrapTheme.cardSurface,
+        borderRadius:
+            BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        border: Border.all(
+          color: _hovered
+              ? ScrapTheme.accent.withValues(alpha: 0.35)
+              : ScrapTheme.dividers,
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Color(_hovered ? 0x0C000000 : 0x06000000),
+            offset: Offset(0, _hovered ? 8 : 4),
+            blurRadius: _hovered ? 20 : 12,
           ),
-          child: Row(
-            children: [
-              // Blank scrap glyph
-              SizedBox(
-                width: 56,
-                height: 68,
-                child: Stack(
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Primary: filed scrap
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() {
+              _hovered = false;
+              _pressed = false;
+            }),
+            child: GestureDetector(
+              onTapDown: (_) => setState(() => _pressed = true),
+              onTapUp: (_) => setState(() => _pressed = false),
+              onTapCancel: () => setState(() => _pressed = false),
+              onTap: widget.onTap,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+                child: Row(
                   children: [
-                    Positioned(
-                      left: 6,
-                      top: 4,
-                      child: Transform.rotate(
-                        angle: 0.06,
-                        child: Container(
-                          width: 44,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: ScrapTheme.dividers,
-                            borderRadius: BorderRadius.circular(
-                              ScrapTheme.borderRadiusSmall,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: Transform.rotate(
-                        angle: -0.03,
-                        child: Container(
-                          width: 44,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: ScrapTheme.background,
-                            borderRadius: BorderRadius.circular(
-                              ScrapTheme.borderRadiusSmall,
-                            ),
-                            border: Border.all(
-                              color: ScrapTheme.accent.withValues(alpha: 0.25),
-                              width: 1,
-                            ),
-                          ),
-                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-                          child: Column(
-                            children: [
-                              Container(
-                                height: 2,
-                                color: ScrapTheme.notebookLines,
-                              ),
-                              const SizedBox(height: 6),
-                              Container(
-                                height: 2,
-                                color: ScrapTheme.notebookLines,
-                              ),
-                              const SizedBox(height: 6),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  width: 16,
-                                  height: 2,
-                                  color: ScrapTheme.notebookLines,
+                    // Blank scrap glyph
+                    SizedBox(
+                      width: 56,
+                      height: 68,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 6,
+                            top: 4,
+                            child: Transform.rotate(
+                              angle: 0.06,
+                              child: Container(
+                                width: 44,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: ScrapTheme.dividers,
+                                  borderRadius: BorderRadius.circular(
+                                    ScrapTheme.borderRadiusSmall,
+                                  ),
                                 ),
                               ),
-                            ],
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            child: Transform.rotate(
+                              angle: -0.03,
+                              child: Container(
+                                width: 44,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: ScrapTheme.background,
+                                  borderRadius: BorderRadius.circular(
+                                    ScrapTheme.borderRadiusSmall,
+                                  ),
+                                  border: Border.all(
+                                    color: ScrapTheme.accent
+                                        .withValues(alpha: 0.25),
+                                    width: 1,
+                                  ),
+                                ),
+                                padding:
+                                    const EdgeInsets.fromLTRB(8, 12, 8, 8),
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      height: 2,
+                                      color: ScrapTheme.notebookLines,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Container(
+                                      height: 2,
+                                      color: ScrapTheme.notebookLines,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Container(
+                                        width: 16,
+                                        height: 2,
+                                        color: ScrapTheme.notebookLines,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 28),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const ScrapStampLabel(
+                            text: '⟨ Fresh sheet ⟩',
+                            color: ScrapTheme.accent,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'New Scrap',
+                            style: ScrapTextStyles.heading.copyWith(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Grab a blank scrap and start scribbling',
+                            style: ScrapTextStyles.caption.copyWith(
+                              color: ScrapTheme.mutedText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '+',
+                      style: ScrapTextStyles.heading.copyWith(
+                        fontSize: 36,
+                        color: ScrapTheme.accent.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Perforation — tear-off edge for a loose scrap
+          const _PerforationDivider(),
+
+          // Secondary: ephemeral loose scrap
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _looseHovered = true),
+            onExit: (_) => setState(() {
+              _looseHovered = false;
+              _loosePressed = false;
+            }),
+            child: GestureDetector(
+              onTapDown: (_) => setState(() => _loosePressed = true),
+              onTapUp: (_) => setState(() => _loosePressed = false),
+              onTapCancel: () => setState(() => _loosePressed = false),
+              onTap: widget.onLooseTap,
+              child: AnimatedContainer(
+                duration: ScrapMotion.press,
+                curve: Curves.easeOut,
+                padding: const EdgeInsets.fromLTRB(32, 14, 28, 16),
+                decoration: BoxDecoration(
+                  color: _loosePressed
+                      ? ScrapTheme.pressedSurface
+                      : (_looseHovered
+                          ? ScrapTheme.kraft.withValues(alpha: 0.28)
+                          : ScrapTheme.codeSurface.withValues(alpha: 0.55)),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(ScrapTheme.borderRadiusDefault - 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    // Slightly askew torn scrap glyph
+                    Transform.rotate(
+                      angle: -0.08,
+                      child: CustomPaint(
+                        size: const Size(22, 28),
+                        painter: _LooseScrapGlyphPainter(
+                          ink: ScrapTheme.mutedText.withValues(
+                            alpha: _looseHovered ? 0.85 : 0.55,
                           ),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 28),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const ScrapStampLabel(
-                      text: '⟨ Fresh sheet ⟩',
-                      color: ScrapTheme.accent,
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const ScrapStampLabel(
+                            text: '⟨ won\'t be filed ⟩',
+                            color: ScrapTheme.mutedText,
+                            tiltDegrees: 1.5,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Loose scrap',
+                            style: ScrapTextStyles.body.copyWith(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: ScrapTheme.secondaryText,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Scribble freely — vanishes when you leave',
+                            style: ScrapTextStyles.caption.copyWith(
+                              fontSize: 12,
+                              color: ScrapTheme.mutedText,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 6),
                     Text(
-                      'New Scrap',
+                      '~',
                       style: ScrapTextStyles.heading.copyWith(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Grab a blank scrap and start scribbling',
-                      style: ScrapTextStyles.caption.copyWith(
-                        color: ScrapTheme.mutedText,
+                        fontSize: 26,
+                        color: ScrapTheme.mutedText.withValues(
+                          alpha: _looseHovered ? 0.85 : 0.55,
+                        ),
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
                 ),
               ),
-              Text(
-                '+',
-                style: ScrapTextStyles.heading.copyWith(
-                  fontSize: 36,
-                  color: ScrapTheme.accent.withValues(alpha: 0.7),
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+/// Dashed tear-line between the filed scrap and the loose tear-off.
+class _PerforationDivider extends StatelessWidget {
+  const _PerforationDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 12,
+      child: CustomPaint(
+        painter: _PerforationPainter(),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _PerforationPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = ScrapTheme.kraft.withValues(alpha: 0.9)
+      ..strokeWidth = 1.25
+      ..strokeCap = StrokeCap.round;
+
+    const dash = 3.0;
+    const gap = 4.5;
+    final y = size.height / 2;
+    var x = 20.0;
+    while (x < size.width - 20) {
+      canvas.drawLine(Offset(x, y), Offset(x + dash, y), paint);
+      x += dash + gap;
+    }
+
+    // Punch holes along the tear
+    final hole = Paint()..color = ScrapTheme.dividers;
+    x = 28.0;
+    while (x < size.width - 28) {
+      canvas.drawCircle(Offset(x, y), 1.4, hole);
+      x += 18;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _LooseScrapGlyphPainter extends CustomPainter {
+  final Color ink;
+
+  _LooseScrapGlyphPainter({required this.ink});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(2, 1)
+      ..lineTo(size.width - 1, 2)
+      ..lineTo(size.width - 3, size.height - 1)
+      ..lineTo(1, size.height - 3)
+      ..close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = ScrapTheme.background
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = ink
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1,
+    );
+
+    // Short scribble lines
+    final line = Paint()
+      ..color = ink.withValues(alpha: 0.45)
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(5, size.height * 0.35),
+      Offset(size.width - 6, size.height * 0.38),
+      line,
+    );
+    canvas.drawLine(
+      Offset(5, size.height * 0.55),
+      Offset(size.width - 9, size.height * 0.52),
+      line,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LooseScrapGlyphPainter oldDelegate) =>
+      oldDelegate.ink != ink;
 }
 
 class _ApiKeyBanner extends StatelessWidget {

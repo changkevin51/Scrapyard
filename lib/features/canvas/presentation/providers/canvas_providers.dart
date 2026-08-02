@@ -44,11 +44,14 @@ final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 class StrokesNotifier extends StateNotifier<List<Stroke>> {
   final StrokeRepository _repository;
   final String _noteId;
+  final bool _ephemeral;
   final List<List<Stroke>> _undoStack = [];
   final List<List<Stroke>> _redoStack = [];
 
-  StrokesNotifier(this._repository, this._noteId) : super([]) {
-    _loadStrokes();
+  StrokesNotifier(this._repository, this._noteId, {bool ephemeral = false})
+      : _ephemeral = ephemeral,
+        super([]) {
+    if (!_ephemeral) _loadStrokes();
   }
 
   Future<void> _loadStrokes() async {
@@ -65,8 +68,10 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
 
     state = [...state, stroke];
     
-    // Incrementally save
-    _repository.saveStrokes(_noteId, [stroke]);
+    // Loose scraps stay in memory only — never filed to disk.
+    if (!_ephemeral) {
+      _repository.saveStrokes(_noteId, [stroke]);
+    }
   }
 
   void undo() {
@@ -102,7 +107,9 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
       return replacement.isNotEmpty ? replacement.first : stroke;
     }).toList();
 
-    _repository.updateStrokes(_noteId, updatedStrokes);
+    if (!_ephemeral) {
+      _repository.updateStrokes(_noteId, updatedStrokes);
+    }
   }
 
   void deleteStrokes(List<String> ids) {
@@ -110,16 +117,25 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
 
     _undoStack.add(List.from(state));
     state = state.where((stroke) => !ids.contains(stroke.id)).toList();
-    _repository.deleteStrokes(ids);
+    if (!_ephemeral) {
+      _repository.deleteStrokes(ids);
+    }
   }
 }
 
 final activeNoteIdProvider = StateProvider<String>((ref) => 'mock-note-id');
 
+/// Note ids that exist only in memory — discarded when the editor closes.
+final ephemeralNoteIdsProvider = StateProvider<Set<String>>((ref) => {});
+
 final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
-  return StrokesNotifier(repo, noteId);
+  // Read (don't watch) so tab cleanup of other scraps won't wipe this canvas.
+  // Callers must register the id in [ephemeralNoteIdsProvider] before flipping
+  // [activeNoteIdProvider].
+  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  return StrokesNotifier(repo, noteId, ephemeral: ephemeral);
 });
 
 final isPenModeActiveProvider = StateProvider<bool>((ref) => true);
@@ -138,16 +154,24 @@ class OpenedTab {
   final String title;
   final Color accent;
   final String? groupId;
+  final bool isEphemeral;
 
   const OpenedTab({
     required this.id,
     required this.title,
     this.accent = const Color(0xFF6B4C3B),
     this.groupId,
+    this.isEphemeral = false,
   });
 
-  OpenedTab copyWith({String? groupId}) =>
-      OpenedTab(id: id, title: title, accent: accent, groupId: groupId ?? this.groupId);
+  OpenedTab copyWith({String? groupId, bool? isEphemeral, String? title}) =>
+      OpenedTab(
+        id: id,
+        title: title ?? this.title,
+        accent: accent,
+        groupId: groupId ?? this.groupId,
+        isEphemeral: isEphemeral ?? this.isEphemeral,
+      );
 }
 
 class TabGroup {
@@ -161,7 +185,13 @@ final activeTabIdProvider   = StateProvider<String?>((ref) => null);
 final tabGroupsProvider     = StateProvider<List<TabGroup>>((ref) => []);
 
 /// Utility to open a note tab from anywhere in the app.
-void openNoteTab(WidgetRef ref, String id, String title, {Color? accent}) {
+void openNoteTab(
+  WidgetRef ref,
+  String id,
+  String title, {
+  Color? accent,
+  bool ephemeral = false,
+}) {
   final tabs = ref.read(openedTabsProvider);
   if (!tabs.any((t) => t.id == id)) {
     // Pick a consistent color from the palette based on the id hashCode
@@ -169,10 +199,58 @@ void openNoteTab(WidgetRef ref, String id, String title, {Color? accent}) {
       Color(0xFF6B4C3B), Color(0xFF7A9BB5), Color(0xFF8BAF7A),
       Color(0xFFB58590), Color(0xFF9A9590), Color(0xFF7B6B9B),
     ];
-    final color = accent ?? palette[id.hashCode.abs() % palette.length];
-    ref.read(openedTabsProvider.notifier).state =
-        [...tabs, OpenedTab(id: id, title: title, accent: color)];
+    // Soft pencil grey for loose scraps — reads as "not filed"
+    final color = ephemeral
+        ? const Color(0xFF9A9590)
+        : (accent ?? palette[id.hashCode.abs() % palette.length]);
+    ref.read(openedTabsProvider.notifier).state = [
+      ...tabs,
+      OpenedTab(id: id, title: title, accent: color, isEphemeral: ephemeral),
+    ];
+  }
+  if (ephemeral) {
+    ref.read(ephemeralNoteIdsProvider.notifier).update((ids) => {...ids, id});
   }
   ref.read(activeTabIdProvider.notifier).state = id;
   ref.read(activeNoteIdProvider.notifier).state = id;
+}
+
+/// Drop a single loose scrap from memory (tab + ephemeral set).
+void discardEphemeralNote(WidgetRef ref, String id) {
+  final tabs = ref.read(openedTabsProvider).where((t) => t.id != id).toList();
+  ref.read(openedTabsProvider.notifier).state = tabs;
+  ref.read(ephemeralNoteIdsProvider.notifier).update((ids) {
+    final next = {...ids}..remove(id);
+    return next;
+  });
+  final activeId = ref.read(activeTabIdProvider);
+  if (activeId == id) {
+    final next = tabs.isNotEmpty ? tabs.last.id : null;
+    ref.read(activeTabIdProvider.notifier).state = next;
+    if (next != null) {
+      ref.read(activeNoteIdProvider.notifier).state = next;
+    }
+  }
+}
+
+/// Crush every loose scrap still open — call when leaving the editor desk.
+void discardAllEphemeralNotes(WidgetRef ref) {
+  final ephemeral = ref.read(ephemeralNoteIdsProvider);
+  if (ephemeral.isEmpty) return;
+  // Use the id set — never read OpenedTab.isEphemeral here. Tabs created
+  // before a hot reload can have a null field and throw on access.
+  final tabs = ref
+      .read(openedTabsProvider)
+      .where((t) => !ephemeral.contains(t.id))
+      .toList();
+  ref.read(openedTabsProvider.notifier).state = tabs;
+  ref.read(ephemeralNoteIdsProvider.notifier).state = {};
+  final activeId = ref.read(activeTabIdProvider);
+  if (activeId != null && ephemeral.contains(activeId)) {
+    final next = tabs.isNotEmpty ? tabs.last.id : null;
+    ref.read(activeTabIdProvider.notifier).state = next;
+    if (next != null) {
+      ref.read(activeNoteIdProvider.notifier).state = next;
+    }
+  }
 }

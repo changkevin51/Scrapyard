@@ -145,6 +145,9 @@ final strokeWidthModifierProvider = StateProvider<double>((ref) => 1.0);
 final strokeStyleProvider = StateProvider<StrokeStyle>((ref) => StrokeStyle.solid);
 final penSettingsProvider = StateProvider<PenSettings>((ref) => const PenSettings());
 
+/// Sticky Pen-vs-Brush settings family. Survives switching to lasso/eraser/text.
+final activeInkFamilyProvider = StateProvider<InkFamily>((ref) => InkFamily.pen);
+
 // Selected shape from library (null = freehand draw mode)
 final selectedLibraryShapeProvider = StateProvider<ShapeType?>((ref) => null);
 

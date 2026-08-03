@@ -1,0 +1,420 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:perfect_freehand/perfect_freehand.dart' hide StrokePoint;
+
+import '../domain/models/stroke.dart';
+import 'pen_engine.dart';
+
+/// Industry-standard stroke renderer.
+///
+/// Freehand styles (pen / pencil / marker / inkBrush) use
+/// [perfect_freehand] outline polygons — one filled Path per stroke.
+/// Nib styles (calligraphy / fountain) use a custom quad-strip polygon.
+/// Highlighters use a continuous flat-cap stroke with multiply blending.
+class InkRenderer {
+  InkRenderer._();
+
+  /// Paint a committed or live stroke.
+  static void paint({
+    required Canvas canvas,
+    required List<StrokePoint> pts,
+    required Color color,
+    required double baseWidth,
+    required PenStyle style,
+    required bool isHighlighter,
+    double streamline = 0.35,
+    double sensitivity = 0.5,
+    bool isComplete = true,
+  }) {
+    if (pts.isEmpty) return;
+
+    if (isHighlighter) {
+      _paintHighlighter(canvas, pts, color, baseWidth);
+      return;
+    }
+
+    switch (style) {
+      case PenStyle.calligraphy:
+        _paintNib(
+          canvas, pts, color, baseWidth,
+          dynamicAngle: false,
+          sensitivity: 0.0,
+        );
+      case PenStyle.fountain:
+        _paintNib(
+          canvas, pts, color, baseWidth,
+          dynamicAngle: true,
+          sensitivity: sensitivity,
+        );
+      case PenStyle.pen:
+      case PenStyle.ballpoint:
+      case PenStyle.pencil:
+      case PenStyle.marker:
+      case PenStyle.inkBrush:
+        _paintFreehand(
+          canvas, pts, color, baseWidth, style,
+          streamline: streamline,
+          sensitivity: sensitivity,
+          isComplete: isComplete,
+        );
+    }
+  }
+
+  /// Convenience for painting a full [Stroke] object.
+  static void paintStroke(
+    Canvas canvas,
+    Stroke stroke, {
+    double streamline = 0.35,
+    double sensitivity = 0.5,
+  }) {
+    paint(
+      canvas: canvas,
+      pts: stroke.points,
+      color: stroke.color,
+      baseWidth: stroke.baseWidth,
+      style: stroke.penStyle,
+      isHighlighter: stroke.isHighlighter,
+      streamline: streamline,
+      sensitivity: sensitivity,
+      isComplete: true,
+    );
+  }
+
+  /// S-wave preview for the settings panel.
+  static void paintPreview(
+    Canvas canvas,
+    Size size,
+    Color color,
+    PenStyle style, {
+    double baseWidth = 1.8,
+    double sensitivity = 0.5,
+  }) {
+    final pts = <StrokePoint>[];
+    final w = size.width;
+    final h = size.height;
+    const n = 60;
+    for (int i = 0; i < n; i++) {
+      final t = i / (n - 1);
+      final x = t * w;
+      final y = h / 2 + sin(t * 3 * pi) * (h * 0.32);
+      final pr = 0.4 + 0.6 * sin(t * pi);
+      pts.add(StrokePoint(
+        x: x,
+        y: y,
+        pressure: pr,
+        timestamp: i * 16000, // microseconds
+      ));
+    }
+    paint(
+      canvas: canvas,
+      pts: pts,
+      color: color,
+      baseWidth: baseWidth,
+      style: style,
+      isHighlighter: false,
+      sensitivity: sensitivity,
+      isComplete: true,
+    );
+  }
+
+  // ─── Freehand via perfect_freehand ───────────────────────────
+
+  static void _paintFreehand(
+    Canvas canvas,
+    List<StrokePoint> pts,
+    Color color,
+    double baseWidth,
+    PenStyle style, {
+    required double streamline,
+    required double sensitivity,
+    required bool isComplete,
+  }) {
+    final options = _optionsFor(
+      style,
+      baseWidth,
+      streamline: streamline,
+      sensitivity: sensitivity,
+      isComplete: isComplete,
+    );
+
+    final vectors = <PointVector>[
+      for (final p in pts) PointVector(p.x, p.y, p.pressure.clamp(0.0, 1.0)),
+    ];
+
+    // Duplicate single-point taps so perfect_freehand produces a visible dot.
+    if (vectors.length == 1) {
+      vectors.add(PointVector(
+        vectors.first.x + 0.01,
+        vectors.first.y + 0.01,
+        vectors.first.pressure,
+      ));
+    }
+
+    final outline = getStroke(vectors, options: options);
+    if (outline.isEmpty) return;
+
+    final path = Path()..addPolygon(
+      [for (final p in outline) Offset(p.dx, p.dy)],
+      true,
+    );
+
+    final paint = Paint()
+      ..color = _colorForStyle(color, style)
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    canvas.drawPath(path, paint);
+  }
+
+  static StrokeOptions _optionsFor(
+    PenStyle style,
+    double baseWidth, {
+    required double streamline,
+    required double sensitivity,
+    required bool isComplete,
+  }) {
+    final sl = streamline.clamp(0.0, 0.65);
+    switch (style) {
+      case PenStyle.pen:
+        // Pressure response — at 100% sensitivity thinning reaches ~0.6.
+        return StrokeOptions(
+          size: baseWidth * 2.2,
+          thinning: (sensitivity * 0.6).clamp(0.0, 0.6),
+          smoothing: 0.45,
+          streamline: sl,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: true, taperEnabled: false),
+          end: StrokeEndOptions.end(cap: true, taperEnabled: false),
+        );
+      case PenStyle.ballpoint:
+        // Constant width — same as the former Pen profile.
+        return StrokeOptions(
+          size: baseWidth * 2.2,
+          thinning: 0,
+          smoothing: 0.45,
+          streamline: sl,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: true, taperEnabled: false),
+          end: StrokeEndOptions.end(cap: true, taperEnabled: false),
+        );
+      case PenStyle.marker:
+        return StrokeOptions(
+          size: baseWidth * 2.8,
+          thinning: 0,
+          smoothing: 0.35,
+          streamline: sl * 0.7,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: false, taperEnabled: false),
+          end: StrokeEndOptions.end(cap: false, taperEnabled: false),
+        );
+      case PenStyle.pencil:
+        return StrokeOptions(
+          size: baseWidth * 1.6,
+          thinning: sensitivity.clamp(0.0, 1.0),
+          smoothing: 0.25,
+          streamline: sl * 0.6,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: true, taperEnabled: false),
+          end: StrokeEndOptions.end(cap: true, taperEnabled: true),
+        );
+      case PenStyle.inkBrush:
+        return StrokeOptions(
+          size: baseWidth * 3.5,
+          thinning: (0.4 + sensitivity * 0.6).clamp(0.0, 1.0),
+          smoothing: 0.5,
+          streamline: sl,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: true, taperEnabled: true),
+          end: StrokeEndOptions.end(cap: true, taperEnabled: true),
+        );
+      case PenStyle.calligraphy:
+      case PenStyle.fountain:
+        // Unreachable — nib styles use _paintNib.
+        return StrokeOptions(size: baseWidth * 2);
+    }
+  }
+
+  static Color _colorForStyle(Color color, PenStyle style) {
+    if (style == PenStyle.pencil) {
+      final hsl = HSLColor.fromColor(color);
+      return hsl
+          .withSaturation(hsl.saturation * 0.2)
+          .withLightness((hsl.lightness * 0.5 + 0.2).clamp(0.0, 1.0))
+          .toColor()
+          .withValues(alpha: 0.85);
+    }
+    if (style == PenStyle.marker) {
+      return color.withValues(alpha: 0.82);
+    }
+    if (style == PenStyle.inkBrush) {
+      return color.withValues(alpha: 0.90);
+    }
+    return color;
+  }
+
+  // ─── Nib quad-strip (calligraphy / fountain) ─────────────────
+
+  static void _paintNib(
+    Canvas canvas,
+    List<StrokePoint> pts,
+    Color color,
+    double baseWidth, {
+    required bool dynamicAngle,
+    required double sensitivity,
+  }) {
+    if (pts.length < 2) {
+      // Single-point tap → small filled oval
+      final p = pts.first;
+      final r = baseWidth * 0.6;
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(p.x, p.y), width: r * 2, height: r),
+        Paint()..color = color..style = PaintingStyle.fill,
+      );
+      return;
+    }
+
+    const fixedNibAngle = pi / 4; // 45°
+    double nibAngle = pi / 5;
+
+    final left = <Offset>[];
+    final right = <Offset>[];
+
+    for (int i = 0; i < pts.length; i++) {
+      final p = Offset(pts[i].x, pts[i].y);
+      final press = pts[i].pressure.clamp(0.0, 1.0);
+
+      // Stroke direction
+      Offset dir;
+      if (i == 0) {
+        dir = Offset(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      } else if (i == pts.length - 1) {
+        dir = Offset(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      } else {
+        dir = Offset(pts[i + 1].x - pts[i - 1].x, pts[i + 1].y - pts[i - 1].y);
+      }
+      final len = dir.distance;
+      final strokeDir = len > 0.01 ? dir / len : const Offset(1, 0);
+
+      if (dynamicAngle && len > 0.5) {
+        final strokeAngle = atan2(strokeDir.dy, strokeDir.dx);
+        nibAngle = nibAngle + (strokeAngle - nibAngle) * 0.2;
+      }
+
+      final angle = dynamicAngle ? nibAngle : fixedNibAngle;
+      final nibDir = Offset(cos(angle), sin(angle));
+      final cross = (strokeDir.dx * nibDir.dy - strokeDir.dy * nibDir.dx).abs();
+
+      // Speed factor from timestamps (microseconds)
+      double swell = 1.0;
+      if (i > 0) {
+        final dt = max(1, pts[i].timestamp - pts[i - 1].timestamp);
+        final spd = len / (dt / 1000.0); // px per ms
+        swell = max(0.6, 1.0 - spd * 0.015);
+      }
+
+      final sensScale = dynamicAngle ? (0.5 + sensitivity * 0.5) : 1.0;
+      final halfW = dynamicAngle
+          ? (baseWidth * 0.1 + baseWidth * 1.1 * cross) *
+              (0.4 + press * 0.8) *
+              swell *
+              sensScale
+          : (baseWidth * 0.08 + baseWidth * 1.3 * cross) *
+              (0.5 + press * 0.5);
+
+      final hw = max(0.3, halfW);
+      // Offset along the nib for classic flat-nib look
+      final nibOffset = nibDir * hw;
+
+      left.add(p + nibOffset);
+      right.add(p - nibOffset);
+    }
+
+    // Build a single closed polygon: left edge forward, right edge reverse
+    final path = Path();
+    path.moveTo(left.first.dx, left.first.dy);
+    for (int i = 1; i < left.length; i++) {
+      path.lineTo(left[i].dx, left[i].dy);
+    }
+    for (int i = right.length - 1; i >= 0; i--) {
+      path.lineTo(right[i].dx, right[i].dy);
+    }
+    path.close();
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true,
+    );
+  }
+
+  // ─── Highlighter ─────────────────────────────────────────────
+
+  static void _paintHighlighter(
+    Canvas canvas,
+    List<StrokePoint> pts,
+    Color color,
+    double baseWidth,
+  ) {
+    if (pts.isEmpty) return;
+
+    final path = Path();
+    if (pts.length == 1) {
+      path.moveTo(pts.first.x, pts.first.y);
+      path.lineTo(pts.first.x + 0.01, pts.first.y);
+    } else {
+      path.moveTo(pts.first.x, pts.first.y);
+      for (int i = 1; i < pts.length - 1; i++) {
+        final mid = Offset(
+          (pts[i].x + pts[i + 1].x) / 2,
+          (pts[i].y + pts[i + 1].y) / 2,
+        );
+        path.quadraticBezierTo(pts[i].x, pts[i].y, mid.dx, mid.dy);
+      }
+      path.lineTo(pts.last.x, pts.last.y);
+    }
+
+    final bounds = path.getBounds().inflate(baseWidth);
+    canvas.saveLayer(
+      bounds,
+      Paint()..blendMode = BlendMode.multiply,
+    );
+
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: 0.30)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = baseWidth
+        ..strokeCap = StrokeCap.butt
+        ..strokeJoin = StrokeJoin.round
+        ..isAntiAlias = true,
+    );
+
+    canvas.restore();
+  }
+
+  /// Compute axis-aligned bounds for a stroke's points.
+  static Rect boundsOf(List<StrokePoint> pts, {double pad = 0}) {
+    if (pts.isEmpty) return Rect.zero;
+    double minX = pts.first.x, maxX = pts.first.x;
+    double minY = pts.first.y, maxY = pts.first.y;
+    for (final p in pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return Rect.fromLTRB(minX, minY, maxX, maxY).inflate(pad);
+  }
+}
+
+/// Re-export for callers that previously used StrokeRenderer.
+typedef StrokeRenderer = InkRenderer;

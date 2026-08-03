@@ -61,7 +61,7 @@ class Stroke {
     this.shapeType = ShapeType.none,
     this.shapeVertices = const [],
     this.isBeautified = false,
-    this.penStyle = PenStyle.normal,
+    this.penStyle = PenStyle.pen,
   });
 
   Stroke copyWith({bool? isHidden}) => Stroke(
@@ -109,10 +109,7 @@ class Stroke {
         ? List<double>.from(map['shapeVertices'] as List)
         : [],
     isBeautified: (map['isBeautified'] ?? 0) == 1,
-    penStyle: PenStyle.values.firstWhere(
-      (e) => e.name == (map['penStyle'] ?? 'normal'),
-      orElse: () => PenStyle.normal,
-    ),
+    penStyle: PenStyleInfo.fromPersistedName(map['penStyle'] as String?),
   );
 
   String toJson() => json.encode(toMap());

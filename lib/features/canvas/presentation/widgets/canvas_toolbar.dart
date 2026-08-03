@@ -6,6 +6,7 @@ import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/paper_controls.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 import 'canvas_smart_widgets.dart';
 import 'pen_settings_panel.dart';
@@ -273,6 +274,21 @@ class _ToolButton extends ConsumerWidget {
         onTap: () {
           ref.read(activeCanvasToolProvider.notifier).state = def.tool;
           ref.read(isPenModeActiveProvider.notifier).state = true;
+          if (def.tool == CanvasTool.pen) {
+            ref.read(activeInkFamilyProvider.notifier).state = InkFamily.pen;
+            final settings = ref.read(penSettingsProvider);
+            if (settings.penStyle.family != InkFamily.pen) {
+              ref.read(penSettingsProvider.notifier).state =
+                  settings.copyWith(penStyle: PenStyle.pen);
+            }
+          } else if (def.tool == CanvasTool.brush) {
+            ref.read(activeInkFamilyProvider.notifier).state = InkFamily.brush;
+            final settings = ref.read(penSettingsProvider);
+            if (settings.penStyle.family != InkFamily.brush) {
+              ref.read(penSettingsProvider.notifier).state =
+                  settings.copyWith(penStyle: PenStyle.calligraphy);
+            }
+          }
         },
         onLongPress: def.tool == CanvasTool.shape
             ? () => showShapeLibrary(context)

@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/scrapyard_theme.dart';
-import '../../canvas/data/pen_engine.dart';
+import '../../canvas/data/ink_renderer.dart';
 import '../../canvas/domain/models/canvas_smart_models.dart';
 import '../../canvas/domain/models/stroke.dart';
 
@@ -46,14 +46,7 @@ class ScrapThumbnailRenderer {
           stroke.shapeVertices.isNotEmpty) {
         _paintShape(canvas, stroke);
       } else if (stroke.points.isNotEmpty) {
-        StrokeRenderer.paintStyled(
-          canvas: canvas,
-          pts: stroke.points,
-          color: stroke.color,
-          baseWidth: stroke.baseWidth,
-          style: stroke.penStyle,
-          isHighlighter: stroke.isHighlighter,
-        );
+        InkRenderer.paintStroke(canvas, stroke);
       }
     }
 

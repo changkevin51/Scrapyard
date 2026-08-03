@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -56,6 +57,32 @@ class _UnionFind {
   }
 }
 
+/// Run cluster detection on a worker isolate.
+///
+/// [payload] is a list of maps with keys:
+/// `id`, `left`, `top`, `right`, `bottom`, `endTime`.
+Future<List<StrokeCluster>> detectClustersIsolate(
+  List<Map<String, dynamic>> payload, {
+  double canvasWidth = 1000,
+}) {
+  return Isolate.run(() {
+    final infos = <_StrokeInfo>[
+      for (final m in payload)
+        _StrokeInfo(
+          id: m['id'] as String,
+          bounds: Rect.fromLTRB(
+            (m['left'] as num).toDouble(),
+            (m['top'] as num).toDouble(),
+            (m['right'] as num).toDouble(),
+            (m['bottom'] as num).toDouble(),
+          ),
+          endTime: m['endTime'] as int,
+        ),
+    ];
+    return _detectFromInfos(infos, canvasWidth: canvasWidth);
+  });
+}
+
 /// Detects line-level expression clusters from handwriting strokes using
 /// spatial proximity modulated by writing timing.
 List<StrokeCluster> detectClusters(
@@ -71,7 +98,13 @@ List<StrokeCluster> detectClusters(
       endTime: stroke.points.last.timestamp,
     ));
   }
+  return _detectFromInfos(infos, canvasWidth: canvasWidth);
+}
 
+List<StrokeCluster> _detectFromInfos(
+  List<_StrokeInfo> infos, {
+  double canvasWidth = 1000,
+}) {
   if (infos.isEmpty) return const [];
 
   final unit = _estimateWritingUnit(infos);
@@ -96,13 +129,11 @@ List<StrokeCluster> detectClusters(
     final bounds = _unionBounds(members.map((m) => m.bounds)).inflate(8);
     final strokeIds = members.map((m) => m.id).toSet();
 
-    // Discard tiny single-stroke noise (dots, accents alone).
     if (members.length == 1) {
       final b = members.first.bounds;
       if (b.width < 0.5 * unit && b.height < 0.5 * unit) continue;
     }
 
-    // Discard long thin underlines / page rules with few strokes.
     if (bounds.width > canvasWidth * 0.7 && members.length < 3) continue;
 
     final sortedIds = strokeIds.toList()..sort();
@@ -138,7 +169,6 @@ double _estimateWritingUnit(List<_StrokeInfo> infos) {
 
   if (heights.isEmpty) return 24.0;
 
-  // Trim smallest 10% (dots) and largest 5% (rules / long bars).
   final lo = (heights.length * 0.10).floor();
   final hi = math.max(lo + 1, (heights.length * 0.95).ceil());
   final trimmed = heights.sublist(lo, math.min(hi, heights.length));
@@ -149,8 +179,10 @@ double _estimateWritingUnit(List<_StrokeInfo> infos) {
 }
 
 bool _shouldMerge(_StrokeInfo a, _StrokeInfo b, double unit) {
-  final timeGapMs = (a.endTime - b.endTime).abs();
-  final timeFactor = _timeFactor(timeGapMs);
+  final timeGapRaw = (a.endTime - b.endTime).abs();
+  // Timestamps may be microseconds (new) or milliseconds (legacy).
+  final gapMs = timeGapRaw > 1000000000 ? timeGapRaw ~/ 1000 : timeGapRaw;
+  final timeFactor = _timeFactor(gapMs);
   final threshold = 1.2 * unit * timeFactor;
 
   final aCenterY = a.bounds.center.dy;
@@ -161,21 +193,15 @@ bool _shouldMerge(_StrokeInfo a, _StrokeInfo b, double unit) {
   final verticalGap = _verticalGap(a.bounds, b.bounds);
   final horizontalOverlap = _horizontalOverlap(a.bounds, b.bounds);
 
-  // Same-line adjacency: similar vertical center, close horizontally.
   if (verticalCenterDist <= 0.8 * unit && horizontalGap <= threshold) {
     return true;
   }
 
-  // Stacked symbols: fraction bars, superscripts, equals — overlap in X.
   if (horizontalOverlap > 0 && verticalGap <= 0.45 * unit) {
     return true;
   }
 
-  // Diagonal bridge for continuous writing: a raised mark (e.g. ²) may sit
-  // too high for the center-Y check and leave a small gap before the next
-  // baseline stroke (+), so neither rule above fires. Only apply while the
-  // strokes were written close in time so older nearby ink stays separate.
-  if (timeGapMs <= 2000 &&
+  if (gapMs <= 2000 &&
       horizontalGap <= threshold &&
       verticalGap <= 0.45 * unit) {
     return true;
@@ -184,7 +210,6 @@ bool _shouldMerge(_StrokeInfo a, _StrokeInfo b, double unit) {
   return false;
 }
 
-/// Decays from 1.5 (simultaneous) to 0.55 (~8s apart), then stays low.
 double _timeFactor(int gapMs) {
   const maxGap = 8000.0;
   final t = (gapMs / maxGap).clamp(0.0, 1.0);

@@ -19,6 +19,7 @@ class StrokeClusterNotifier extends StateNotifier<List<StrokeCluster>> {
   final Ref _ref;
   Timer? _debounce;
   ProviderSubscription? _strokesSub;
+  int _runId = 0;
 
   StrokeClusterNotifier(this._ref) : super(const []) {
     _strokesSub = _ref.listen(strokesProvider, (previous, next) {
@@ -33,9 +34,38 @@ class StrokeClusterNotifier extends StateNotifier<List<StrokeCluster>> {
     _debounce = Timer(const Duration(milliseconds: 700), _runDetect);
   }
 
-  void _runDetect() {
+  Future<void> _runDetect() async {
     final strokes = _ref.read(strokesProvider);
-    state = detectClusters(strokes);
+    final runId = ++_runId;
+
+    // Build a tiny serializable DTO so the isolate never touches Flutter objects.
+    final payload = <Map<String, dynamic>>[];
+    for (final stroke in strokes) {
+      if (stroke.isHidden || stroke.points.isEmpty) continue;
+      double minX = stroke.points.first.x;
+      double maxX = stroke.points.first.x;
+      double minY = stroke.points.first.y;
+      double maxY = stroke.points.first.y;
+      for (final p in stroke.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      payload.add({
+        'id': stroke.id,
+        'left': minX,
+        'top': minY,
+        'right': maxX,
+        'bottom': maxY,
+        'endTime': stroke.points.last.timestamp,
+      });
+    }
+
+    final clusters = await detectClustersIsolate(payload);
+    // Drop stale results if a newer run was scheduled.
+    if (runId != _runId) return;
+    state = clusters;
   }
 
   /// Prefer the smallest cluster containing [p], else the nearest cluster

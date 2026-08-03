@@ -37,6 +37,7 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
 
 class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _horizontalScrollController = ScrollController();
   final CanvasOcrService _ocrService = CanvasOcrService();
   final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
 
@@ -107,6 +108,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _selectionEdgeScrollTimer?.cancel();
     _ocrService.dispose();
     _scrollController.dispose();
+    _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
     super.dispose();
   }
@@ -1380,6 +1382,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         children: [
           HandwritingCanvas(
             scrollController: _scrollController,
+            horizontalScrollController: _horizontalScrollController,
             zoomLevel: canvasZoom,
             onZoomChanged: (v) => ref.read(canvasZoomProvider.notifier).state = v,
             suppressTouchScroll: _isMovingSelection,
@@ -1590,70 +1593,109 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     // Plain Stack — callers wrap in Expanded as needed (never nest Expanded).
+    final scrollPhysics = (isSelectionMode || isPenMode)
+        ? const NeverScrollableScrollPhysics()
+        : const ClampingScrollPhysics();
+
     final canvasSurface = Stack(
       children: [
-        SingleChildScrollView(
-          controller: _scrollController,
-          // In pen mode (or lasso), the HandwritingCanvas Listener handles all
-          // pointer events — the scroll view must not compete.  When stylus-only
-          // is on, the canvas also handles touch scrolling manually via jumpTo(),
-          // so the scroll view must stay out of the way.
-          physics: (isSelectionMode || isPenMode)
-              ? const NeverScrollableScrollPhysics()
-              : const ClampingScrollPhysics(),
-          child: ColoredBox(
-            // Desk tone when zoomed out so the sheet sits on a surface
-            color: canvasZoom <= 1.0
-                ? ScrapTheme.codeSurface
-                : ScrapTheme.background,
-            child: SizedBox(
-              width: double.infinity,
-              height: 5000 * canvasZoom,
-              child: Transform.scale(
-                scale: canvasZoom,
-                alignment: canvasZoom <= 1.0
-                    ? const Alignment(0, -1)
-                    : Alignment.topLeft,
-                child: DecoratedBox(
-                  decoration: canvasZoom <= 1.0
-                      ? const BoxDecoration(boxShadow: ScrapTheme.subtleShadow)
-                      : const BoxDecoration(),
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: 5000,
-                    child: Listener(
-                      onPointerDown: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerDown
-                          : null,
-                      onPointerMove: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerMove
-                          : null,
-                      onPointerUp: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerUp
-                          : null,
-                      onPointerCancel: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerCancel
-                          : null,
-                      child: GestureDetector(
-                        onTapDown: _onCanvasTapDown,
-                        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
-                        onLongPressStart: _handleCanvasLongPressStart,
-                        onPanStart: allowSelectionDrag ? _startLasso : null,
-                        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
-                        onPanEnd: allowSelectionDrag ? _endLasso : null,
-                        child: Stack(
-                          children: [
-                            canvasStack,
-                            ...contentOverlays,
-                          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final viewportW = constraints.maxWidth;
+            final zoom = canvasZoom;
+            final scaledW = viewportW * zoom;
+            final scaledH = 5000 * zoom;
+            // Full viewport width when zoomed out so the sheet can be centered;
+            // wider than the viewport when zoomed in so sideways pan works.
+            final contentW = math.max(viewportW, scaledW);
+
+            final page = SizedBox(
+              width: scaledW,
+              height: scaledH,
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: viewportW,
+                maxWidth: viewportW,
+                minHeight: 5000,
+                maxHeight: 5000,
+                child: Transform.scale(
+                  scale: zoom,
+                  alignment: Alignment.topLeft,
+                  child: DecoratedBox(
+                    decoration: zoom <= 1.0
+                        ? const BoxDecoration(
+                            boxShadow: ScrapTheme.subtleShadow)
+                        : const BoxDecoration(),
+                    child: SizedBox(
+                      width: viewportW,
+                      height: 5000,
+                      child: Listener(
+                        onPointerDown: stylusOnly && isSelectionMode
+                            ? _onSelectionPointerDown
+                            : null,
+                        onPointerMove: stylusOnly && isSelectionMode
+                            ? _onSelectionPointerMove
+                            : null,
+                        onPointerUp: stylusOnly && isSelectionMode
+                            ? _onSelectionPointerUp
+                            : null,
+                        onPointerCancel: stylusOnly && isSelectionMode
+                            ? _onSelectionPointerCancel
+                            : null,
+                        child: GestureDetector(
+                          onTapDown: _onCanvasTapDown,
+                          onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+                          onLongPressStart: _handleCanvasLongPressStart,
+                          onPanStart:
+                              allowSelectionDrag ? _startLasso : null,
+                          onPanUpdate:
+                              allowSelectionDrag ? _updateLasso : null,
+                          onPanEnd: allowSelectionDrag ? _endLasso : null,
+                          child: Stack(
+                            children: [
+                              canvasStack,
+                              ...contentOverlays,
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+
+            return SingleChildScrollView(
+              controller: _scrollController,
+              // In pen mode (or lasso), the HandwritingCanvas Listener handles
+              // all pointer events — the scroll view must not compete. When
+              // stylus-only is on, the canvas also handles touch scrolling
+              // manually via jumpTo(), so the scroll view must stay out of
+              // the way.
+              physics: scrollPhysics,
+              child: ColoredBox(
+                // Desk tone when zoomed out so the sheet sits on a surface
+                color: zoom <= 1.0
+                    ? ScrapTheme.codeSurface
+                    : ScrapTheme.background,
+                child: SingleChildScrollView(
+                  controller: _horizontalScrollController,
+                  scrollDirection: Axis.horizontal,
+                  physics: scrollPhysics,
+                  child: SizedBox(
+                    width: contentW,
+                    height: scaledH,
+                    child: zoom < 1.0
+                        ? Align(
+                            alignment: Alignment.topCenter,
+                            child: page,
+                          )
+                        : page,
+                  ),
+                ),
+              ),
+            );
+          },
         ),
         // AI chat FAB — bottom right, always on screen
         const Positioned(

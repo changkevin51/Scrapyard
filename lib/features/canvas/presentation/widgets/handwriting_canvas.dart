@@ -55,6 +55,7 @@ class _StrokeCache {
 // ══════════════════════════════════════════════════════════════════
 class HandwritingCanvas extends ConsumerStatefulWidget {
   final ScrollController scrollController;
+  final ScrollController horizontalScrollController;
   final double zoomLevel;
   final ValueChanged<double> onZoomChanged;
   final bool suppressTouchScroll;
@@ -62,6 +63,7 @@ class HandwritingCanvas extends ConsumerStatefulWidget {
   const HandwritingCanvas({
     super.key,
     required this.scrollController,
+    required this.horizontalScrollController,
     required this.zoomLevel,
     required this.onZoomChanged,
     this.suppressTouchScroll = false,
@@ -95,6 +97,11 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   final _touchPointers = <int, Offset>{};
   double? _pinchInitialDistance;
   double? _pinchInitialZoom;
+  /// Canvas-local point under the pinch midpoint when the gesture began.
+  Offset? _pinchContentFocal;
+  bool _pinchScrollScheduled = false;
+  double? _pendingHScroll;
+  double? _pendingVScroll;
 
   // Hold-and-pause shape snap
   final _pauseTimers = <int, Timer>{};
@@ -123,6 +130,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
           if (distance > 5.0) {
             _pinchInitialDistance = distance;
             _pinchInitialZoom = widget.zoomLevel;
+            _pinchContentFocal = _canvasPointUnderPinch(positions);
           }
         }
       }
@@ -228,6 +236,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
         _pinchInitialZoom = null;
+        _pinchContentFocal = null;
       }
       return;
     }
@@ -330,6 +339,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
         _pinchInitialZoom = null;
+        _pinchContentFocal = null;
       }
     }
     _cancelPauseTimer(e.pointer);
@@ -400,29 +410,125 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     return verts;
   }
 
+  /// Left inset of the scaled page inside the horizontal scroll content
+  /// (centers the sheet when zoomed out past the viewport width).
+  double _contentOriginX(double viewportW, double zoom) {
+    final scaledW = viewportW * zoom;
+    return scaledW < viewportW ? (viewportW - scaledW) / 2.0 : 0.0;
+  }
+
+  RenderBox? _scrollViewportBox() {
+    if (!widget.scrollController.hasClients) return null;
+    return widget.scrollController.position.context.storageContext
+        .findRenderObject() as RenderBox?;
+  }
+
+  /// Canvas-local point currently under the pinch midpoint.
+  Offset? _canvasPointUnderPinch(List<Offset> globalPositions) {
+    final box = _scrollViewportBox();
+    if (box == null || !box.hasSize) return null;
+
+    final mid = Offset(
+      (globalPositions[0].dx + globalPositions[1].dx) / 2,
+      (globalPositions[0].dy + globalPositions[1].dy) / 2,
+    );
+    final focalVp = box.globalToLocal(mid);
+    final zoom = widget.zoomLevel;
+    if (zoom <= 0) return null;
+
+    final originX = _contentOriginX(box.size.width, zoom);
+    final h = widget.horizontalScrollController.hasClients
+        ? widget.horizontalScrollController.offset
+        : 0.0;
+    final v = widget.scrollController.offset;
+    return Offset(
+      (focalVp.dx + h - originX) / zoom,
+      (focalVp.dy + v) / zoom,
+    );
+  }
+
+  void _scheduleScrollTo(double h, double v) {
+    _pendingHScroll = h;
+    _pendingVScroll = v;
+    if (_pinchScrollScheduled) return;
+    _pinchScrollScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pinchScrollScheduled = false;
+      if (!mounted) return;
+      final targetH = _pendingHScroll;
+      final targetV = _pendingVScroll;
+      if (targetH == null || targetV == null) return;
+
+      final vScroll = widget.scrollController;
+      if (vScroll.hasClients) {
+        vScroll.jumpTo(
+          targetV.clamp(0.0, vScroll.position.maxScrollExtent),
+        );
+      }
+      final hScroll = widget.horizontalScrollController;
+      if (hScroll.hasClients) {
+        hScroll.jumpTo(
+          targetH.clamp(0.0, hScroll.position.maxScrollExtent),
+        );
+      }
+    });
+  }
+
   void _handleTouchMove(PointerMoveEvent e) {
     final previous = _touchPointers[e.pointer];
     _touchPointers[e.pointer] = e.position;
 
     if (_touchPointers.length == 2 &&
         _pinchInitialDistance != null &&
-        _pinchInitialZoom != null) {
+        _pinchInitialZoom != null &&
+        _pinchContentFocal != null) {
       final positions = _touchPointers.values.toList();
       final currentDistance = (positions[0] - positions[1]).distance;
-      if (currentDistance > 5.0) {
+      if (currentDistance <= 5.0) return;
+
+      final box = _scrollViewportBox();
+      if (box == null || !box.hasSize) {
         final newZoom =
-            _pinchInitialZoom! * (currentDistance / _pinchInitialDistance!);
-        widget.onZoomChanged(newZoom.clamp(0.5, 3.0));
+            (_pinchInitialZoom! * (currentDistance / _pinchInitialDistance!))
+                .clamp(0.5, 3.0);
+        widget.onZoomChanged(newZoom);
+        return;
       }
+
+      final newZoom =
+          (_pinchInitialZoom! * (currentDistance / _pinchInitialDistance!))
+              .clamp(0.5, 3.0);
+      final mid = Offset(
+        (positions[0].dx + positions[1].dx) / 2,
+        (positions[0].dy + positions[1].dy) / 2,
+      );
+      final focalVp = box.globalToLocal(mid);
+      final originX = _contentOriginX(box.size.width, newZoom);
+      final focal = _pinchContentFocal!;
+
+      // Keep the original canvas point under the live pinch midpoint.
+      final newH = focal.dx * newZoom + originX - focalVp.dx;
+      final newV = focal.dy * newZoom - focalVp.dy;
+
+      widget.onZoomChanged(newZoom);
+      _scheduleScrollTo(newH, newV);
     } else if (previous != null &&
         !widget.suppressTouchScroll &&
         widget.scrollController.hasClients) {
       if (ref.read(isPenModeActiveProvider)) {
         final delta = e.position - previous;
-        final maxExtent = widget.scrollController.position.maxScrollExtent;
-        widget.scrollController.jumpTo(
-          (widget.scrollController.offset - delta.dy).clamp(0.0, maxExtent),
+        final vScroll = widget.scrollController;
+        vScroll.jumpTo(
+          (vScroll.offset - delta.dy)
+              .clamp(0.0, vScroll.position.maxScrollExtent),
         );
+        final hScroll = widget.horizontalScrollController;
+        if (hScroll.hasClients) {
+          hScroll.jumpTo(
+            (hScroll.offset - delta.dx)
+                .clamp(0.0, hScroll.position.maxScrollExtent),
+          );
+        }
       }
     }
   }

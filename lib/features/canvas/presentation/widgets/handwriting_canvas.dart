@@ -185,9 +185,15 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       style = PenStyle.pen;
     }
 
+    final inkFamily = switch (tool) {
+      CanvasTool.brush => InkFamily.brush,
+      CanvasTool.highlighter => InkFamily.highlighter,
+      _ => InkFamily.pen,
+    };
     final effectiveColor = (tool == CanvasTool.pen ||
+            tool == CanvasTool.brush ||
             tool == CanvasTool.highlighter)
-        ? settings.effectiveColor(color)
+        ? settings.effectiveColor(color, inkFamily)
         : color;
 
     _activeIsHighlighter[e.pointer] = isHL;

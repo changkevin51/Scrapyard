@@ -121,8 +121,9 @@ class PenSettings {
   /// perfect_freehand streamline (0 = raw, ~0.65 = max smoothing, no lag)
   final double streamline;
 
-  /// Ink concentration / opacity (0.1 = very light, 0.5 = default, 1.0 = full)
-  final double concentration;
+  /// Per-tool ink concentration / opacity.
+  /// Pen & brush default to 1.0; highlighter defaults to 0.5.
+  final Map<InkFamily, double> concentration;
 
   /// Hold-and-pause shape snapping eligibility for new strokes
   final bool beautify;
@@ -148,9 +149,15 @@ class PenSettings {
     PenStyle.inkBrush: 0.75,
   };
 
+  static const Map<InkFamily, double> _defaultConcentration = {
+    InkFamily.pen: 1.0,
+    InkFamily.brush: 1.0,
+    InkFamily.highlighter: 0.5,
+  };
+
   const PenSettings({
     this.streamline = 0.35,
-    this.concentration = 0.5,
+    this.concentration = _defaultConcentration,
     this.beautify = true,
     this.penStyle = PenStyle.pen,
     this.sensitivity = _defaultSensitivity,
@@ -160,9 +167,12 @@ class PenSettings {
   double sensitivityFor(PenStyle style) =>
       sensitivity[style] ?? _defaultSensitivity[style] ?? 0.5;
 
+  double concentrationFor(InkFamily family) =>
+      concentration[family] ?? _defaultConcentration[family] ?? 1.0;
+
   PenSettings copyWith({
     double? streamline,
-    double? concentration,
+    Map<InkFamily, double>? concentration,
     bool? beautify,
     PenStyle? penStyle,
     Map<PenStyle, double>? sensitivity,
@@ -182,8 +192,13 @@ class PenSettings {
     return copyWith(sensitivity: next);
   }
 
-  /// Effective color with concentration baked into alpha.
+  PenSettings withConcentration(InkFamily family, double value) {
+    final next = Map<InkFamily, double>.from(concentration)..[family] = value;
+    return copyWith(concentration: next);
+  }
+
+  /// Effective color with that tool's concentration baked into alpha.
   /// 1.0 = literal full opacity; lower values fade the stroke.
-  Color effectiveColor(Color base) =>
-      base.withValues(alpha: concentration.clamp(0.0, 1.0));
+  Color effectiveColor(Color base, InkFamily family) =>
+      base.withValues(alpha: concentrationFor(family).clamp(0.0, 1.0));
 }

@@ -201,10 +201,10 @@ class PenSettingsPanel extends ConsumerWidget {
             const SizedBox(height: 20),
           ],
 
-          // ── Concentration ──────────────────────────────────────
+          // ── Concentration (per tool) ───────────────────────────
           _SectionHeader(
             label: 'CONCENTRATION',
-            value: '${(settings.concentration * 100).round()}%',
+            value: '${(settings.concentrationFor(family) * 100).round()}%',
             tooltip: isHighlighter
                 ? 'Highlighter density — how strong the highlight appears'
                 : 'Ink density — controls stroke opacity',
@@ -219,13 +219,13 @@ class PenSettingsPanel extends ConsumerWidget {
                 child: SliderTheme(
                   data: _sliderTheme(context),
                   child: Slider(
-                    value: settings.concentration,
+                    value: settings.concentrationFor(family),
                     min: 0.1,
                     max: 1.0,
                     divisions: 18,
                     onChanged: (v) =>
                         ref.read(penSettingsProvider.notifier).state =
-                            settings.copyWith(concentration: v),
+                            settings.withConcentration(family, v),
                   ),
                 ),
               ),
@@ -235,7 +235,8 @@ class PenSettingsPanel extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 4),
-          _ConcentrationPreview(concentration: settings.concentration),
+          _ConcentrationPreview(
+              concentration: settings.concentrationFor(family)),
           const SizedBox(height: 20),
 
           // ── Beautification toggle (pen / brush only) ───────────

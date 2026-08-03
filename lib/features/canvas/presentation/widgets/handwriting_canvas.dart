@@ -168,7 +168,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final isHL = tool == CanvasTool.highlighter;
     double bWidth = 1.5 * mod;
     if (tool == CanvasTool.brush) bWidth = 3.0 * mod;
-    if (isHL) bWidth = 12.0 * mod;
+    if (isHL) bWidth = 22.0 * mod;
     if (tool == CanvasTool.tape) bWidth = 18.0 * mod;
 
     PenStyle style;
@@ -185,8 +185,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       style = PenStyle.pen;
     }
 
-    final effectiveColor =
-        tool == CanvasTool.pen ? settings.effectiveColor(color) : color;
+    final effectiveColor = (tool == CanvasTool.pen ||
+            tool == CanvasTool.highlighter)
+        ? settings.effectiveColor(color)
+        : color;
 
     _activeIsHighlighter[e.pointer] = isHL;
     _activePenStyle[e.pointer] = style;
@@ -1016,7 +1018,7 @@ class _EraserPreviewPainter extends CustomPainter {
     final path = Path();
     for (var i = 0; i < dashCount; i++) {
       final start = (i / dashCount) * 2 * pi;
-      final sweep = (1 / dashCount) * 2 * pi * dashFraction;
+      const sweep = (1 / dashCount) * 2 * pi * dashFraction;
       path.addArc(Rect.fromCircle(center: c, radius: r), start, sweep);
     }
     canvas.drawPath(path, paint);

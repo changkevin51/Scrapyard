@@ -13,8 +13,104 @@ enum StrokeStyle { solid, dotted, dashed }
 final canvasRepositoryProvider = Provider((ref) => StrokeRepository());
 
 final activeCanvasToolProvider = StateProvider<CanvasTool>((ref) => CanvasTool.pen);
-// Default ink color: #1C1C1C
-final canvasColorProvider = StateProvider<Color>((ref) => const Color(0xFF1C1C1C));
+
+// ── Ink palette defaults ─────────────────────────────────
+// Black, Blue, Red, Magenta, Yellow (mark), Green (mark)
+const Color inkBlack = Color(0xFF1C1C1C);
+const Color inkBlue = Color(0xFF3B6EA8);
+const Color inkRed = Color(0xFFC0453A);
+const Color inkMagenta = Color(0xFFA84B9B);
+const Color markYellow = Color(0xFFF5E05A);
+const Color markGreen = Color(0xFF9FD36A);
+
+const List<Color> defaultInkPalette = [
+  inkBlack,
+  inkBlue,
+  inkRed,
+  inkMagenta,
+  markYellow,
+  markGreen,
+];
+
+/// Mutable toolbar swatches — custom picks overwrite the slot that opened
+/// the picker so the icon stays in sync with the active ink.
+final inkPaletteProvider =
+    StateProvider<List<Color>>((ref) => List<Color>.of(defaultInkPalette));
+
+/// Which palette slot is ring-selected in the toolbar.
+final paletteIndexProvider = StateProvider<int>((ref) => 0);
+
+/// Last colour used by each drawing tool.
+final toolColorsProvider = StateProvider<Map<CanvasTool, Color>>(
+  (ref) => {
+    CanvasTool.pen: inkBlack,
+    CanvasTool.brush: inkBlack,
+    CanvasTool.highlighter: markYellow,
+  },
+);
+
+/// Last palette slot used by each drawing tool.
+final toolPaletteIndexProvider = StateProvider<Map<CanvasTool, int>>(
+  (ref) => {
+    CanvasTool.pen: 0,
+    CanvasTool.brush: 0,
+    CanvasTool.highlighter: 4, // yellow
+  },
+);
+
+// Active ink colour (defaults to pen black).
+final canvasColorProvider = StateProvider<Color>((ref) => inkBlack);
+
+bool isInkColorTool(CanvasTool tool) =>
+    tool == CanvasTool.pen ||
+    tool == CanvasTool.brush ||
+    tool == CanvasTool.highlighter;
+
+/// Apply an ink colour to the canvas, current tool memory, and optional swatch.
+void applyInkColor(WidgetRef ref, Color color, {int? paletteIndex}) {
+  final c = color.withValues(alpha: 1.0);
+  ref.read(canvasColorProvider.notifier).state = c;
+
+  final tool = ref.read(activeCanvasToolProvider);
+  if (isInkColorTool(tool)) {
+    ref.read(toolColorsProvider.notifier).update((m) => {...m, tool: c});
+  }
+
+  final palette = [...ref.read(inkPaletteProvider)];
+  int? idx = paletteIndex;
+  if (idx == null) {
+    final match = palette.indexWhere((p) => p.toARGB32() == c.toARGB32());
+    if (match >= 0) idx = match;
+  }
+
+  if (idx != null && idx >= 0 && idx < palette.length) {
+    final slot = idx;
+    ref.read(paletteIndexProvider.notifier).state = slot;
+    if (palette[slot].toARGB32() != c.toARGB32()) {
+      palette[slot] = c;
+      ref.read(inkPaletteProvider.notifier).state = palette;
+    }
+    if (isInkColorTool(tool)) {
+      ref.read(toolPaletteIndexProvider.notifier).update((m) => {...m, tool: slot});
+    }
+  }
+}
+
+/// Restore the colour last used by [tool] into the active ink + toolbar slot.
+void restoreToolColor(WidgetRef ref, CanvasTool tool) {
+  if (!isInkColorTool(tool)) return;
+  final c = ref.read(toolColorsProvider)[tool] ?? inkBlack;
+  final idx = ref.read(toolPaletteIndexProvider)[tool] ?? 0;
+  ref.read(canvasColorProvider.notifier).state = c;
+  ref.read(paletteIndexProvider.notifier).state = idx;
+
+  final palette = [...ref.read(inkPaletteProvider)];
+  if (idx >= 0 && idx < palette.length && palette[idx].toARGB32() != c.toARGB32()) {
+    palette[idx] = c;
+    ref.read(inkPaletteProvider.notifier).state = palette;
+  }
+}
+
 enum PageLayout { plain, ruled, dotted, grid }
 enum ToolbarPosition { top, bottom, left, right }
 

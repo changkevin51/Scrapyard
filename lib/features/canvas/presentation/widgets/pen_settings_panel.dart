@@ -27,10 +27,29 @@ class PenSettingsPanel extends ConsumerWidget {
       });
     }
     final family = ref.watch(activeInkFamilyProvider);
+    final isHighlighter = family == InkFamily.highlighter;
     final styles = PenStyleInfo.forFamily(family);
-    final currentStyle = styles.contains(settings.penStyle)
+    final currentStyle = styles.isEmpty
         ? settings.penStyle
-        : styles.first;
+        : (styles.contains(settings.penStyle)
+            ? settings.penStyle
+            : styles.first);
+
+    String stampFor(InkFamily f) => switch (f) {
+          InkFamily.pen => '⟨ Pen ⟩',
+          InkFamily.brush => '⟨ Brush ⟩',
+          InkFamily.highlighter => '⟨ Highlighter ⟩',
+        };
+    String titleFor(InkFamily f) => switch (f) {
+          InkFamily.pen => 'Pen Settings',
+          InkFamily.brush => 'Brush Settings',
+          InkFamily.highlighter => 'Highlighter Settings',
+        };
+    CanvasTool toolFor(InkFamily f) => switch (f) {
+          InkFamily.pen => CanvasTool.pen,
+          InkFamily.brush => CanvasTool.brush,
+          InkFamily.highlighter => CanvasTool.highlighter,
+        };
 
     return Container(
       constraints: BoxConstraints(
@@ -60,54 +79,56 @@ class PenSettingsPanel extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          ScrapStampLabel(
-            text: family == InkFamily.pen ? '⟨ Pen ⟩' : '⟨ Brush ⟩',
-          ),
+          ScrapStampLabel(text: stampFor(family)),
           const SizedBox(height: 8),
           Text(
-            family == InkFamily.pen ? 'Pen Settings' : 'Brush Settings',
+            titleFor(family),
             style: ScrapTextStyles.heading.copyWith(fontSize: 18),
           ),
           const SizedBox(height: 16),
 
-          // ── Pen | Brush family tabs ────────────────────────────
+          // ── Pen | Brush | Highlighter family tabs ──────────────
           _FamilyTabs(
             family: family,
             onChanged: (f) {
               ref.read(activeInkFamilyProvider.notifier).state = f;
-              final nextStyles = PenStyleInfo.forFamily(f);
-              final preferred = nextStyles.contains(settings.penStyle)
-                  ? settings.penStyle
-                  : nextStyles.first;
-              ref.read(penSettingsProvider.notifier).state =
-                  settings.copyWith(penStyle: preferred);
-              ref.read(activeCanvasToolProvider.notifier).state =
-                  f == InkFamily.pen ? CanvasTool.pen : CanvasTool.brush;
+              if (f != InkFamily.highlighter) {
+                final nextStyles = PenStyleInfo.forFamily(f);
+                final preferred = nextStyles.contains(settings.penStyle)
+                    ? settings.penStyle
+                    : nextStyles.first;
+                ref.read(penSettingsProvider.notifier).state =
+                    settings.copyWith(penStyle: preferred);
+              }
+              final tool = toolFor(f);
+              ref.read(activeCanvasToolProvider.notifier).state = tool;
+              restoreToolColor(ref, tool);
             },
           ),
           const SizedBox(height: 20),
 
-          // ── Style selector (filtered by family) ────────────────
-          _SectionHeader(
-            label: family == InkFamily.pen ? 'PEN STYLE' : 'BRUSH STYLE',
-            value: currentStyle.label,
-            tooltip: 'The physical rendering algorithm',
-          ),
-          const SizedBox(height: 12),
-          _PenStyleSelector(
-            styles: styles,
-            currentStyle: currentStyle,
-            onChanged: (s) {
-              ref.read(penSettingsProvider.notifier).state =
-                  settings.copyWith(penStyle: s);
-              ref.read(activeInkFamilyProvider.notifier).state = s.family;
-              ref.read(activeCanvasToolProvider.notifier).state =
-                  s.family == InkFamily.pen
-                      ? CanvasTool.pen
-                      : CanvasTool.brush;
-            },
-          ),
-          const SizedBox(height: 24),
+          // ── Style selector (pen / brush only) ──────────────────
+          if (!isHighlighter) ...[
+            _SectionHeader(
+              label: family == InkFamily.pen ? 'PEN STYLE' : 'BRUSH STYLE',
+              value: currentStyle.label,
+              tooltip: 'The physical rendering algorithm',
+            ),
+            const SizedBox(height: 12),
+            _PenStyleSelector(
+              styles: styles,
+              currentStyle: currentStyle,
+              onChanged: (s) {
+                ref.read(penSettingsProvider.notifier).state =
+                    settings.copyWith(penStyle: s);
+                ref.read(activeInkFamilyProvider.notifier).state = s.family;
+                final tool = toolFor(s.family);
+                ref.read(activeCanvasToolProvider.notifier).state = tool;
+                restoreToolColor(ref, tool);
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // ── Streamline (was Stability) ─────────────────────────
           _SectionHeader(
@@ -144,8 +165,8 @@ class PenSettingsPanel extends ConsumerWidget {
           _StreamlinePreview(streamline: settings.streamline),
           const SizedBox(height: 20),
 
-          // ── Sensitivity (conditional) ──────────────────────────
-          if (currentStyle.hasSensitivity) ...[
+          // ── Sensitivity (pen / brush styles that support it) ───
+          if (!isHighlighter && currentStyle.hasSensitivity) ...[
             _SectionHeader(
               label: 'SENSITIVITY',
               value:
@@ -184,7 +205,9 @@ class PenSettingsPanel extends ConsumerWidget {
           _SectionHeader(
             label: 'CONCENTRATION',
             value: '${(settings.concentration * 100).round()}%',
-            tooltip: 'Ink density — controls stroke opacity',
+            tooltip: isHighlighter
+                ? 'Highlighter density — how strong the highlight appears'
+                : 'Ink density — controls stroke opacity',
           ),
           const SizedBox(height: 4),
           Row(
@@ -215,15 +238,17 @@ class PenSettingsPanel extends ConsumerWidget {
           _ConcentrationPreview(concentration: settings.concentration),
           const SizedBox(height: 20),
 
-          // ── Beautification toggle ──────────────────────────────
-          _ToggleRow(
-            label: 'SHAPE SNAPPING',
-            subtitle: 'Hold still to snap strokes into clean shapes',
-            value: settings.beautify,
-            onChanged: (v) => ref.read(penSettingsProvider.notifier).state =
-                settings.copyWith(beautify: v),
-          ),
-          const SizedBox(height: 24),
+          // ── Beautification toggle (pen / brush only) ───────────
+          if (!isHighlighter) ...[
+            _ToggleRow(
+              label: 'SHAPE SNAPPING',
+              subtitle: 'Hold still to snap strokes into clean shapes',
+              value: settings.beautify,
+              onChanged: (v) => ref.read(penSettingsProvider.notifier).state =
+                  settings.copyWith(beautify: v),
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // ── Eraser ─────────────────────────────────────────────
           _SectionHeader(
@@ -278,6 +303,7 @@ class _FamilyTabs extends StatelessWidget {
       options: const [
         (label: 'Pen', value: InkFamily.pen),
         (label: 'Brush', value: InkFamily.brush),
+        (label: 'Highlighter', value: InkFamily.highlighter),
       ],
       onChanged: onChanged,
     );
@@ -501,12 +527,24 @@ class PenSettingsButton extends ConsumerWidget {
     final activeTool = ref.watch(activeCanvasToolProvider);
     final isRelevant = activeTool == CanvasTool.pen ||
         activeTool == CanvasTool.brush ||
+        activeTool == CanvasTool.highlighter ||
         activeTool == CanvasTool.eraser;
 
     return Tooltip(
-      message: 'Pen / Brush / Eraser settings',
+      message: 'Pen / Brush / Highlighter / Eraser settings',
       child: GestureDetector(
         onTap: () {
+          // Sync family tab to the active drawing tool when opening.
+          final family = switch (activeTool) {
+            CanvasTool.brush => InkFamily.brush,
+            CanvasTool.highlighter => InkFamily.highlighter,
+            _ => InkFamily.pen,
+          };
+          if (activeTool == CanvasTool.pen ||
+              activeTool == CanvasTool.brush ||
+              activeTool == CanvasTool.highlighter) {
+            ref.read(activeInkFamilyProvider.notifier).state = family;
+          }
           showScrapSheet(
             context: context,
             isScrollControlled: true,

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 // ─────────────────────────────────────────────────────────────────
 // Ink family — Pen Mode vs Brush Mode in the settings panel
 // ─────────────────────────────────────────────────────────────────
-enum InkFamily { pen, brush }
+enum InkFamily { pen, brush, highlighter }
 
 // ─────────────────────────────────────────────────────────────────
 // Eraser mode — whole-stroke hide vs area carving
@@ -83,8 +83,10 @@ extension PenStyleInfo on PenStyle {
     _ => false,
   };
 
-  static List<PenStyle> forFamily(InkFamily family) =>
-      PenStyle.values.where((s) => s.family == family).toList();
+  static List<PenStyle> forFamily(InkFamily family) {
+    if (family == InkFamily.highlighter) return const [];
+    return PenStyle.values.where((s) => s.family == family).toList();
+  }
 
   /// Migrate persisted style names from older builds.
   static PenStyle fromPersistedName(String? name) {
@@ -119,7 +121,7 @@ class PenSettings {
   /// perfect_freehand streamline (0 = raw, ~0.65 = max smoothing, no lag)
   final double streamline;
 
-  /// Ink concentration / opacity (0.1 = very light, 1.0 = full)
+  /// Ink concentration / opacity (0.1 = very light, 0.5 = default, 1.0 = full)
   final double concentration;
 
   /// Hold-and-pause shape snapping eligibility for new strokes
@@ -148,7 +150,7 @@ class PenSettings {
 
   const PenSettings({
     this.streamline = 0.35,
-    this.concentration = 1.0,
+    this.concentration = 0.5,
     this.beautify = true,
     this.penStyle = PenStyle.pen,
     this.sensitivity = _defaultSensitivity,
@@ -180,7 +182,8 @@ class PenSettings {
     return copyWith(sensitivity: next);
   }
 
-  /// Effective color with concentration baked into alpha
+  /// Effective color with concentration baked into alpha.
+  /// 1.0 = literal full opacity; lower values fade the stroke.
   Color effectiveColor(Color base) =>
-      base.withValues(alpha: concentration.clamp(0.05, 1.0));
+      base.withValues(alpha: concentration.clamp(0.0, 1.0));
 }

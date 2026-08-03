@@ -30,7 +30,13 @@ class InkRenderer {
     if (pts.isEmpty) return;
 
     if (isHighlighter) {
-      _paintHighlighter(canvas, pts, color, baseWidth);
+      _paintHighlighter(
+        canvas,
+        pts,
+        color,
+        baseWidth,
+        streamline: streamline,
+      );
       return;
     }
 
@@ -241,19 +247,18 @@ class InkRenderer {
   }
 
   static Color _colorForStyle(Color color, PenStyle style) {
+    // [color.a] carries concentration — keep it literal (100% = fully opaque).
+    final conc = color.a.clamp(0.0, 1.0);
     if (style == PenStyle.pencil) {
       final hsl = HSLColor.fromColor(color);
       return hsl
           .withSaturation(hsl.saturation * 0.2)
           .withLightness((hsl.lightness * 0.5 + 0.2).clamp(0.0, 1.0))
           .toColor()
-          .withValues(alpha: 0.85);
+          .withValues(alpha: conc);
     }
-    if (style == PenStyle.marker) {
-      return color.withValues(alpha: 0.82);
-    }
-    if (style == PenStyle.inkBrush) {
-      return color.withValues(alpha: 0.90);
+    if (style == PenStyle.marker || style == PenStyle.inkBrush) {
+      return color.withValues(alpha: conc);
     }
     return color;
   }
@@ -361,24 +366,32 @@ class InkRenderer {
     Canvas canvas,
     List<StrokePoint> pts,
     Color color,
-    double baseWidth,
-  ) {
+    double baseWidth, {
+    double streamline = 0.35,
+  }) {
     if (pts.isEmpty) return;
 
+    final smoothed = _streamlinePoints(pts, streamline);
+
     final path = Path();
-    if (pts.length == 1) {
-      path.moveTo(pts.first.x, pts.first.y);
-      path.lineTo(pts.first.x + 0.01, pts.first.y);
+    if (smoothed.length == 1) {
+      path.moveTo(smoothed.first.x, smoothed.first.y);
+      path.lineTo(smoothed.first.x + 0.01, smoothed.first.y);
     } else {
-      path.moveTo(pts.first.x, pts.first.y);
-      for (int i = 1; i < pts.length - 1; i++) {
+      path.moveTo(smoothed.first.x, smoothed.first.y);
+      for (int i = 1; i < smoothed.length - 1; i++) {
         final mid = Offset(
-          (pts[i].x + pts[i + 1].x) / 2,
-          (pts[i].y + pts[i + 1].y) / 2,
+          (smoothed[i].x + smoothed[i + 1].x) / 2,
+          (smoothed[i].y + smoothed[i + 1].y) / 2,
         );
-        path.quadraticBezierTo(pts[i].x, pts[i].y, mid.dx, mid.dy);
+        path.quadraticBezierTo(
+          smoothed[i].x,
+          smoothed[i].y,
+          mid.dx,
+          mid.dy,
+        );
       }
-      path.lineTo(pts.last.x, pts.last.y);
+      path.lineTo(smoothed.last.x, smoothed.last.y);
     }
 
     final bounds = path.getBounds().inflate(baseWidth);
@@ -387,10 +400,13 @@ class InkRenderer {
       Paint()..blendMode = BlendMode.multiply,
     );
 
+    // Concentration is baked into color.a — 100% means full mark strength.
+    final markAlpha = color.a.clamp(0.02, 1.0);
+
     canvas.drawPath(
       path,
       Paint()
-        ..color = color.withValues(alpha: 0.30)
+        ..color = color.withValues(alpha: markAlpha)
         ..style = PaintingStyle.stroke
         ..strokeWidth = baseWidth
         ..strokeCap = StrokeCap.butt
@@ -399,6 +415,31 @@ class InkRenderer {
     );
 
     canvas.restore();
+  }
+
+  /// Exponential moving-average smooth — mirrors freehand streamline feel.
+  static List<StrokePoint> _streamlinePoints(
+    List<StrokePoint> pts,
+    double streamline,
+  ) {
+    if (pts.length < 2 || streamline <= 0) return pts;
+    final t = (streamline / 0.65).clamp(0.0, 1.0);
+    // Higher streamline → smaller keep factor → smoother path.
+    final keep = 1.0 - (t * 0.82);
+    final out = <StrokePoint>[pts.first];
+    var x = pts.first.x;
+    var y = pts.first.y;
+    for (var i = 1; i < pts.length; i++) {
+      x += (pts[i].x - x) * keep;
+      y += (pts[i].y - y) * keep;
+      out.add(StrokePoint(
+        x: x,
+        y: y,
+        pressure: pts[i].pressure,
+        timestamp: pts[i].timestamp,
+      ));
+    }
+    return out;
   }
 
   /// Compute axis-aligned bounds for a stroke's points.

@@ -93,15 +93,32 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   }
 
   /// Hide strokes by id (e.g. after OCR → text node conversion)
-  void hideStrokes(List<String> ids) {
-    _undoStack.add(List.from(state));
-    state = state.map((s) => ids.contains(s.id) ? s.copyWith(isHidden: true) : s).toList();
+  void hideStrokes(List<String> ids, {bool pushUndo = true}) {
+    if (ids.isEmpty) return;
+    if (pushUndo) {
+      _undoStack.add(List.from(state));
+      _redoStack.clear();
+    }
+    final idSet = ids.toSet();
+    final updated = <Stroke>[];
+    state = state.map((s) {
+      if (!idSet.contains(s.id)) return s;
+      final hidden = s.copyWith(isHidden: true);
+      updated.add(hidden);
+      return hidden;
+    }).toList();
+    if (!_ephemeral && updated.isNotEmpty) {
+      _repository.updateStrokes(_noteId, updated);
+    }
   }
 
-  void updateStrokes(List<Stroke> updatedStrokes) {
+  void updateStrokes(List<Stroke> updatedStrokes, {bool pushUndo = true}) {
     if (updatedStrokes.isEmpty) return;
 
-    _undoStack.add(List.from(state));
+    if (pushUndo) {
+      _undoStack.add(List.from(state));
+      _redoStack.clear();
+    }
     state = state.map((stroke) {
       final replacement = updatedStrokes.where((updated) => updated.id == stroke.id).toList();
       return replacement.isNotEmpty ? replacement.first : stroke;
@@ -112,13 +129,74 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     }
   }
 
-  void deleteStrokes(List<String> ids) {
+  void deleteStrokes(List<String> ids, {bool pushUndo = true}) {
     if (ids.isEmpty) return;
 
-    _undoStack.add(List.from(state));
+    if (pushUndo) {
+      _undoStack.add(List.from(state));
+      _redoStack.clear();
+    }
     state = state.where((stroke) => !ids.contains(stroke.id)).toList();
     if (!_ephemeral) {
       _repository.deleteStrokes(ids);
+    }
+  }
+
+  /// Atomic eraser mutation: hide / update / delete / add fragments in one step.
+  /// Set [pushUndo] false to continue an in-progress erase gesture as one undo.
+  void applyEraserMutation({
+    List<String> hideIds = const [],
+    List<String> deleteIds = const [],
+    List<Stroke> updates = const [],
+    List<Stroke> additions = const [],
+    bool pushUndo = true,
+  }) {
+    if (hideIds.isEmpty &&
+        deleteIds.isEmpty &&
+        updates.isEmpty &&
+        additions.isEmpty) {
+      return;
+    }
+    if (pushUndo) {
+      _undoStack.add(List.from(state));
+      _redoStack.clear();
+    }
+
+    final hideSet = hideIds.toSet();
+    final deleteSet = deleteIds.toSet();
+    final updateMap = {for (final s in updates) s.id: s};
+
+    final next = <Stroke>[];
+    final persistedUpdates = <Stroke>[];
+    for (final s in state) {
+      if (deleteSet.contains(s.id)) continue;
+      if (updateMap.containsKey(s.id)) {
+        final u = updateMap[s.id]!;
+        next.add(u);
+        persistedUpdates.add(u);
+        continue;
+      }
+      if (hideSet.contains(s.id)) {
+        final h = s.copyWith(isHidden: true);
+        next.add(h);
+        persistedUpdates.add(h);
+        continue;
+      }
+      next.add(s);
+    }
+    next.addAll(additions);
+    state = next;
+
+    if (!_ephemeral) {
+      if (persistedUpdates.isNotEmpty) {
+        _repository.updateStrokes(_noteId, persistedUpdates);
+      }
+      if (additions.isNotEmpty) {
+        _repository.saveStrokes(_noteId, additions);
+      }
+      if (deleteIds.isNotEmpty) {
+        _repository.deleteStrokes(deleteIds);
+      }
     }
   }
 }

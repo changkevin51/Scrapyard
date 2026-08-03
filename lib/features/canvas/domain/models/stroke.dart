@@ -64,14 +64,47 @@ class Stroke {
     this.penStyle = PenStyle.pen,
   });
 
-  Stroke copyWith({bool? isHidden}) => Stroke(
-    id: id, points: points, color: color, baseWidth: baseWidth,
-    isBrush: isBrush, isHighlighter: isHighlighter, isTape: isTape,
-    isStraightLine: isStraightLine, style: style,
-    shapeType: shapeType, shapeVertices: shapeVertices,
-    isBeautified: isBeautified, penStyle: penStyle,
-    isHidden: isHidden ?? this.isHidden,
-  );
+  Stroke copyWith({
+    List<StrokePoint>? points,
+    bool? isHidden,
+    bool? isStraightLine,
+    ShapeType? shapeType,
+    List<double>? shapeVertices,
+  }) =>
+      Stroke(
+        id: id,
+        points: points ?? this.points,
+        color: color,
+        baseWidth: baseWidth,
+        isBrush: isBrush,
+        isHighlighter: isHighlighter,
+        isTape: isTape,
+        isStraightLine: isStraightLine ?? this.isStraightLine,
+        style: style,
+        shapeType: shapeType ?? this.shapeType,
+        shapeVertices: shapeVertices ?? this.shapeVertices,
+        isBeautified: isBeautified,
+        penStyle: penStyle,
+        isHidden: isHidden ?? this.isHidden,
+      );
+
+  /// Clone this stroke with a new id and point list (e.g. eraser split fragment).
+  Stroke withPoints(String newId, List<StrokePoint> newPoints) => Stroke(
+        id: newId,
+        points: newPoints,
+        color: color,
+        baseWidth: baseWidth,
+        isBrush: isBrush,
+        isHighlighter: isHighlighter,
+        isTape: isTape,
+        isStraightLine: false,
+        style: style,
+        shapeType: ShapeType.none,
+        shapeVertices: const [],
+        isBeautified: isBeautified,
+        penStyle: penStyle,
+        isHidden: isHidden,
+      );
 
   Map<String, dynamic> toMap() => {
     'id': id,

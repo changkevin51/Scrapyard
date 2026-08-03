@@ -6,6 +6,28 @@ import 'package:flutter/material.dart';
 enum InkFamily { pen, brush }
 
 // ─────────────────────────────────────────────────────────────────
+// Eraser mode — whole-stroke hide vs area carving
+// ─────────────────────────────────────────────────────────────────
+enum EraserMode {
+  /// Hide any stroke the eraser brush touches.
+  stroke,
+  /// Carve away ink under the eraser brush (size follows pen width).
+  area,
+}
+
+extension EraserModeInfo on EraserMode {
+  String get label => switch (this) {
+        EraserMode.stroke => 'Stroke',
+        EraserMode.area => 'Area',
+      };
+
+  String get description => switch (this) {
+        EraserMode.stroke => 'Remove whole strokes the eraser touches',
+        EraserMode.area => 'Erase ink under the brush — size follows pen width',
+      };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Pen Style — visual character of the stroke rendering
 // ─────────────────────────────────────────────────────────────────
 enum PenStyle {
@@ -110,6 +132,13 @@ class PenSettings {
   /// where [PenStyle.hasSensitivity] is true.
   final Map<PenStyle, double> sensitivity;
 
+  /// How the eraser tool removes ink.
+  /// Stored nullable so hot-reloaded in-memory settings never crash.
+  final EraserMode? eraserMode;
+
+  /// Resolved eraser mode (defaults to stroke).
+  EraserMode get eraser => eraserMode ?? EraserMode.stroke;
+
   static const Map<PenStyle, double> _defaultSensitivity = {
     PenStyle.pen: 0.5,
     PenStyle.pencil: 0.6,
@@ -123,6 +152,7 @@ class PenSettings {
     this.beautify = true,
     this.penStyle = PenStyle.pen,
     this.sensitivity = _defaultSensitivity,
+    this.eraserMode = EraserMode.stroke,
   });
 
   double sensitivityFor(PenStyle style) =>
@@ -134,6 +164,7 @@ class PenSettings {
     bool? beautify,
     PenStyle? penStyle,
     Map<PenStyle, double>? sensitivity,
+    EraserMode? eraserMode,
   }) =>
       PenSettings(
         streamline: streamline ?? this.streamline,
@@ -141,6 +172,7 @@ class PenSettings {
         beautify: beautify ?? this.beautify,
         penStyle: penStyle ?? this.penStyle,
         sensitivity: sensitivity ?? this.sensitivity,
+        eraserMode: eraserMode ?? this.eraserMode ?? EraserMode.stroke,
       );
 
   PenSettings withSensitivity(PenStyle style, double value) {

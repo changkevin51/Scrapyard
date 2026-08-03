@@ -27,7 +27,7 @@ const List<_ToolDef> _tools = [
   (icon: Icons.edit_outlined,      label: 'Pen',   tip: 'Pen',          tool: CanvasTool.pen),
   (icon: Icons.brush_outlined,     label: 'Brush', tip: 'Brush',        tool: CanvasTool.brush),
   (icon: Icons.highlight_outlined, label: 'Mark',  tip: 'Highlighter',  tool: CanvasTool.highlighter),
-  (icon: Icons.auto_fix_high,      label: 'Erase', tip: 'Eraser',       tool: CanvasTool.eraser),
+  (icon: Icons.auto_fix_off_outlined, label: 'Erase', tip: 'Eraser', tool: CanvasTool.eraser), // icon unused — custom glyph
   (icon: Icons.horizontal_rule,    label: 'Line',  tip: 'Straight line', tool: CanvasTool.straightLine),
   (icon: Icons.text_fields_outlined, label: 'Text', tip: 'Text',       tool: CanvasTool.text),
   (icon: Icons.category_outlined,  label: 'Shape', tip: 'Shape',        tool: CanvasTool.shape),
@@ -310,8 +310,11 @@ class _ToolButton extends ConsumerWidget {
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(def.icon, size: 22,
-                      color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText),
+                  _toolGlyph(
+                    def,
+                    size: 22,
+                    color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                  ),
                   // Highlighter-swipe underline under active tool
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
@@ -342,6 +345,87 @@ class _ToolButton extends ConsumerWidget {
       ),
     );
   }
+}
+
+Widget _toolGlyph(_ToolDef def, {required double size, required Color color}) {
+  if (def.tool == CanvasTool.eraser) {
+    return _EraserIcon(size: size, color: color);
+  }
+  return Icon(def.icon, size: size, color: color);
+}
+
+/// Classic angled rubber eraser — outlined to match other toolbar tools.
+class _EraserIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _EraserIcon({required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _EraserIconPainter(color)),
+    );
+  }
+}
+
+class _EraserIconPainter extends CustomPainter {
+  final Color color;
+  const _EraserIconPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.55
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+
+    final w = size.width;
+    final h = size.height;
+
+    // Angled eraser body (parallelogram).
+    // Corners: tip (top), then clockwise — A tip-left, B tip-right, C base-right, D base-left.
+    final a = Offset(w * 0.52, h * 0.16);
+    final b = Offset(w * 0.84, h * 0.30);
+    final c = Offset(w * 0.50, h * 0.84);
+    final d = Offset(w * 0.18, h * 0.70);
+
+    // Split a bit above center so the shaded rubber reads larger.
+    final midLeft = Offset.lerp(a, d, 0.38)!;
+    final midRight = Offset.lerp(b, c, 0.38)!;
+
+    // Shade the bottom half (eraser rubber).
+    final shade = Path()
+      ..moveTo(midLeft.dx, midLeft.dy)
+      ..lineTo(midRight.dx, midRight.dy)
+      ..lineTo(c.dx, c.dy)
+      ..lineTo(d.dx, d.dy)
+      ..close();
+    canvas.drawPath(
+      shade,
+      Paint()
+        ..color = color.withValues(alpha: 0.28)
+        ..style = PaintingStyle.fill,
+    );
+
+    final body = Path()
+      ..moveTo(d.dx, d.dy)
+      ..lineTo(a.dx, a.dy)
+      ..lineTo(b.dx, b.dy)
+      ..lineTo(c.dx, c.dy)
+      ..close();
+    canvas.drawPath(body, stroke);
+
+    // Ferrule / band across the midpoint.
+    canvas.drawLine(midLeft, midRight, stroke..strokeWidth = 1.4);
+  }
+
+  @override
+  bool shouldRepaint(covariant _EraserIconPainter old) => old.color != color;
 }
 
 // ─────────────────────────────────────────────────────────

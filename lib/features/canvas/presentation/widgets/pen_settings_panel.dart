@@ -19,6 +19,13 @@ class PenSettingsPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(penSettingsProvider);
+    // Heal in-memory settings from before eraserMode existed (hot reload).
+    if (settings.eraserMode == null) {
+      Future.microtask(() {
+        ref.read(penSettingsProvider.notifier).state =
+            settings.copyWith(eraserMode: EraserMode.stroke);
+      });
+    }
     final family = ref.watch(activeInkFamilyProvider);
     final styles = PenStyleInfo.forFamily(family);
     final currentStyle = styles.contains(settings.penStyle)
@@ -26,6 +33,9 @@ class PenSettingsPanel extends ConsumerWidget {
         : styles.first;
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
       decoration: const BoxDecoration(
         color: ScrapTheme.cardSurface,
@@ -33,10 +43,11 @@ class PenSettingsPanel extends ConsumerWidget {
           top: Radius.circular(ScrapTheme.borderRadiusDefault),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Handle
           Center(
             child: Container(
@@ -212,7 +223,30 @@ class PenSettingsPanel extends ConsumerWidget {
             onChanged: (v) => ref.read(penSettingsProvider.notifier).state =
                 settings.copyWith(beautify: v),
           ),
+          const SizedBox(height: 24),
+
+          // ── Eraser ─────────────────────────────────────────────
+          _SectionHeader(
+            label: 'ERASER',
+            value: settings.eraser.label,
+            tooltip: settings.eraser.description,
+          ),
+          const SizedBox(height: 8),
+          _EraserModeTabs(
+            mode: settings.eraser,
+            onChanged: (m) => ref.read(penSettingsProvider.notifier).state =
+                settings.copyWith(eraserMode: m),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            settings.eraser == EraserMode.area
+                ? 'Area size follows the thickness dots in the toolbar.'
+                : 'Removes whole strokes the eraser brush touches.',
+            style: ScrapTextStyles.caption
+                .copyWith(color: ScrapTheme.mutedText, fontSize: 11),
+          ),
         ],
+      ),
       ),
     );
   }
@@ -239,6 +273,49 @@ class _FamilyTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _SegmentedTabs<InkFamily>(
+      value: family,
+      options: const [
+        (label: 'Pen', value: InkFamily.pen),
+        (label: 'Brush', value: InkFamily.brush),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _EraserModeTabs extends StatelessWidget {
+  final EraserMode mode;
+  final ValueChanged<EraserMode> onChanged;
+
+  const _EraserModeTabs({required this.mode, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SegmentedTabs<EraserMode>(
+      value: mode,
+      options: const [
+        (label: 'Stroke', value: EraserMode.stroke),
+        (label: 'Area', value: EraserMode.area),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _SegmentedTabs<T> extends StatelessWidget {
+  final T value;
+  final List<({String label, T value})> options;
+  final ValueChanged<T> onChanged;
+
+  const _SegmentedTabs({
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: ScrapTheme.kraft.withValues(alpha: 0.25),
@@ -247,34 +324,35 @@ class _FamilyTabs extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       child: Row(
         children: [
-          _tab('Pen', InkFamily.pen),
-          _tab('Brush', InkFamily.brush),
-        ],
-      ),
-    );
-  }
-
-  Widget _tab(String label, InkFamily value) {
-    final selected = family == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => onChanged(value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? ScrapTheme.accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: ScrapTextStyles.label.copyWith(
-              color: selected ? Colors.white : ScrapTheme.secondaryText,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          for (final opt in options)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(opt.value),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: value == opt.value
+                        ? ScrapTheme.accent
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    opt.label,
+                    style: ScrapTextStyles.label.copyWith(
+                      color: value == opt.value
+                          ? Colors.white
+                          : ScrapTheme.secondaryText,
+                      fontWeight: value == opt.value
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -421,11 +499,12 @@ class PenSettingsButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeTool = ref.watch(activeCanvasToolProvider);
-    final isInkTool =
-        activeTool == CanvasTool.pen || activeTool == CanvasTool.brush;
+    final isRelevant = activeTool == CanvasTool.pen ||
+        activeTool == CanvasTool.brush ||
+        activeTool == CanvasTool.eraser;
 
     return Tooltip(
-      message: 'Pen / Brush settings',
+      message: 'Pen / Brush / Eraser settings',
       child: GestureDetector(
         onTap: () {
           showScrapSheet(
@@ -440,7 +519,7 @@ class PenSettingsButton extends ConsumerWidget {
           margin: const EdgeInsets.symmetric(horizontal: 2),
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-            color: isInkTool
+            color: isRelevant
                 ? ScrapTheme.accent.withValues(alpha: 0.08)
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
@@ -448,7 +527,7 @@ class PenSettingsButton extends ConsumerWidget {
           child: Icon(
             Icons.tune,
             size: 18,
-            color: isInkTool ? ScrapTheme.accent : ScrapTheme.mutedText,
+            color: isRelevant ? ScrapTheme.accent : ScrapTheme.mutedText,
           ),
         ),
       ),

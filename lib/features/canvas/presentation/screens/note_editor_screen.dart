@@ -1740,13 +1740,16 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     return Scaffold(
       backgroundColor: ScrapTheme.background,
-      body: Stack(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Column(
-            children: [
-              const SafeArea(bottom: false, child: DocumentTabBar()),
-              Expanded(child: toolSurface),
-            ],
+          Expanded(
+            child: Column(
+              children: [
+                const SafeArea(bottom: false, child: DocumentTabBar()),
+                Expanded(child: toolSurface),
+              ],
+            ),
           ),
           const AiChatPanel(),
         ],

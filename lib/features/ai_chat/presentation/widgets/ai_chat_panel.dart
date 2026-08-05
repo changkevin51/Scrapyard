@@ -26,7 +26,7 @@ import 'chat_message_bubble.dart';
 import 'chat_suggestion_chips.dart';
 import 'model_picker_sheet.dart';
 
-/// Sliding right-side AI chat panel over the note editor.
+/// Right-side AI chat panel — split-screen sibling of the note editor.
 class AiChatPanel extends ConsumerStatefulWidget {
   const AiChatPanel({super.key});
 
@@ -37,7 +37,7 @@ class AiChatPanel extends ConsumerStatefulWidget {
 class _AiChatPanelState extends ConsumerState<AiChatPanel>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<Offset> _slide;
+  late final Animation<double> _sizeFactor;
   final _composer = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
@@ -47,10 +47,11 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
   void initState() {
     super.initState();
     _ctrl = AnimationController(vsync: this, duration: ScrapMotion.panel);
-    _slide = Tween<Offset>(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: ScrapMotion.panelCurve));
+    _sizeFactor = CurvedAnimation(
+      parent: _ctrl,
+      curve: ScrapMotion.panelCurve,
+      reverseCurve: ScrapMotion.exitCurve,
+    );
   }
 
   @override
@@ -117,8 +118,8 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
 
   void _requestCanvasCapture() {
     _focusNode.unfocus();
+    // Keep the panel open — split view leaves the canvas interactive.
     ref.read(chatCaptureRequestProvider.notifier).state = true;
-    ref.read(chatPanelOpenProvider.notifier).state = false;
   }
 
   void _clearAttachment() {
@@ -152,42 +153,21 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
 
     final widthPref = ref.watch(chatPanelWidthProvider);
     final screenW = MediaQuery.of(context).size.width;
-    final panelW = math.min(widthPref, screenW * 0.92).clamp(280.0, 560.0);
+    // Leave room for the editor so content isn't crushed on narrow screens.
+    const minEditorW = 280.0;
+    final maxPanel = math.max(280.0, screenW - minEditorW);
+    final panelW = math.min(widthPref, maxPanel).clamp(280.0, 560.0);
 
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, child) {
-        if (_ctrl.value == 0 && !open) {
-          return const SizedBox.shrink();
-        }
-        return Stack(
-          children: [
-            // Scrim
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: _close,
-                child: Opacity(
-                  opacity: 0.35 * _ctrl.value,
-                  child: const ColoredBox(color: Colors.black),
-                ),
-              ),
-            ),
-            // Panel
-            Align(
-              alignment: Alignment.centerRight,
-              child: SlideTransition(
-                position: _slide,
-                child: SizedBox(
-                  width: panelW,
-                  height: double.infinity,
-                  child: child,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-      child: _buildPanel(panelW),
+    // SizeTransition reserves horizontal space so the editor reflows beside
+    // the panel (true split screen) instead of being covered by an overlay.
+    return SizeTransition(
+      sizeFactor: _sizeFactor,
+      axis: Axis.horizontal,
+      alignment: Alignment.centerLeft,
+      child: SizedBox(
+        width: panelW,
+        child: _buildPanel(panelW),
+      ),
     );
   }
 
@@ -207,7 +187,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
           TornSheet(
             seed: 17,
             edges: const {TornEdge.left},
-            amplitude: 5.5,
+            amplitude: 6.5,
             grain: true,
             grainOpacity: 0.018,
             child: Column(
@@ -234,8 +214,13 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onHorizontalDragUpdate: (d) {
+                final screenW = MediaQuery.of(context).size.width;
+                const minEditorW = 280.0;
+                final maxPanel = math.max(280.0, screenW - minEditorW);
                 final next = panelW - d.delta.dx;
-                ref.read(chatPanelWidthProvider.notifier).setWidth(next);
+                ref.read(chatPanelWidthProvider.notifier).setWidth(
+                      next.clamp(280.0, math.min(560.0, maxPanel)),
+                    );
               },
               child: const MouseRegion(
                 cursor: SystemMouseCursors.resizeLeftRight,

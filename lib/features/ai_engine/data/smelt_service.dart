@@ -62,9 +62,9 @@ class SmeltService {
 
   /// Analyze with streaming support for faster perceived response time.
   ///
-  /// Code execution is always enabled on the Gemini request. When
-  /// [forceCodeExecution] is true, the prompt also instructs the model to
-  /// verify its answer by running code.
+  /// Code execution is available on the Gemini request; the model chooses
+  /// whether to use it. When [forceCodeExecution] is true, the prompt
+  /// requires the model to verify its answer by running code.
   Future<SmeltStreamResult> analyzeSelectionStream(
     Uint8List? imageBytes, {
     String? preferredModel,
@@ -142,9 +142,14 @@ class SmeltService {
 '''
         : '''
 
-6. CODE EXECUTION (OPTIONAL):
-   - You have access to a code_execution tool (Python sandbox).
-   - Use it when it would help verify calculations or reduce arithmetic mistakes.
+6. CODE EXECUTION (OPTIONAL — USE SPARINGLY):
+   - You have access to a code_execution tool (Python sandbox). You decide whether to use it.
+   - DEFAULT: answer directly WITHOUT code. Do NOT use code for simple arithmetic,
+     one-step algebra, definitions, explanations, or anything you can solve confidently by reasoning.
+   - USE code ONLY when it clearly helps: multi-step numerical work, large/messy calculations,
+     symbolic manipulation you might get wrong by hand, plotting/simulation, or verifying a
+     non-trivial result where a mistake is likely.
+   - Never run code "just in case" (e.g. 1+1, solve x+2=5, basic derivatives). Prefer no tool call.
 ''';
 
     final systemPrompt = '''
@@ -209,7 +214,7 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
       });
       final userHint = forceCodeExecution
           ? 'Analyze this handwritten content. You MUST use code execution to verify the answer, then provide the JSON response.'
-          : 'Analyze this handwritten content and provide the answer.';
+          : 'Analyze this handwritten content and provide the answer. Use code execution only if the problem truly needs it; otherwise answer directly with no tool call.';
       parts.add({'text': userHint});
     } else {
       parts.add({'text': 'No image available. Please respond that the image could not be captured.'});
@@ -221,7 +226,7 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
           'parts': parts,
         },
       ],
-      // Always enable code execution; the model may use it whenever helpful.
+      // Code execution is available; the model decides whether to call it.
       // JSON mime type is omitted because it is incompatible with tools.
       'tools': [
         {'code_execution': <String, dynamic>{}},

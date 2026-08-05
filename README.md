@@ -21,7 +21,7 @@
 
 Scrap paper is where most of the real thinking happens. It's messy, it's fast, and nobody ever grades it. Scrapyard tries to keep that feeling, except the paper can read what you wrote.
 
-Scribble out a problem, circle it, and the app works through it with you — step by step, not just an answer. When you want to keep digging, there's a chat panel next to your notes that already knows what you're looking at.
+Scribble out a problem, select it, and the app works through it with you — step by step, not just an answer. When you want to keep digging, there's a chat panel next to your notes that already knows what you're looking at.
 
 ## It's free
 

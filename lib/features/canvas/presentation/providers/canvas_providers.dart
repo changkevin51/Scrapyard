@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/stroke.dart';
 import '../../domain/models/canvas_smart_models.dart';
+import '../../domain/models/page_layout.dart';
 import '../../data/stroke_repository.dart';
+import '../../data/canvas_settings_repository.dart';
 import '../../data/pen_engine.dart';
 import '../../data/canvas_ocr_service.dart';
+
+export '../../domain/models/page_layout.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
@@ -111,11 +115,103 @@ void restoreToolColor(WidgetRef ref, CanvasTool tool) {
   }
 }
 
-enum PageLayout { plain, ruled, dotted, grid }
 enum ToolbarPosition { top, bottom, left, right }
 
-final pageLayoutProvider = StateProvider<PageLayout>((ref) => PageLayout.ruled);
-final toolbarPositionProvider = StateProvider<ToolbarPosition>((ref) => ToolbarPosition.top);
+final canvasSettingsRepositoryProvider =
+    Provider((ref) => CanvasSettingsRepository());
+
+/// App-wide default for new notes. Loaded from SharedPreferences (ships as Grid).
+final defaultPageLayoutProvider =
+    StateNotifierProvider<DefaultPageLayoutNotifier, PageLayout>((ref) {
+  return DefaultPageLayoutNotifier(ref.watch(canvasSettingsRepositoryProvider));
+});
+
+class DefaultPageLayoutNotifier extends StateNotifier<PageLayout> {
+  DefaultPageLayoutNotifier(this._repo)
+      : super(CanvasSettingsRepository.defaultPageLayout) {
+    _load();
+  }
+
+  final CanvasSettingsRepository _repo;
+
+  Future<void> _load() async {
+    state = await _repo.loadDefaultPageLayout();
+  }
+
+  Future<void> set(PageLayout layout) async {
+    state = layout;
+    await _repo.saveDefaultPageLayout(layout);
+  }
+}
+
+/// Active note's page layout. Persisted per note; falls back to the app default.
+final pageLayoutProvider =
+    StateNotifierProvider<PageLayoutNotifier, PageLayout>((ref) {
+  return PageLayoutNotifier(ref);
+});
+
+class PageLayoutNotifier extends StateNotifier<PageLayout> {
+  PageLayoutNotifier(this._ref)
+      : super(_ref.read(defaultPageLayoutProvider)) {
+    _loadForActiveNote();
+    _ref.listen<String>(activeNoteIdProvider, (_, __) => _loadForActiveNote());
+  }
+
+  final Ref _ref;
+  String? _loadedNoteId;
+
+  Future<void> _loadForActiveNote() async {
+    final noteId = _ref.read(activeNoteIdProvider);
+    _loadedNoteId = noteId;
+    final repo = _ref.read(canvasSettingsRepositoryProvider);
+    final saved = await repo.loadNoteSettings(noteId);
+    if (_loadedNoteId != noteId) return;
+    if (saved != null) {
+      state = saved.pageLayout;
+    } else {
+      final fallback = _ref.read(defaultPageLayoutProvider);
+      state = fallback;
+      // Persist so a later default change (or Infinite lock) sticks per note.
+      final ephemeral =
+          _ref.read(ephemeralNoteIdsProvider).contains(noteId);
+      if (!ephemeral) {
+        await repo.upsertPageLayout(noteId, fallback);
+      }
+    }
+  }
+
+  /// Switch to a finite style. No-ops if already locked to infinite.
+  Future<void> setFinite(PageLayout layout) async {
+    if (!layout.isFinite) return;
+    if (state.isInfinite) return;
+    state = layout;
+    final noteId = _ref.read(activeNoteIdProvider);
+    final ephemeral =
+        _ref.read(ephemeralNoteIdsProvider).contains(noteId);
+    if (!ephemeral) {
+      await _ref
+          .read(canvasSettingsRepositoryProvider)
+          .upsertPageLayout(noteId, layout);
+    }
+  }
+
+  /// One-way conversion to infinite canvas. Persists immediately.
+  Future<void> convertToInfinite() async {
+    if (state.isInfinite) return;
+    state = PageLayout.infinite;
+    final noteId = _ref.read(activeNoteIdProvider);
+    final ephemeral =
+        _ref.read(ephemeralNoteIdsProvider).contains(noteId);
+    if (!ephemeral) {
+      await _ref
+          .read(canvasSettingsRepositoryProvider)
+          .upsertPageLayout(noteId, PageLayout.infinite);
+    }
+  }
+}
+
+final toolbarPositionProvider =
+    StateProvider<ToolbarPosition>((ref) => ToolbarPosition.top);
 
 class CanvasTextItem {
   final String id;

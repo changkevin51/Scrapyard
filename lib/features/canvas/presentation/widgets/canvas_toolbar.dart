@@ -11,6 +11,7 @@ import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
+import '../providers/canvas_viewport_provider.dart';
 import 'canvas_smart_widgets.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
@@ -1007,6 +1008,7 @@ class _SettingsButton extends ConsumerWidget {
   void _showSettings(BuildContext context) {
     showScrapSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
@@ -1022,123 +1024,218 @@ class _SettingsButton extends ConsumerWidget {
 class _CanvasSettingsSheet extends ConsumerWidget {
   const _CanvasSettingsSheet();
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final layout       = ref.watch(pageLayoutProvider);
-    final pos          = ref.watch(toolbarPositionProvider);
-    final palmReject   = ref.watch(stylusOnlyModeProvider);
+  Future<void> _onPageStyleTap(
+    BuildContext context,
+    WidgetRef ref,
+    PageLayout current,
+    PageLayout next,
+  ) async {
+    if (next == current) return;
+    if (current.isInfinite) return; // locked
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Grabber
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: ScrapTheme.kraft,
-                borderRadius: BorderRadius.circular(2),
+    if (next.isInfinite) {
+      final confirmed = await showScrapDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: ScrapTheme.cardSurface,
+          title: Text('Switch to Infinite?', style: ScrapTextStyles.heading),
+          content: Text(
+            'Once enabled, you cannot convert this note back to Plain, Ruled, '
+            'Dotted, or Grid. Pan and zoom freely on an unbounded canvas.',
+            style: ScrapTextStyles.body,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: ScrapTextStyles.body),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'Enable Infinite',
+                style: ScrapTextStyles.body.copyWith(color: ScrapTheme.accent),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          const ScrapStampLabel(text: '⟨ Canvas ⟩'),
-          const SizedBox(height: 8),
-          Text('Canvas Settings',
-              style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
-          const SizedBox(height: 24),
+          ],
+        ),
+      );
+      if (confirmed == true) {
+        await ref.read(pageLayoutProvider.notifier).convertToInfinite();
+      }
+      return;
+    }
 
-          // Insert tools (relocated from the ✦ FAB)
-          Text('INSERT', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  Navigator.pop(context);
-                  showInsertTableDialog(context);
-                },
-                child: _chip('TABLE', false),
+    await ref.read(pageLayoutProvider.notifier).setFinite(next);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final layout = ref.watch(pageLayoutProvider);
+    final pos = ref.watch(toolbarPositionProvider);
+    final palmReject = ref.watch(stylusOnlyModeProvider);
+    final lockedInfinite = layout.isInfinite;
+
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Grabber
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ScrapTheme.kraft,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              if (ref.watch(ocrResultsProvider).isNotEmpty)
+            ),
+            const SizedBox(height: 16),
+            const ScrapStampLabel(text: '⟨ Canvas ⟩'),
+            const SizedBox(height: 8),
+            Text('Canvas Settings',
+                style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
+            const SizedBox(height: 24),
+
+            // Insert tools (relocated from the ✦ FAB)
+            Text('INSERT', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
                 GestureDetector(
                   onTap: () {
-                    final texts = ref
-                        .read(ocrResultsProvider)
-                        .map((r) => r.text)
-                        .toList();
                     Navigator.pop(context);
-                    convertOcrToTextNode(
-                      ref,
-                      context,
-                      ocrTexts: texts,
-                      ocrStrokeIds: const [],
-                    );
+                    showInsertTableDialog(context);
                   },
-                  child: _chip('HANDWRITING → TEXT', false),
+                  child: _chip('TABLE', false),
                 ),
-            ],
-          ),
-          const SizedBox(height: 20),
+                if (ref.watch(ocrResultsProvider).isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      final texts = ref
+                          .read(ocrResultsProvider)
+                          .map((r) => r.text)
+                          .toList();
+                      Navigator.pop(context);
+                      convertOcrToTextNode(
+                        ref,
+                        context,
+                        ocrTexts: texts,
+                        ocrStrokeIds: const [],
+                      );
+                    },
+                    child: _chip('HANDWRITING → TEXT', false),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
 
-          // Page layout
-          Text('PAGE STYLE', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: PageLayout.values.map((l) {
-              final sel = l == layout;
-              return GestureDetector(
-                onTap: () => ref.read(pageLayoutProvider.notifier).state = l,
-                child: _chip(l.name.toUpperCase(), sel),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-
-          // Toolbar dock
-          Text('TOOLBAR POSITION', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: ToolbarPosition.values.map((p) {
-              final sel = p == pos;
-              return GestureDetector(
-                onTap: () {
-                  ref.read(toolbarPositionProvider.notifier).state = p;
-                  Navigator.pop(context);
-                },
-                child: _chip(p.name.toUpperCase(), sel),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-
-          // Palm rejection
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('PALM REJECTION', style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
-                Text('Touch = scroll/zoom, Stylus = write',
-                    style: ScrapTextStyles.caption
-                        .copyWith(color: ScrapTheme.mutedText)),
-              ]),
-              PaperSwitch(
-                value: palmReject,
-                onChanged: (v) =>
-                    ref.read(stylusOnlyModeProvider.notifier).state = v,
+            // Page layout
+            Text('PAGE STYLE',
+                style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PageLayout.values.map((l) {
+                final sel = l == layout;
+                final disabled = lockedInfinite && l.isFinite;
+                return Opacity(
+                  opacity: disabled ? 0.4 : 1,
+                  child: GestureDetector(
+                    onTap: disabled
+                        ? null
+                        : () => _onPageStyleTap(context, ref, layout, l),
+                    child: _chip(l.chipLabel, sel),
+                  ),
+                );
+              }).toList(),
+            ),
+            if (lockedInfinite) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Infinite is locked for this note — other page styles are disabled.',
+                style: ScrapTextStyles.caption
+                    .copyWith(color: ScrapTheme.mutedText),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-        ],
+            const SizedBox(height: 20),
+
+            // Go Home — infinite only
+            Text('VIEWPORT',
+                style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+            const SizedBox(height: 8),
+            Opacity(
+              opacity: lockedInfinite ? 1 : 0.4,
+              child: GestureDetector(
+                onTap: lockedInfinite
+                    ? () {
+                        ScrapFeedback.tap();
+                        ref.read(canvasViewportProvider.notifier).goHome();
+                        Navigator.pop(context);
+                      }
+                    : null,
+                child: _chip('GO HOME', false),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              lockedInfinite
+                  ? 'Jump to your first stroke (home anchor).'
+                  : 'Available only in Infinite page style.',
+              style: ScrapTextStyles.caption
+                  .copyWith(color: ScrapTheme.mutedText),
+            ),
+            const SizedBox(height: 20),
+
+            // Toolbar dock
+            Text('TOOLBAR POSITION',
+                style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ToolbarPosition.values.map((p) {
+                final sel = p == pos;
+                return GestureDetector(
+                  onTap: () {
+                    ref.read(toolbarPositionProvider.notifier).state = p;
+                    Navigator.pop(context);
+                  },
+                  child: _chip(p.name.toUpperCase(), sel),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Palm rejection
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('PALM REJECTION',
+                      style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+                  Text('Touch = scroll/zoom, Stylus = write',
+                      style: ScrapTextStyles.caption
+                          .copyWith(color: ScrapTheme.mutedText)),
+                ]),
+                PaperSwitch(
+                  value: palmReject,
+                  onChanged: (v) =>
+                      ref.read(stylusOnlyModeProvider.notifier).state = v,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
       ),
     );
   }

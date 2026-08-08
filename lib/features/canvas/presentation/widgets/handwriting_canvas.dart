@@ -13,8 +13,11 @@ import '../../data/ink_renderer.dart';
 import '../../data/pen_engine.dart';
 import '../../data/smart_shape_recognizer.dart';
 import '../../domain/models/canvas_smart_models.dart';
+import '../../domain/models/canvas_viewport.dart';
 import '../../domain/models/stroke.dart';
+import '../../domain/services/stroke_spatial_index.dart';
 import '../providers/canvas_providers.dart';
+import '../providers/canvas_viewport_provider.dart';
 
 // ══════════════════════════════════════════════════════════════════
 // Saved-stroke picture cache
@@ -51,23 +54,96 @@ class _StrokeCache {
   }
 }
 
+/// World-space overscan picture cache for infinite canvas.
+/// Rebuilds when the stroke list changes, LOD tier changes, or the visible
+/// world leaves the buffered rect.
+class _InfinitePictureCache {
+  ui.Picture? picture;
+  List<Stroke>? _strokes;
+  Rect? bufferedWorld;
+  int? lodTier;
+
+  static int lodTierFor(double scale) {
+    if (scale < 0.15) return 0;
+    if (scale < 0.3) return 1;
+    return 2;
+  }
+
+  bool isValid(List<Stroke> s, Rect visible, double scale) {
+    if (picture == null ||
+        bufferedWorld == null ||
+        !identical(_strokes, s) ||
+        lodTier != lodTierFor(scale)) {
+      return false;
+    }
+    // Keep a small inner margin so we rebuild before the edge is visible.
+    final margin = bufferedWorld!.width * 0.05;
+    final inner = bufferedWorld!.deflate(margin);
+    return inner.contains(visible.topLeft) &&
+        inner.contains(visible.bottomRight);
+  }
+
+  void build(
+    List<Stroke> strokes,
+    Rect buffer,
+    double scale,
+    void Function(Canvas canvas, Rect buffer) drawFn,
+  ) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, buffer.width, buffer.height),
+    );
+    // Draw in world coords relative to buffer origin for a compact picture.
+    canvas.translate(-buffer.left, -buffer.top);
+    drawFn(canvas, buffer);
+    picture = recorder.endRecording();
+    _strokes = strokes;
+    bufferedWorld = buffer;
+    lodTier = lodTierFor(scale);
+  }
+
+  void invalidate() {
+    picture = null;
+    _strokes = null;
+    bufferedWorld = null;
+    lodTier = null;
+  }
+
+  void draw(Canvas canvas, CanvasViewport vp) {
+    final pic = picture;
+    final buf = bufferedWorld;
+    if (pic == null || buf == null) return;
+    canvas.save();
+    canvas.transform(vp.matrix.storage);
+    canvas.translate(buf.left, buf.top);
+    canvas.drawPicture(pic);
+    canvas.restore();
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // HandwritingCanvas
 // ══════════════════════════════════════════════════════════════════
 class HandwritingCanvas extends ConsumerStatefulWidget {
-  final ScrollController scrollController;
-  final ScrollController horizontalScrollController;
+  final ScrollController? scrollController;
+  final ScrollController? horizontalScrollController;
   final double zoomLevel;
   final ValueChanged<double> onZoomChanged;
   final bool suppressTouchScroll;
 
+  /// When true, pan/zoom use [canvasViewportProvider] and strokes are stored
+  /// in world coordinates. Finite sheet mode keeps scroll controllers.
+  final bool infiniteMode;
+
   const HandwritingCanvas({
     super.key,
-    required this.scrollController,
-    required this.horizontalScrollController,
+    this.scrollController,
+    this.horizontalScrollController,
     required this.zoomLevel,
     required this.onZoomChanged,
     this.suppressTouchScroll = false,
+    this.infiniteMode = false,
   });
 
   @override
@@ -90,6 +166,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   // Separate picture caches so highlighter commits don't invalidate ink.
   final _hlCache = _StrokeCache();
   final _inkCache = _StrokeCache();
+  final _infiniteHlCache = _InfinitePictureCache();
+  final _infiniteInkCache = _InfinitePictureCache();
 
   // Cached bounds per stroke id for fast eraser / cluster hit-tests.
   final _boundsCache = <String, Rect>{};
@@ -410,10 +488,15 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         InkRenderer.boundsOf(points, pad: bWidth);
     if (isHL) {
       _hlCache.invalidate();
+      _infiniteHlCache.invalidate();
     } else {
       _inkCache.invalidate();
+      _infiniteInkCache.invalidate();
     }
     ref.read(strokesProvider.notifier).addStroke(stroke);
+    if (widget.infiniteMode) {
+      ref.read(canvasViewportProvider.notifier).onStrokeCommitted(stroke);
+    }
     _tick();
   }
 
@@ -617,14 +700,31 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     return scaledW < viewportW ? (viewportW - scaledW) / 2.0 : 0.0;
   }
 
-  RenderBox? _scrollViewportBox() {
-    if (!widget.scrollController.hasClients) return null;
-    return widget.scrollController.position.context.storageContext
-        .findRenderObject() as RenderBox?;
+  /// Convert pointer-local (screen / sheet) coords to stroke world coords.
+  Offset _toWorld(Offset local) {
+    if (!widget.infiniteMode) return local;
+    return ref.read(canvasViewportProvider).toWorld(local);
   }
 
-  /// Canvas-local point currently under the pinch midpoint.
+  RenderBox? _scrollViewportBox() {
+    final sc = widget.scrollController;
+    if (sc == null || !sc.hasClients) return null;
+    return sc.position.context.storageContext.findRenderObject() as RenderBox?;
+  }
+
+  /// Canvas-local / world point currently under the pinch midpoint.
   Offset? _canvasPointUnderPinch(List<Offset> globalPositions) {
+    if (widget.infiniteMode) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return null;
+      final mid = Offset(
+        (globalPositions[0].dx + globalPositions[1].dx) / 2,
+        (globalPositions[0].dy + globalPositions[1].dy) / 2,
+      );
+      final local = box.globalToLocal(mid);
+      return ref.read(canvasViewportProvider).toWorld(local);
+    }
+
     final box = _scrollViewportBox();
     if (box == null || !box.hasSize) return null;
 
@@ -637,10 +737,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     if (zoom <= 0) return null;
 
     final originX = _contentOriginX(box.size.width, zoom);
-    final h = widget.horizontalScrollController.hasClients
-        ? widget.horizontalScrollController.offset
+    final h = widget.horizontalScrollController?.hasClients == true
+        ? widget.horizontalScrollController!.offset
         : 0.0;
-    final v = widget.scrollController.offset;
+    final v = widget.scrollController?.offset ?? 0.0;
     return Offset(
       (focalVp.dx + h - originX) / zoom,
       (focalVp.dy + v) / zoom,
@@ -660,13 +760,13 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       if (targetH == null || targetV == null) return;
 
       final vScroll = widget.scrollController;
-      if (vScroll.hasClients) {
+      if (vScroll != null && vScroll.hasClients) {
         vScroll.jumpTo(
           targetV.clamp(0.0, vScroll.position.maxScrollExtent),
         );
       }
       final hScroll = widget.horizontalScrollController;
-      if (hScroll.hasClients) {
+      if (hScroll != null && hScroll.hasClients) {
         hScroll.jumpTo(
           targetH.clamp(0.0, hScroll.position.maxScrollExtent),
         );
@@ -690,6 +790,41 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       final positions = _touchPointers.values.toList();
       final currentDistance = (positions[0] - positions[1]).distance;
       if (currentDistance <= 5.0) return;
+
+      if (widget.infiniteMode) {
+        final newZoom =
+            (_pinchInitialZoom! * (currentDistance / _pinchInitialDistance!))
+                .clamp(
+              CanvasViewport.minScaleInfinite,
+              CanvasViewport.maxScaleInfinite,
+            );
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null || !box.hasSize) {
+          ref.read(canvasViewportProvider.notifier).setViewport(
+                CanvasViewport(
+                  pan: ref.read(canvasViewportProvider).pan,
+                  scale: newZoom,
+                ),
+              );
+          widget.onZoomChanged(newZoom);
+          return;
+        }
+        final mid = Offset(
+          (positions[0].dx + positions[1].dx) / 2,
+          (positions[0].dy + positions[1].dy) / 2,
+        );
+        final focalScreen = box.globalToLocal(mid);
+        final worldFocal = _pinchContentFocal!;
+        final newPan = Offset(
+          worldFocal.dx - focalScreen.dx / newZoom,
+          worldFocal.dy - focalScreen.dy / newZoom,
+        );
+        ref.read(canvasViewportProvider.notifier).setViewport(
+              CanvasViewport(pan: newPan, scale: newZoom),
+            );
+        widget.onZoomChanged(newZoom);
+        return;
+      }
 
       final box = _scrollViewportBox();
       if (box == null || !box.hasSize) {
@@ -717,23 +852,27 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
       widget.onZoomChanged(newZoom);
       _scheduleScrollTo(newH, newV);
-    } else if (previous != null &&
-        !widget.suppressTouchScroll &&
-        widget.scrollController.hasClients) {
-      if (ref.read(isPenModeActiveProvider)) {
-        final delta = e.position - previous;
-        final vScroll = widget.scrollController;
-        vScroll.jumpTo(
-          (vScroll.offset - delta.dy)
-              .clamp(0.0, vScroll.position.maxScrollExtent),
+    } else if (previous != null && !widget.suppressTouchScroll) {
+      if (!ref.read(isPenModeActiveProvider)) return;
+      final delta = e.position - previous;
+      if (widget.infiniteMode) {
+        ref
+            .read(canvasViewportProvider.notifier)
+            .panByScreenDelta(delta);
+        return;
+      }
+      final vScroll = widget.scrollController;
+      if (vScroll == null || !vScroll.hasClients) return;
+      vScroll.jumpTo(
+        (vScroll.offset - delta.dy)
+            .clamp(0.0, vScroll.position.maxScrollExtent),
+      );
+      final hScroll = widget.horizontalScrollController;
+      if (hScroll != null && hScroll.hasClients) {
+        hScroll.jumpTo(
+          (hScroll.offset - delta.dx)
+              .clamp(0.0, hScroll.position.maxScrollExtent),
         );
-        final hScroll = widget.horizontalScrollController;
-        if (hScroll.hasClients) {
-          hScroll.jumpTo(
-            (hScroll.offset - delta.dx)
-                .clamp(0.0, hScroll.position.maxScrollExtent),
-          );
-        }
       }
     }
   }
@@ -791,13 +930,20 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   /// Eraser radius from the toolbar thickness dots (same control as pen width).
+  /// In infinite mode this is a world-space radius so on-screen size stays stable.
   double _eraserRadius() {
     final mod = ref.read(strokeWidthModifierProvider);
-    return 10.0 * mod;
+    final screenR = 10.0 * mod;
+    if (widget.infiniteMode) {
+      final scale = ref.read(canvasViewportProvider).scale;
+      return screenR / max(scale, 0.01);
+    }
+    return screenR;
   }
 
   /// Sample along the drag path so fast strokes don't skip ink.
-  void _eraseAlong(Offset pos) {
+  void _eraseAlong(Offset localPos) {
+    final pos = _toWorld(localPos);
     final radius = _eraserRadius();
     final last = _lastErasePos;
     if (last == null) {
@@ -839,6 +985,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
     _hlCache.invalidate();
     _inkCache.invalidate();
+    _infiniteHlCache.invalidate();
+    _infiniteInkCache.invalidate();
     for (final id in toHide) {
       _boundsCache.remove(id);
     }
@@ -847,6 +995,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         .read(strokesProvider.notifier)
         .hideStrokes(toHide, pushUndo: pushUndo);
     _eraseUndoPushed = true;
+    if (widget.infiniteMode) {
+      ref.read(canvasViewportProvider.notifier).onStrokesChanged();
+    }
   }
 
   void _eraseAreaAt(Offset pos, double radius) {
@@ -932,6 +1083,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
     _hlCache.invalidate();
     _inkCache.invalidate();
+    _infiniteHlCache.invalidate();
+    _infiniteInkCache.invalidate();
     for (final id in [
       ...deleteIds,
       ...hideIds,
@@ -953,6 +1106,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
           pushUndo: pushUndo,
         );
     _eraseUndoPushed = true;
+    if (widget.infiniteMode) {
+      ref.read(canvasViewportProvider.notifier).onStrokesChanged();
+    }
   }
 
   bool _strokeNearPoint(Stroke s, Offset pos, {double radius = 20}) {
@@ -991,12 +1147,15 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     return (p - proj).distanceSquared;
   }
 
-  StrokePoint _makePoint(PointerEvent e) => StrokePoint(
-        x: e.localPosition.dx,
-        y: e.localPosition.dy,
-        pressure: e.pressure > 0 ? e.pressure : 1.0,
-        timestamp: e.timeStamp.inMicroseconds,
-      );
+  StrokePoint _makePoint(PointerEvent e) {
+    final world = _toWorld(e.localPosition);
+    return StrokePoint(
+      x: world.dx,
+      y: world.dy,
+      pressure: e.pressure > 0 ? e.pressure : 1.0,
+      timestamp: e.timeStamp.inMicroseconds,
+    );
+  }
 
   @override
   void dispose() {
@@ -1041,6 +1200,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       _lastStrokesRef = strokes;
       _hlCache.invalidate();
       _inkCache.invalidate();
+      _infiniteHlCache.invalidate();
+      _infiniteInkCache.invalidate();
       for (final s in strokes) {
         _boundsCache.putIfAbsent(
           s.id,
@@ -1055,12 +1216,18 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       _lastStreamline = penSettings.streamline;
       _lastSensitivity = penSettings.sensitivity;
       _inkCache.invalidate();
+      _infiniteInkCache.invalidate();
     }
 
     final hlStrokes =
         strokes.where((s) => !s.isHidden && s.isHighlighter).toList();
     final inkStrokes =
         strokes.where((s) => !s.isHidden && !s.isHighlighter).toList();
+
+    final CanvasViewport? viewport =
+        widget.infiniteMode ? ref.watch(canvasViewportProvider) : null;
+    final StrokeSpatialIndex? spatialIndex =
+        widget.infiniteMode ? ref.watch(strokeSpatialIndexProvider) : null;
 
     return RepaintBoundary(
       child: Listener(
@@ -1087,7 +1254,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
                 strokes: hlStrokes,
                 pageLayout: pageLayout,
                 cache: _hlCache,
+                infiniteCache: _infiniteHlCache,
                 allStrokes: strokes,
+                viewport: viewport,
+                spatialIndex: spatialIndex,
               ),
               size: Size.infinite,
             ),
@@ -1104,6 +1274,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
                   highlighterOnly: true,
                   streamline: penSettings.streamline,
                   sensitivity: penSettings.sensitivityFor(penSettings.penStyle),
+                  viewport: viewport,
                   repaint: _repaintTick,
                 ),
                 size: Size.infinite,
@@ -1114,9 +1285,12 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
               painter: _InkLayerPainter(
                 strokes: inkStrokes,
                 cache: _inkCache,
+                infiniteCache: _infiniteInkCache,
                 allStrokes: strokes,
                 streamline: penSettings.streamline,
                 sensitivityMap: penSettings.sensitivity,
+                viewport: viewport,
+                spatialIndex: spatialIndex,
               ),
               size: Size.infinite,
             ),
@@ -1133,6 +1307,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
                   highlighterOnly: false,
                   streamline: penSettings.streamline,
                   sensitivity: penSettings.sensitivityFor(penSettings.penStyle),
+                  viewport: viewport,
                   repaint: _repaintTick,
                 ),
                 size: Size.infinite,
@@ -1235,16 +1410,28 @@ class _HighlightLayerPainter extends CustomPainter {
   final List<Stroke> allStrokes;
   final PageLayout pageLayout;
   final _StrokeCache cache;
+  final _InfinitePictureCache infiniteCache;
+  final CanvasViewport? viewport;
+  final StrokeSpatialIndex? spatialIndex;
 
   _HighlightLayerPainter({
     required this.strokes,
     required this.allStrokes,
     required this.pageLayout,
     required this.cache,
+    required this.infiniteCache,
+    this.viewport,
+    this.spatialIndex,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    final vp = viewport;
+    if (vp != null) {
+      _paintInfinite(canvas, size, vp);
+      return;
+    }
+
     if (!cache.isValid(allStrokes, size, pageLayout)) {
       cache.build(allStrokes, size, pageLayout, (c, sz) {
         c.drawColor(ScrapTheme.background, BlendMode.srcOver);
@@ -1257,9 +1444,48 @@ class _HighlightLayerPainter extends CustomPainter {
     canvas.drawPicture(cache.picture!);
   }
 
+  void _paintInfinite(Canvas canvas, Size size, CanvasViewport vp) {
+    canvas.drawColor(ScrapTheme.background, BlendMode.srcOver);
+    final visible = vp.visibleWorld(size);
+    _drawInfinitePageLines(canvas, size, vp, visible, pageLayout);
+
+    // Drop highlighter layer at very low zoom.
+    if (vp.scale < 0.15) return;
+
+    final query = visible.inflate(
+      max(visible.width, visible.height),
+    );
+    final visibleStrokes = spatialIndex != null
+        ? spatialIndex!.queryStrokes(strokes, query)
+        : strokes;
+
+    if (!infiniteCache.isValid(allStrokes, visible, vp.scale)) {
+      final buffer = visible.inflate(
+        max(visible.width, visible.height),
+      );
+      infiniteCache.build(allStrokes, buffer, vp.scale, (c, buf) {
+        final lod = _InfinitePictureCache.lodTierFor(vp.scale);
+        for (final stroke in visibleStrokes) {
+          if (!buf.overlaps(
+              InkRenderer.boundsOf(stroke.points, pad: stroke.baseWidth))) {
+            continue;
+          }
+          if (lod <= 1) {
+            _paintStrokeLod(c, stroke, lod);
+          } else {
+            InkRenderer.paintStroke(c, stroke);
+          }
+        }
+      });
+    }
+    infiniteCache.draw(canvas, vp);
+  }
+
   @override
   bool shouldRepaint(covariant _HighlightLayerPainter old) =>
-      old.pageLayout != pageLayout || !identical(old.allStrokes, allStrokes);
+      old.pageLayout != pageLayout ||
+      !identical(old.allStrokes, allStrokes) ||
+      old.viewport != viewport;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1269,19 +1495,31 @@ class _InkLayerPainter extends CustomPainter {
   final List<Stroke> strokes;
   final List<Stroke> allStrokes;
   final _StrokeCache cache;
+  final _InfinitePictureCache infiniteCache;
   final double streamline;
   final Map<PenStyle, double> sensitivityMap;
+  final CanvasViewport? viewport;
+  final StrokeSpatialIndex? spatialIndex;
 
   _InkLayerPainter({
     required this.strokes,
     required this.allStrokes,
     required this.cache,
+    required this.infiniteCache,
     required this.streamline,
     required this.sensitivityMap,
+    this.viewport,
+    this.spatialIndex,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    final vp = viewport;
+    if (vp != null) {
+      _paintInfinite(canvas, size, vp);
+      return;
+    }
+
     // Use a blank PageLayout sentinel — ink cache only cares about stroke list.
     if (!cache.isValid(allStrokes, size, PageLayout.plain)) {
       cache.build(allStrokes, size, PageLayout.plain, (c, sz) {
@@ -1298,8 +1536,7 @@ class _InkLayerPainter extends CustomPainter {
               style: stroke.penStyle,
               isHighlighter: false,
               streamline: streamline,
-              sensitivity:
-                  sensitivityMap[stroke.penStyle] ?? 0.5,
+              sensitivity: sensitivityMap[stroke.penStyle] ?? 0.5,
             );
           }
         }
@@ -1308,10 +1545,56 @@ class _InkLayerPainter extends CustomPainter {
     canvas.drawPicture(cache.picture!);
   }
 
+  void _paintInfinite(Canvas canvas, Size size, CanvasViewport vp) {
+    final visible = vp.visibleWorld(size);
+    final query = visible.inflate(
+      max(visible.width, visible.height),
+    );
+    final visibleStrokes = spatialIndex != null
+        ? spatialIndex!.queryStrokes(strokes, query)
+        : strokes;
+
+    if (!infiniteCache.isValid(allStrokes, visible, vp.scale)) {
+      final buffer = visible.inflate(
+        max(visible.width, visible.height),
+      );
+      infiniteCache.build(allStrokes, buffer, vp.scale, (c, buf) {
+        final lod = _InfinitePictureCache.lodTierFor(vp.scale);
+        for (final stroke in visibleStrokes) {
+          final bounds = stroke.shapeType != ShapeType.none &&
+                  stroke.shapeVertices.isNotEmpty
+              ? _shapeBounds(stroke)
+              : InkRenderer.boundsOf(stroke.points, pad: stroke.baseWidth);
+          if (bounds == null || !buf.overlaps(bounds)) continue;
+
+          if (stroke.shapeType != ShapeType.none &&
+              stroke.shapeVertices.isNotEmpty) {
+            _paintShape(c, stroke);
+          } else if (lod <= 1) {
+            _paintStrokeLod(c, stroke, lod);
+          } else {
+            InkRenderer.paint(
+              canvas: c,
+              pts: stroke.points,
+              color: stroke.color,
+              baseWidth: stroke.baseWidth,
+              style: stroke.penStyle,
+              isHighlighter: false,
+              streamline: streamline,
+              sensitivity: sensitivityMap[stroke.penStyle] ?? 0.5,
+            );
+          }
+        }
+      });
+    }
+    infiniteCache.draw(canvas, vp);
+  }
+
   @override
   bool shouldRepaint(covariant _InkLayerPainter old) =>
       !identical(old.allStrokes, allStrokes) ||
-      old.streamline != streamline;
+      old.streamline != streamline ||
+      old.viewport != viewport;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1327,6 +1610,7 @@ class _LiveStrokePainter extends CustomPainter {
   final bool highlighterOnly;
   final double streamline;
   final double sensitivity;
+  final CanvasViewport? viewport;
 
   _LiveStrokePainter({
     required this.activeStrokes,
@@ -1338,11 +1622,18 @@ class _LiveStrokePainter extends CustomPainter {
     required this.highlighterOnly,
     required this.streamline,
     required this.sensitivity,
+    this.viewport,
     required Listenable repaint,
   }) : super(repaint: repaint);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final vp = viewport;
+    if (vp != null) {
+      canvas.save();
+      canvas.transform(vp.matrix.storage);
+    }
+
     for (final entry in activeStrokes.entries) {
       final id = entry.key;
       final pts = entry.value;
@@ -1376,6 +1667,8 @@ class _LiveStrokePainter extends CustomPainter {
         isComplete: false,
       );
     }
+
+    if (vp != null) canvas.restore();
   }
 
   @override
@@ -1513,6 +1806,104 @@ void _drawPageLines(Canvas canvas, Size size, PageLayout pageLayout) {
   }
 
   _drawPageEdge(canvas, size);
+}
+
+/// Procedural infinite-canvas background drawn in screen space from visible
+/// world bounds. Cost is O(visible cells), never walks from world origin.
+void _drawInfinitePageLines(
+  Canvas canvas,
+  Size screenSize,
+  CanvasViewport vp,
+  Rect visible,
+  PageLayout pageLayout,
+) {
+  // Prefer a subtle grid even when the note was converted from plain/ruled.
+  final style = pageLayout == PageLayout.infinite || pageLayout == PageLayout.plain
+      ? PageLayout.grid
+      : pageLayout;
+
+  const spacing = 36.0;
+  // Skip subdivisions when cells would be tiny on screen.
+  if (spacing * vp.scale < 6) return;
+
+  final p = Paint()
+    ..color = ScrapTheme.notebookLines.withValues(alpha: 0.55)
+    ..strokeWidth = 0.7;
+
+  final left = (visible.left / spacing).floor() * spacing;
+  final top = (visible.top / spacing).floor() * spacing;
+  final right = visible.right;
+  final bottom = visible.bottom;
+
+  if (style == PageLayout.dotted) {
+    final dp = Paint()
+      ..color = ScrapTheme.notebookLines.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+    final r = max(1.0, 1.5 * vp.scale);
+    for (double y = top; y <= bottom; y += spacing) {
+      for (double x = left; x <= right; x += spacing) {
+        canvas.drawCircle(vp.toScreen(Offset(x, y)), r, dp);
+      }
+    }
+    return;
+  }
+
+  if (style == PageLayout.ruled) {
+    for (double y = top; y <= bottom; y += spacing) {
+      final a = vp.toScreen(Offset(visible.left, y));
+      final b = vp.toScreen(Offset(visible.right, y));
+      canvas.drawLine(a, b, p);
+    }
+    return;
+  }
+
+  // Grid (default for infinite)
+  for (double y = top; y <= bottom; y += spacing) {
+    final a = vp.toScreen(Offset(visible.left, y));
+    final b = vp.toScreen(Offset(visible.right, y));
+    canvas.drawLine(a, b, p);
+  }
+  for (double x = left; x <= right; x += spacing) {
+    final a = vp.toScreen(Offset(x, visible.top));
+    final b = vp.toScreen(Offset(x, visible.bottom));
+    canvas.drawLine(a, b, p);
+  }
+}
+
+void _paintStrokeLod(Canvas canvas, Stroke stroke, int lod) {
+  if (stroke.points.isEmpty) return;
+  final paint = Paint()
+    ..color = stroke.color
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = max(0.5, stroke.baseWidth * (lod == 0 ? 0.6 : 0.85))
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round;
+  final path = Path()
+    ..moveTo(stroke.points.first.x, stroke.points.first.y);
+  // Low LOD: stride through points for cheaper polylines.
+  final step = lod == 0 ? 4 : 2;
+  for (var i = step; i < stroke.points.length; i += step) {
+    path.lineTo(stroke.points[i].x, stroke.points[i].y);
+  }
+  final last = stroke.points.last;
+  path.lineTo(last.x, last.y);
+  canvas.drawPath(path, paint);
+}
+
+Rect? _shapeBounds(Stroke stroke) {
+  final v = stroke.shapeVertices;
+  if (v.length < 2) return null;
+  double? minX, minY, maxX, maxY;
+  for (var i = 0; i + 1 < v.length; i += 2) {
+    final x = v[i];
+    final y = v[i + 1];
+    minX = minX == null ? x : min(minX, x);
+    minY = minY == null ? y : min(minY, y);
+    maxX = maxX == null ? x : max(maxX, x);
+    maxY = maxY == null ? y : max(maxY, y);
+  }
+  if (minX == null) return null;
+  return Rect.fromLTRB(minX, minY!, maxX!, maxY!).inflate(stroke.baseWidth);
 }
 
 void _drawPageEdge(Canvas canvas, Size size) {

@@ -17,8 +17,10 @@ import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
 import '../providers/canvas_providers.dart';
+import '../providers/canvas_viewport_provider.dart';
 import '../providers/smelt_detection_provider.dart';
 import '../widgets/handwriting_canvas.dart';
+import '../widgets/infinite_canvas_surface.dart';
 import '../widgets/canvas_toolbar.dart';
 import '../widgets/canvas_smart_widgets.dart';
 import '../widgets/canvas_text_sticker.dart';
@@ -95,10 +97,40 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _ocrDebounce?.cancel();
     _ocrDebounce = Timer(const Duration(milliseconds: 1500), () async {
       final strokes = ref.read(strokesProvider);
-      final results = await _ocrService.recognizeStrokes(
-          strokes, const BoxConstraints(maxWidth: 1000, maxHeight: 5000));
+      final infinite = ref.read(pageLayoutProvider).isInfinite;
+      BoxConstraints constraints;
+      if (infinite) {
+        final vp = ref.read(canvasViewportProvider);
+        final size = ref.read(canvasViewportProvider.notifier).viewportSize;
+        if (size.isEmpty) {
+          constraints =
+              const BoxConstraints(maxWidth: 2000, maxHeight: 2000);
+        } else {
+          final visible = vp.visibleWorld(size);
+          constraints = BoxConstraints(
+            maxWidth: math.max(visible.width, 1),
+            maxHeight: math.max(visible.height, 1),
+          );
+        }
+      } else {
+        constraints =
+            const BoxConstraints(maxWidth: 1000, maxHeight: 5000);
+      }
+      final results =
+          await _ocrService.recognizeStrokes(strokes, constraints);
       ref.read(ocrResultsProvider.notifier).state = results;
     });
+  }
+
+  /// Screen/local → world (identity in finite sheet mode).
+  Offset _toWorld(Offset local) {
+    if (!ref.read(pageLayoutProvider).isInfinite) return local;
+    return ref.read(canvasViewportProvider).toWorld(local);
+  }
+
+  Offset _toScreen(Offset world) {
+    if (!ref.read(pageLayoutProvider).isInfinite) return world;
+    return ref.read(canvasViewportProvider).toScreen(world);
   }
 
   @override
@@ -114,7 +146,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _onCanvasTapDown(TapDownDetails details) {
-    if (_selectionRect != null && !_selectionRect!.contains(details.localPosition)) {
+    final worldPos = _toWorld(details.localPosition);
+    if (_selectionRect != null && !_selectionRect!.contains(worldPos)) {
       // Keep the selection highlight while a pinned smelt popup is open.
       if (_smeltPopupPinned && _smeltPopupEntry != null) return;
       _clearSelectionState();
@@ -135,7 +168,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     if (tool == CanvasTool.text) {
       final newText = CanvasTextItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        position: details.localPosition,
+        position: worldPos,
       );
       ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, newText]);
       return;
@@ -157,16 +190,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     if (ref.read(activeCanvasToolProvider) != CanvasTool.smelt) return;
     if (ref.read(stylusOnlyModeProvider)) return;
     if (_lassoStart != null || _lassoPreviewRect != null) return;
-    if (_tapHitsManualSelectMenu(details.localPosition)) return;
+    if (_tapHitsManualSelectMenu(_toWorld(details.localPosition))) return;
     _handleSmeltTapAt(details.localPosition);
   }
 
   void _handleSmeltTapAt(Offset position) {
-    if (_tapHitsManualSelectMenu(position)) return;
+    final world = _toWorld(position);
+    if (_tapHitsManualSelectMenu(world)) return;
 
     final cluster = ref
         .read(detectedClustersProvider.notifier)
-        .hitTest(position);
+        .hitTest(world);
 
     if (cluster == null) {
       if (ref.read(stylusOnlyModeProvider)) return;
@@ -179,7 +213,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _activeClusterId = null;
         _selectionFromDetection = false;
         _showSelectionMenu = false;
-        _manualSelectMenuAnchor = position;
+        _manualSelectMenuAnchor = world;
       });
       return;
     }
@@ -329,10 +363,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _startLassoAt(Offset position) {
     if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
+    final world = _toWorld(position);
     _hideSelectionMenu();
     setState(() {
-      _lassoStart = position;
-      _lassoPreviewRect = Rect.fromPoints(position, position);
+      _lassoStart = world;
+      _lassoPreviewRect = Rect.fromPoints(world, world);
       _selectionFromDetection = false;
       _activeClusterId = null;
       _manualHintVisible = false;
@@ -350,7 +385,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       return;
     }
 
-    final draggedRect = _normalizedRect(Rect.fromPoints(_lassoStart!, position));
+    final world = _toWorld(position);
+    final draggedRect = _normalizedRect(Rect.fromPoints(_lassoStart!, world));
     final strokes = ref.read(strokesProvider);
     final selected = strokes
         .where((stroke) => !stroke.isHidden && _strokeIntersectsSelection(stroke, draggedRect))
@@ -593,12 +629,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     });
   }
 
-  /// Convert canvas-local rect to global screen coordinates.
-  /// Uses [RenderBox.localToGlobal] so scroll and zoom are applied once.
+  /// Convert canvas-local / world rect to global screen coordinates.
   Rect _convertToGlobalRect(Rect localRect) {
     final renderBox =
         _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.hasSize) return localRect;
+
+    if (ref.read(pageLayoutProvider).isInfinite) {
+      final tl = _toScreen(localRect.topLeft);
+      final br = _toScreen(localRect.bottomRight);
+      final topLeft = renderBox.localToGlobal(tl);
+      final bottomRight = renderBox.localToGlobal(br);
+      return Rect.fromPoints(topLeft, bottomRight);
+    }
 
     final topLeft = renderBox.localToGlobal(localRect.topLeft);
     final bottomRight = renderBox.localToGlobal(localRect.bottomRight);
@@ -606,6 +649,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   Rect? _scrollViewportGlobalRect() {
+    if (ref.read(pageLayoutProvider).isInfinite) {
+      final renderBox =
+          _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.hasSize) return null;
+      final topLeft = renderBox.localToGlobal(Offset.zero);
+      return topLeft & renderBox.size;
+    }
     if (!_scrollController.hasClients) return null;
     final scrollBox = _scrollController.position.context.storageContext
         .findRenderObject() as RenderBox?;
@@ -616,6 +666,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   Offset _globalDeltaToCanvas(Offset globalDelta) {
+    if (ref.read(pageLayoutProvider).isInfinite) {
+      final scale = ref.read(canvasViewportProvider).scale;
+      // Approximate: global ≈ screen for our stack; convert to world.
+      return Offset(globalDelta.dx / scale, globalDelta.dy / scale);
+    }
     final renderBox =
         _canvasRepaintKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return globalDelta;
@@ -642,7 +697,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _tickSelectionEdgeScroll(Offset globalPointer, double canvasZoom) {
-    if (_selectionRect == null || !_scrollController.hasClients) return;
+    if (_selectionRect == null) return;
+    final infinite = ref.read(pageLayoutProvider).isInfinite;
+    if (!infinite && !_scrollController.hasClients) return;
 
     // Active drags are handled in [_handleSelectionDrag]; only auto-scroll
     // here when the pointer has stopped moving but is still held at the edge.
@@ -663,6 +720,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       canvasZoom: canvasZoom,
     );
     if (scrollDelta == 0) return;
+
+    if (infinite) {
+      // Pan the world viewport; keep selection under the pointer.
+      ref
+          .read(canvasViewportProvider.notifier)
+          .panByScreenDelta(Offset(0, -scrollDelta));
+      _moveSelection(Offset(0, scrollDelta / canvasZoom));
+      return;
+    }
 
     final scroll = _scrollController;
     final newOffset =
@@ -706,7 +772,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     double canvasZoom,
   ) {
     _lastSelectionDragGlobal = globalPointer;
-    if (_selectionRect == null || !_scrollController.hasClients) {
+    final infinite = ref.read(pageLayoutProvider).isInfinite;
+    if (!infinite && !_scrollController.hasClients) {
       _moveSelection(canvasDelta);
       return;
     }
@@ -729,16 +796,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     var totalCanvasDelta = canvasDelta;
     if (scrollDelta != 0) {
-      final scroll = _scrollController;
-      final newOffset = (scroll.offset + scrollDelta)
-          .clamp(0.0, scroll.position.maxScrollExtent);
-      final actualScroll = newOffset - scroll.offset;
-      if (actualScroll != 0) {
-        scroll.jumpTo(newOffset);
+      if (infinite) {
+        ref
+            .read(canvasViewportProvider.notifier)
+            .panByScreenDelta(Offset(0, -scrollDelta));
         totalCanvasDelta = Offset(
           canvasDelta.dx,
-          canvasDelta.dy + actualScroll / canvasZoom,
+          canvasDelta.dy + scrollDelta / canvasZoom,
         );
+      } else {
+        final scroll = _scrollController;
+        final newOffset = (scroll.offset + scrollDelta)
+            .clamp(0.0, scroll.position.maxScrollExtent);
+        final actualScroll = newOffset - scroll.offset;
+        if (actualScroll != 0) {
+          scroll.jumpTo(newOffset);
+          totalCanvasDelta = Offset(
+            canvasDelta.dx,
+            canvasDelta.dy + actualScroll / canvasZoom,
+          );
+        }
       }
     }
 
@@ -897,15 +974,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         as RenderRepaintBoundary?;
     if (boundary == null) return null;
 
+    // Infinite mode: ink layer is screen-sized; convert world → screen first.
+    final captureRegion = ref.read(pageLayoutProvider).isInfinite
+        ? Rect.fromPoints(
+            _toScreen(region.topLeft),
+            _toScreen(region.bottomRight),
+          )
+        : region;
+
     const pixelRatio = 2.0;
     final image = await boundary.toImage(pixelRatio: pixelRatio);
 
     // Calculate crop rect in image pixel coordinates
     final cropRect = Rect.fromLTWH(
-      region.left * pixelRatio,
-      region.top * pixelRatio,
-      region.width * pixelRatio,
-      region.height * pixelRatio,
+      captureRegion.left * pixelRatio,
+      captureRegion.top * pixelRatio,
+      captureRegion.width * pixelRatio,
+      captureRegion.height * pixelRatio,
     );
 
     // Clamp crop rect to image bounds
@@ -1280,7 +1365,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _handleCanvasLongPressStart(LongPressStartDetails details) {
     if (_clipboardSelection == null) return;
-    _showPasteMenuAt(details.localPosition);
+    _showPasteMenuAt(_toWorld(details.localPosition));
   }
 
   Rect _normalizedRect(Rect rect) {
@@ -1372,82 +1457,107 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final isSmeltMode     = activeTool == CanvasTool.smelt;
     final isSelectionMode = isLassoMode || isSmeltMode;
     final allowSelectionDrag = isSelectionMode && !stylusOnly;
-    final canvasZoom      = ref.watch(canvasZoomProvider);
+    final pageLayout      = ref.watch(pageLayoutProvider);
+    final isInfinite      = pageLayout.isInfinite;
+    final canvasZoom      = isInfinite
+        ? ref.watch(canvasViewportProvider).scale
+        : ref.watch(canvasZoomProvider);
     final toolbarPosition = ref.watch(toolbarPositionProvider);
 
     final strokes = ref.watch(strokesProvider);
-    final canvasStack = RepaintBoundary(
-      key: _canvasRepaintKey,
-      child: Stack(
-        children: [
-          HandwritingCanvas(
-            scrollController: _scrollController,
-            horizontalScrollController: _horizontalScrollController,
-            zoomLevel: canvasZoom,
-            onZoomChanged: (v) => ref.read(canvasZoomProvider.notifier).state = v,
-            suppressTouchScroll: _isMovingSelection,
-          ),
-          // Soft paper grain — cached 64×64 tile, one drawRect, IgnorePointer
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: RepaintBoundary(
-                child: PaperGrain(opacity: 0.022),
-              ),
-            ),
-          ),
-          // Empty-sheet affordance
-          if (strokes.isEmpty)
-            Positioned(
-              top: 80,
-              left: 0,
-              right: 0,
-              child: _FreshScrapHint(
-                ephemeral: ref
-                    .watch(ephemeralNoteIdsProvider)
-                    .contains(ref.watch(activeNoteIdProvider)),
-              ),
-            ),
-          // Transparent text annotations — tap to edit, drag to move
-          ...ref.watch(canvasTextNodesProvider)
-              .map((node) => CanvasTextSticker(key: ValueKey(node.id), item: node)),
-          // Emoji / decorative stickers
-          ...ref.watch(canvasStickersProvider)
-              .map((s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s)),
-          // Table overlays
-          ...ref.watch(canvasTablesProvider)
-              .map((t) => CanvasTableOverlay(table: t)),
-        ],
-      ),
-    );
 
-    // Lasso/selection/paste overlays live inside the transform so they stay
-    // in logical coordinates (matching stroke positions).
+    final worldAnnotations = <Widget>[
+      if (strokes.isEmpty && !isInfinite)
+        Positioned(
+          top: 80,
+          left: 0,
+          right: 0,
+          child: _FreshScrapHint(
+            ephemeral: ref
+                .watch(ephemeralNoteIdsProvider)
+                .contains(ref.watch(activeNoteIdProvider)),
+          ),
+        ),
+      ...ref.watch(canvasTextNodesProvider).map(
+            (node) =>
+                CanvasTextSticker(key: ValueKey(node.id), item: node),
+          ),
+      ...ref.watch(canvasStickersProvider).map(
+            (s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s),
+          ),
+      ...ref
+          .watch(canvasTablesProvider)
+          .map((t) => CanvasTableOverlay(table: t)),
+    ];
+
+    // Finite sheet only — avoid building a second HandwritingCanvas (and moving
+    // [_canvasRepaintKey]) while infinite mode is active.
+    final Widget? canvasStack = isInfinite
+        ? null
+        : RepaintBoundary(
+            key: _canvasRepaintKey,
+            child: Stack(
+              children: [
+                HandwritingCanvas(
+                  scrollController: _scrollController,
+                  horizontalScrollController: _horizontalScrollController,
+                  zoomLevel: canvasZoom,
+                  onZoomChanged: (v) =>
+                      ref.read(canvasZoomProvider.notifier).state = v,
+                  suppressTouchScroll: _isMovingSelection,
+                ),
+                const Positioned.fill(
+                  child: IgnorePointer(
+                    child: RepaintBoundary(
+                      child: PaperGrain(opacity: 0.022),
+                    ),
+                  ),
+                ),
+                ...worldAnnotations,
+              ],
+            ),
+          );
+
+    // Lasso/selection/paste overlays. In infinite mode these are converted to
+    // screen space so they aren't clipped by a screen-sized Stack.
+    Offset overlayPos(Offset world) => isInfinite ? _toScreen(world) : world;
+    Rect? overlayRect(Rect? world) {
+      if (world == null) return null;
+      if (!isInfinite) return world;
+      return Rect.fromPoints(
+        _toScreen(world.topLeft),
+        _toScreen(world.bottomRight),
+      );
+    }
+
     final List<Widget> contentOverlays = [];
-    if (_lassoPreviewRect != null) {
+    final lassoScreen = overlayRect(_lassoPreviewRect);
+    if (lassoScreen != null) {
       contentOverlays.add(
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
-              painter: _LassoPainter(_lassoPreviewRect!),
+              painter: _LassoPainter(lassoScreen),
             ),
           ),
         ),
       );
     }
-    if (_selectionRect != null) {
+    final selectionScreen = overlayRect(_selectionRect);
+    if (selectionScreen != null && _selectionRect != null) {
       contentOverlays.add(
         Positioned.fill(
           child: Stack(
             children: [
               _SelectionBoxHighlight(
                 key: ValueKey(_activeClusterId ?? 'selection'),
-                rect: _selectionRect!,
+                rect: selectionScreen,
                 fromDetection: _selectionFromDetection,
                 isSmelting: _isSmelting,
               ),
               if (!_isResizingSelection && !_isSmelting)
                 Positioned.fromRect(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onPanStart: (details) {
@@ -1486,37 +1596,49 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 ),
               if (_isResizingSelection) ...[
                 _SelectionCornerHandle(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   cornerIndex: 0,
                   onPanStart: _beginResizeSelection,
-                  onPanUpdate: (delta) => _resizeSelection(0, delta),
+                  onPanUpdate: (delta) => _resizeSelection(
+                    0,
+                    isInfinite ? Offset(delta.dx / canvasZoom, delta.dy / canvasZoom) : delta,
+                  ),
                   onPanEnd: _finishResizeSelection,
                 ),
                 _SelectionCornerHandle(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   cornerIndex: 1,
                   onPanStart: _beginResizeSelection,
-                  onPanUpdate: (delta) => _resizeSelection(1, delta),
+                  onPanUpdate: (delta) => _resizeSelection(
+                    1,
+                    isInfinite ? Offset(delta.dx / canvasZoom, delta.dy / canvasZoom) : delta,
+                  ),
                   onPanEnd: _finishResizeSelection,
                 ),
                 _SelectionCornerHandle(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   cornerIndex: 2,
                   onPanStart: _beginResizeSelection,
-                  onPanUpdate: (delta) => _resizeSelection(2, delta),
+                  onPanUpdate: (delta) => _resizeSelection(
+                    2,
+                    isInfinite ? Offset(delta.dx / canvasZoom, delta.dy / canvasZoom) : delta,
+                  ),
                   onPanEnd: _finishResizeSelection,
                 ),
                 _SelectionCornerHandle(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   cornerIndex: 3,
                   onPanStart: _beginResizeSelection,
-                  onPanUpdate: (delta) => _resizeSelection(3, delta),
+                  onPanUpdate: (delta) => _resizeSelection(
+                    3,
+                    isInfinite ? Offset(delta.dx / canvasZoom, delta.dy / canvasZoom) : delta,
+                  ),
                   onPanEnd: _finishResizeSelection,
                 ),
               ],
               if (_showSelectionMenu && isSmeltMode && _smeltActionMenuAllowed)
                 _SmeltActionMenu(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   showManualSelect: _selectionFromDetection,
                   onSmelt: () => _smeltSelection(),
                   onSmeltWithCode: () =>
@@ -1526,7 +1648,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 )
               else if (_showSelectionMenu && !isSmeltMode)
                 _SelectionActionMenu(
-                  rect: _selectionRect!,
+                  rect: selectionScreen,
                   onResize: _beginResizeSelection,
                   onDelete: _deleteSelection,
                   onCopy: _copySelection,
@@ -1572,19 +1694,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       );
     }
     if (_manualSelectMenuAnchor != null && isSmeltMode && !stylusOnly) {
+      final anchor = overlayPos(_manualSelectMenuAnchor!);
       contentOverlays.add(
         Positioned(
-          left: math.max(_manualSelectMenuAnchor!.dx, 12.0),
-          top: math.max(_manualSelectMenuAnchor!.dy - 52, 12.0),
+          left: math.max(anchor.dx, 12.0),
+          top: math.max(anchor.dy - 52, 12.0),
           child: _ManualSelectActionMenu(onSelect: _beginManualSelect),
         ),
       );
     }
     if (_showPasteMenu && _pasteMenuAnchor != null) {
+      final anchor = overlayPos(_pasteMenuAnchor!);
       contentOverlays.add(
         Positioned(
-          left: _pasteMenuAnchor!.dx,
-          top: _pasteMenuAnchor!.dy,
+          left: anchor.dx,
+          top: anchor.dy,
           child: _PasteMenu(
             onPaste: () => _pasteClipboard(_pasteMenuAnchor!),
           ),
@@ -1597,143 +1721,203 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         ? const NeverScrollableScrollPhysics()
         : const ClampingScrollPhysics();
 
-    final canvasSurface = Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final viewportW = constraints.maxWidth;
-            final zoom = canvasZoom;
-            final scaledW = viewportW * zoom;
-            final scaledH = 5000 * zoom;
-            // Full viewport width when zoomed out so the sheet can be centered;
-            // wider than the viewport when zoomed in so sideways pan works.
-            final contentW = math.max(viewportW, scaledW);
+    final Widget canvasBody;
+    if (isInfinite) {
+      canvasBody = InfiniteCanvasSurface(
+        inkRepaintKey: _canvasRepaintKey,
+        worldOverlays: worldAnnotations,
+        screenOverlays: contentOverlays,
+        suppressTouchScroll: _isMovingSelection,
+        onPointerDown:
+            stylusOnly && isSelectionMode ? _onSelectionPointerDown : null,
+        onPointerMove:
+            stylusOnly && isSelectionMode ? _onSelectionPointerMove : null,
+        onPointerUp:
+            stylusOnly && isSelectionMode ? _onSelectionPointerUp : null,
+        onPointerCancel:
+            stylusOnly && isSelectionMode ? _onSelectionPointerCancel : null,
+        onTapDown: _onCanvasTapDown,
+        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+        onLongPressStart: _handleCanvasLongPressStart,
+        onPanStart: allowSelectionDrag ? _startLasso : null,
+        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
+        onPanEnd: allowSelectionDrag ? _endLasso : null,
+      );
+    } else {
+      canvasBody = LayoutBuilder(
+        builder: (context, constraints) {
+          final viewportW = constraints.maxWidth;
+          final zoom = canvasZoom;
+          final scaledW = viewportW * zoom;
+          final scaledH = 5000 * zoom;
+          final contentW = math.max(viewportW, scaledW);
 
-            final page = SizedBox(
-              width: scaledW,
-              height: scaledH,
-              child: OverflowBox(
+          final page = SizedBox(
+            width: scaledW,
+            height: scaledH,
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minWidth: viewportW,
+              maxWidth: viewportW,
+              minHeight: 5000,
+              maxHeight: 5000,
+              child: Transform.scale(
+                scale: zoom,
                 alignment: Alignment.topLeft,
-                minWidth: viewportW,
-                maxWidth: viewportW,
-                minHeight: 5000,
-                maxHeight: 5000,
-                child: Transform.scale(
-                  scale: zoom,
-                  alignment: Alignment.topLeft,
-                  child: DecoratedBox(
-                    decoration: zoom <= 1.0
-                        ? const BoxDecoration(
-                            boxShadow: ScrapTheme.subtleShadow)
-                        : const BoxDecoration(),
-                    child: SizedBox(
-                      width: viewportW,
-                      height: 5000,
-                      child: Listener(
-                        onPointerDown: stylusOnly && isSelectionMode
-                            ? _onSelectionPointerDown
-                            : null,
-                        onPointerMove: stylusOnly && isSelectionMode
-                            ? _onSelectionPointerMove
-                            : null,
-                        onPointerUp: stylusOnly && isSelectionMode
-                            ? _onSelectionPointerUp
-                            : null,
-                        onPointerCancel: stylusOnly && isSelectionMode
-                            ? _onSelectionPointerCancel
-                            : null,
-                        child: GestureDetector(
-                          onTapDown: _onCanvasTapDown,
-                          onTapUp: isSmeltMode ? _onCanvasTapUp : null,
-                          onLongPressStart: _handleCanvasLongPressStart,
-                          onPanStart:
-                              allowSelectionDrag ? _startLasso : null,
-                          onPanUpdate:
-                              allowSelectionDrag ? _updateLasso : null,
-                          onPanEnd: allowSelectionDrag ? _endLasso : null,
-                          child: Stack(
-                            children: [
-                              canvasStack,
-                              ...contentOverlays,
-                            ],
-                          ),
+                child: DecoratedBox(
+                  decoration: zoom <= 1.0
+                      ? const BoxDecoration(boxShadow: ScrapTheme.subtleShadow)
+                      : const BoxDecoration(),
+                  child: SizedBox(
+                    width: viewportW,
+                    height: 5000,
+                    child: Listener(
+                      onPointerDown: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerDown
+                          : null,
+                      onPointerMove: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerMove
+                          : null,
+                      onPointerUp: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerUp
+                          : null,
+                      onPointerCancel: stylusOnly && isSelectionMode
+                          ? _onSelectionPointerCancel
+                          : null,
+                      child: GestureDetector(
+                        onTapDown: _onCanvasTapDown,
+                        onTapUp: isSmeltMode ? _onCanvasTapUp : null,
+                        onLongPressStart: _handleCanvasLongPressStart,
+                        onPanStart: allowSelectionDrag ? _startLasso : null,
+                        onPanUpdate: allowSelectionDrag ? _updateLasso : null,
+                        onPanEnd: allowSelectionDrag ? _endLasso : null,
+                        child: Stack(
+                          children: [
+                            canvasStack!,
+                            ...contentOverlays,
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            );
+            ),
+          );
 
-            return SingleChildScrollView(
-              controller: _scrollController,
-              // In pen mode (or lasso), the HandwritingCanvas Listener handles
-              // all pointer events — the scroll view must not compete. When
-              // stylus-only is on, the canvas also handles touch scrolling
-              // manually via jumpTo(), so the scroll view must stay out of
-              // the way.
-              physics: scrollPhysics,
-              child: ColoredBox(
-                // Desk tone when zoomed out so the sheet sits on a surface
-                color: zoom <= 1.0
-                    ? ScrapTheme.codeSurface
-                    : ScrapTheme.background,
-                child: SingleChildScrollView(
-                  controller: _horizontalScrollController,
-                  scrollDirection: Axis.horizontal,
-                  physics: scrollPhysics,
-                  child: SizedBox(
-                    width: contentW,
-                    height: scaledH,
-                    child: zoom < 1.0
-                        ? Align(
-                            alignment: Alignment.topCenter,
-                            child: page,
-                          )
-                        : page,
-                  ),
+          return SingleChildScrollView(
+            controller: _scrollController,
+            physics: scrollPhysics,
+            child: ColoredBox(
+              color: zoom <= 1.0
+                  ? ScrapTheme.codeSurface
+                  : ScrapTheme.background,
+              child: SingleChildScrollView(
+                controller: _horizontalScrollController,
+                scrollDirection: Axis.horizontal,
+                physics: scrollPhysics,
+                child: SizedBox(
+                  width: contentW,
+                  height: scaledH,
+                  child: zoom < 1.0
+                      ? Align(
+                          alignment: Alignment.topCenter,
+                          child: page,
+                        )
+                      : page,
                 ),
               ),
-            );
-          },
-        ),
-        // AI chat FAB — bottom right, always on screen
-        const Positioned(
-          right: 16,
-          bottom: 16,
-          child: CanvasSmartBar(),
-        ),
-      ],
+            ),
+          );
+        },
+      );
+    }
+
+    final canvasSurface = ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          canvasBody,
+          // Screen-anchored empty hint for infinite mode
+          if (isInfinite && strokes.isEmpty)
+            Positioned(
+              top: 80,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: _FreshScrapHint(
+                  ephemeral: ref
+                      .watch(ephemeralNoteIdsProvider)
+                      .contains(ref.watch(activeNoteIdProvider)),
+                ),
+              ),
+            ),
+          // AI chat FAB — bottom right, always on screen
+          const Positioned(
+            right: 16,
+            bottom: 16,
+            child: CanvasSmartBar(),
+          ),
+        ],
+      ),
     );
 
     Widget toolSurface;
     switch (toolbarPosition) {
       case ToolbarPosition.top:
-        toolSurface = Column(children: [
-          const CanvasToolbar(),
-          Expanded(child: canvasSurface),
-        ]);
+        toolSurface = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Material(
+              color: ScrapTheme.cardSurface,
+              elevation: 1,
+              child: CanvasToolbar(),
+            ),
+            Expanded(child: canvasSurface),
+          ],
+        );
         break;
       case ToolbarPosition.bottom:
-        toolSurface = Column(children: [
-          Expanded(child: canvasSurface),
-          const SafeArea(top: false, child: CanvasToolbar()),
-        ]);
+        toolSurface = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: canvasSurface),
+            const Material(
+              color: ScrapTheme.cardSurface,
+              elevation: 1,
+              child: SafeArea(top: false, child: CanvasToolbar()),
+            ),
+          ],
+        );
         break;
       case ToolbarPosition.left:
         toolSurface = SafeArea(
-          child: Row(children: [
-            const CanvasToolbar(),
-            Expanded(child: canvasSurface),
-          ]),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Material(
+                color: ScrapTheme.cardSurface,
+                elevation: 1,
+                child: CanvasToolbar(),
+              ),
+              Expanded(child: canvasSurface),
+            ],
+          ),
         );
         break;
       case ToolbarPosition.right:
         toolSurface = SafeArea(
-          child: Row(children: [
-            Expanded(child: canvasSurface),
-            const CanvasToolbar(),
-          ]),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: canvasSurface),
+              const Material(
+                color: ScrapTheme.cardSurface,
+                elevation: 1,
+                child: CanvasToolbar(),
+              ),
+            ],
+          ),
         );
         break;
     }

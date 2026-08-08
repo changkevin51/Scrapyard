@@ -23,8 +23,9 @@ class StrokeRepository {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -35,6 +36,27 @@ class StrokeRepository {
         note_id TEXT NOT NULL,
         data TEXT NOT NULL,
         created_at INTEGER NOT NULL
+      )
+    ''');
+    await _createNoteSettings(db);
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _createNoteSettings(db);
+    }
+  }
+
+  Future<void> _createNoteSettings(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS note_settings (
+        note_id TEXT PRIMARY KEY,
+        page_layout TEXT NOT NULL,
+        home_x REAL,
+        home_y REAL,
+        view_x REAL,
+        view_y REAL,
+        view_scale REAL
       )
     ''');
   }

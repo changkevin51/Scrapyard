@@ -55,6 +55,12 @@ An ordinary conversation with the AI, except it already has context on what's on
 
 Open a PDF and annotate right on top of it. Split-screen puts the document on one side and your scrap paper on the other — this is how I work through problem sets.
 
+## Recently added
+
+- **True splitscreen for study chat** allows users to keep writing on the canvas while the chat panel is open
+- **Redesigned highlighter, eraser, and lasso icons** with clearer custom glyphs in the toolbar.
+- **Infinite canvas** page style with unbounded pan and zoom.
+
 ## Getting started
 
 You'll need the [Flutter SDK](https://flutter.dev/docs/get-started/install) (3.0 or newer) and a [Google AI Studio key](https://aistudio.google.com/app/apikey).

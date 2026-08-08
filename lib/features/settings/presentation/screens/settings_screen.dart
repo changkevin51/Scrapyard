@@ -13,6 +13,7 @@ import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_engine/data/api_key_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../canvas/presentation/providers/canvas_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -170,6 +171,24 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(color: ScrapTheme.dividers),
           ListTile(
+            title: Text('Default Page Style', style: ScrapTextStyles.body),
+            subtitle: Text(
+              ref.watch(defaultPageLayoutProvider).displayName,
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.secondaryText,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: ScrapTheme.mutedText,
+            ),
+            onTap: () {
+              ScrapFeedback.tap();
+              _showDefaultPageStylePicker(context, ref);
+            },
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
             title: Text('Gestures', style: ScrapTextStyles.body),
             subtitle: Text(
               'Configure shortcut edge motions',
@@ -189,6 +208,102 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(color: ScrapTheme.dividers),
         ],
       ),
+    );
+  }
+
+  Future<void> _showDefaultPageStylePicker(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final current = ref.read(defaultPageLayoutProvider);
+    await showScrapSheet(
+      context: context,
+      backgroundColor: ScrapTheme.cardSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(ScrapTheme.borderRadiusDefault),
+        ),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.kraft,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Default Page Style',
+                  style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
+              const SizedBox(height: 8),
+              Text(
+                'Used for new notes. Choosing Infinite cannot be undone per note.',
+                style: ScrapTextStyles.caption
+                    .copyWith(color: ScrapTheme.mutedText),
+              ),
+              const SizedBox(height: 16),
+              ...PageLayout.values.map((layout) {
+                final selected = layout == current;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(layout.displayName, style: ScrapTextStyles.body),
+                  trailing: selected
+                      ? const Icon(Icons.check, color: ScrapTheme.accent)
+                      : null,
+                  onTap: () async {
+                    if (layout.isInfinite) {
+                      final confirmed = await showScrapDialog<bool>(
+                        context: ctx,
+                        builder: (dialogCtx) => AlertDialog(
+                          backgroundColor: ScrapTheme.cardSurface,
+                          title: Text('Default to Infinite?',
+                              style: ScrapTextStyles.heading),
+                          content: Text(
+                            'New notes will open as Infinite canvases. Once a '
+                            'note is Infinite, it cannot be converted back to '
+                            'Plain, Ruled, Dotted, or Grid.',
+                            style: ScrapTextStyles.body,
+                          ),
+                          actions: [
+                            PaperButton(
+                              label: 'Cancel',
+                              variant: PaperButtonVariant.ghost,
+                              compact: true,
+                              onPressed: () =>
+                                  Navigator.pop(dialogCtx, false),
+                            ),
+                            PaperButton(
+                              label: 'Use Infinite',
+                              variant: PaperButtonVariant.primary,
+                              compact: true,
+                              onPressed: () =>
+                                  Navigator.pop(dialogCtx, true),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed != true) return;
+                    }
+                    await ref
+                        .read(defaultPageLayoutProvider.notifier)
+                        .set(layout);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 }

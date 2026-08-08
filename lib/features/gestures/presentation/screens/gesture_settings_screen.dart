@@ -38,6 +38,38 @@ class GestureSettingsScreen extends ConsumerWidget {
            _buildToggleRow('Multi-Finger Actions', ref.watch(multiFingerEnabledProvider), (val) {
              ref.read(multiFingerEnabledProvider.notifier).state = val;
            }),
+           const Padding(
+             padding: EdgeInsets.symmetric(vertical: 24.0),
+             child: Divider(height: 1, color: ScrapTheme.dividers),
+           ),
+
+           _buildSectionHeader('Canvas'),
+           _buildToggleRow('Two-Finger Tap to Undo', ref.watch(twoFingerTapUndoEnabledProvider), (val) {
+             ref.read(twoFingerTapUndoEnabledProvider.notifier).state = val;
+           }),
+           const SizedBox(height: 8),
+           Text(
+             'Quickly tap with two fingers to undo.',
+             style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText),
+           ),
+           const SizedBox(height: 16),
+           _buildToggleRow('Three-Finger Tap to Redo', ref.watch(threeFingerTapRedoEnabledProvider), (val) {
+             ref.read(threeFingerTapRedoEnabledProvider.notifier).state = val;
+           }),
+           const SizedBox(height: 8),
+           Text(
+             'Quickly tap with three fingers to redo.',
+             style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText),
+           ),
+           const SizedBox(height: 16),
+           _buildToggleRow('S Pen Button Eraser', ref.watch(sPenButtonEraserEnabledProvider), (val) {
+             ref.read(sPenButtonEraserEnabledProvider.notifier).state = val;
+           }),
+           const SizedBox(height: 8),
+           Text(
+             'Hold the stylus side button to erase; release to return to your previous tool.',
+             style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText),
+           ),
         ],
       ),
     );

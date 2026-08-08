@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../gestures/presentation/providers/gesture_providers.dart';
 import '../../data/ink_renderer.dart';
 import '../../data/pen_engine.dart';
 import '../../data/smart_shape_recognizer.dart';
@@ -111,6 +112,16 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   double? _pendingHScroll;
   double? _pendingVScroll;
 
+  // Multi-finger tap → undo / redo
+  static const double _multiTapSlop = 24.0;
+  final _multiTapDownPos = <int, Offset>{};
+  int _multiTapPeakCount = 0;
+  bool _multiTapInvalid = false;
+
+  // S Pen / stylus side-button → temporary eraser
+  bool _sPenEraserActive = false;
+  CanvasTool? _toolBeforeSPenEraser;
+
   // Hold-and-pause shape snap
   final _pauseTimers = <int, Timer>{};
   final _liveSnap = <int, ({ShapeType type, List<double> vertices})>{};
@@ -126,19 +137,39 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
   // ── Input handlers ─────────────────────────────────────────────
   void _onPointerDown(PointerDownEvent e) {
+    _updateSPenEraserFromEvent(e);
+
     final isPenMode = ref.read(isPenModeActiveProvider);
     final stylusOnly = ref.read(stylusOnlyModeProvider);
+    final multiTapEnabled = _multiFingerTapEnabled;
 
     if (e.kind == PointerDeviceKind.touch) {
+      if (multiTapEnabled) {
+        _multiTapDownPos[e.pointer] = e.position;
+        _multiTapPeakCount = max(_multiTapPeakCount, _multiTapDownPos.length);
+        if (_multiTapDownPos.length >= 2) {
+          _abortActiveTouchStrokes();
+          // Track fingers for a possible pinch, but do not start zoom until
+          // movement exceeds the tap slop (avoids tap→zoom flicker).
+          for (final entry in _multiTapDownPos.entries) {
+            _touchPointers.putIfAbsent(entry.key, () => entry.value);
+          }
+          return;
+        }
+      }
+
       if (!isPenMode || stylusOnly) {
         _touchPointers[e.pointer] = e.position;
-        if (_touchPointers.length == 2) {
-          final positions = _touchPointers.values.toList();
-          final distance = (positions[0] - positions[1]).distance;
-          if (distance > 5.0) {
-            _pinchInitialDistance = distance;
-            _pinchInitialZoom = widget.zoomLevel;
-            _pinchContentFocal = _canvasPointUnderPinch(positions);
+        // Defer pinch while a multi-finger tap may still resolve.
+        if (!multiTapEnabled || _multiTapDownPos.length < 2) {
+          if (_touchPointers.length == 2) {
+            final positions = _touchPointers.values.toList();
+            final distance = (positions[0] - positions[1]).distance;
+            if (distance > 5.0) {
+              _pinchInitialDistance = distance;
+              _pinchInitialZoom = widget.zoomLevel;
+              _pinchContentFocal = _canvasPointUnderPinch(positions);
+            }
           }
         }
       }
@@ -207,6 +238,18 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _onPointerMove(PointerMoveEvent e) {
+    _updateSPenEraserFromEvent(e);
+
+    if (e.kind == PointerDeviceKind.touch) {
+      final down = _multiTapDownPos[e.pointer];
+      if (down != null &&
+          !_multiTapInvalid &&
+          (e.position - down).distance > _multiTapSlop) {
+        _multiTapInvalid = true;
+        _beginPinchFromTouchesIfReady();
+      }
+    }
+
     if (e.kind == PointerDeviceKind.touch &&
         _touchPointers.containsKey(e.pointer)) {
       _handleTouchMove(e);
@@ -255,12 +298,24 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _onPointerUp(PointerUpEvent e) {
+    _updateSPenEraserFromEvent(e);
+
+    final wasMultiTapFinger = _multiTapDownPos.remove(e.pointer) != null;
+    if (wasMultiTapFinger && _multiTapDownPos.isEmpty) {
+      _finishMultiFingerTap();
+    }
+
     if (_touchPointers.remove(e.pointer) != null) {
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
         _pinchInitialZoom = null;
         _pinchContentFocal = null;
       }
+      return;
+    }
+
+    // Multi-tap may have aborted the stroke already; still clean up if present.
+    if (wasMultiTapFinger && !_activeStrokes.containsKey(e.pointer)) {
       return;
     }
 
@@ -363,6 +418,20 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _onPointerCancel(PointerCancelEvent e) {
+    final isStylus = e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    if (isStylus && _sPenEraserActive) {
+      _exitSPenEraser();
+    } else {
+      _updateSPenEraserFromEvent(e);
+    }
+
+    _multiTapDownPos.remove(e.pointer);
+    if (_multiTapDownPos.isEmpty) {
+      _multiTapPeakCount = 0;
+      _multiTapInvalid = false;
+    }
+
     if (_touchPointers.remove(e.pointer) != null) {
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
@@ -380,6 +449,107 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     _liveSnap.remove(e.pointer);
     _setEraserPreview(null);
     _tick();
+  }
+
+  bool get _multiFingerTapEnabled =>
+      ref.read(twoFingerTapUndoEnabledProvider) ||
+      ref.read(threeFingerTapRedoEnabledProvider);
+
+  void _abortActiveTouchStrokes() {
+    var changed = false;
+    for (final pointer in _multiTapDownPos.keys.toList()) {
+      if (_activeStrokes.remove(pointer) != null) changed = true;
+      _activeIsHighlighter.remove(pointer);
+      _activePenStyle.remove(pointer);
+      _activeColor.remove(pointer);
+      _activeWidth.remove(pointer);
+      _liveSnap.remove(pointer);
+      _cancelPauseTimer(pointer);
+    }
+    if (changed) _tick();
+  }
+
+  void _finishMultiFingerTap() {
+    final peak = _multiTapPeakCount;
+    final invalid = _multiTapInvalid;
+    _multiTapPeakCount = 0;
+    _multiTapInvalid = false;
+    if (invalid) return;
+
+    if (peak == 2 && ref.read(twoFingerTapUndoEnabledProvider)) {
+      ref.read(strokesProvider.notifier).undo();
+    } else if (peak == 3 && ref.read(threeFingerTapRedoEnabledProvider)) {
+      ref.read(strokesProvider.notifier).redo();
+    }
+  }
+
+  bool _isStylusButtonHeld(PointerEvent e) {
+    // kSecondaryButton == kPrimaryStylusButton; kTertiaryButton covers
+    // secondary stylus buttons on some pens.
+    return (e.buttons & kSecondaryButton) != 0 ||
+        (e.buttons & kTertiaryButton) != 0;
+  }
+
+  void _updateSPenEraserFromEvent(PointerEvent e) {
+    final isStylus = e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus;
+    if (!isStylus) return;
+
+    final enabled = ref.read(sPenButtonEraserEnabledProvider);
+    final held = enabled && _isStylusButtonHeld(e);
+
+    if (held && !_sPenEraserActive) {
+      _enterSPenEraser(
+        contactLocalPos: e.down ? e.localPosition : null,
+      );
+    } else if (!held && _sPenEraserActive) {
+      _exitSPenEraser();
+    }
+  }
+
+  void _enterSPenEraser({Offset? contactLocalPos}) {
+    final current = ref.read(activeCanvasToolProvider);
+    if (current != CanvasTool.eraser) {
+      _toolBeforeSPenEraser = current;
+      // Drop any in-progress ink stroke before switching tools.
+      if (_activeStrokes.isNotEmpty) {
+        for (final pointer in _activeStrokes.keys.toList()) {
+          _cancelPauseTimer(pointer);
+        }
+        _activeStrokes.clear();
+        _activeIsHighlighter.clear();
+        _activePenStyle.clear();
+        _activeColor.clear();
+        _activeWidth.clear();
+        _liveSnap.clear();
+        _tick();
+      }
+      ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.eraser;
+      ref.read(isPenModeActiveProvider.notifier).state = true;
+    } else {
+      _toolBeforeSPenEraser = null;
+    }
+    _sPenEraserActive = true;
+
+    // Tip already down with button held — start erasing on this contact.
+    if (contactLocalPos != null && !_eraseGestureActive) {
+      _beginEraseGesture();
+      _setEraserPreview(contactLocalPos);
+      _eraseAlong(contactLocalPos);
+    }
+  }
+
+  void _exitSPenEraser() {
+    if (!_sPenEraserActive) return;
+    _sPenEraserActive = false;
+    final prev = _toolBeforeSPenEraser;
+    _toolBeforeSPenEraser = null;
+    _endEraseGesture();
+    _setEraserPreview(null);
+    if (prev != null &&
+        ref.read(activeCanvasToolProvider) == CanvasTool.eraser) {
+      ref.read(activeCanvasToolProvider.notifier).state = prev;
+    }
   }
 
   // ── Hold-and-pause shape snap ──────────────────────────────────
@@ -508,6 +678,11 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final previous = _touchPointers[e.pointer];
     _touchPointers[e.pointer] = e.position;
 
+    // Pending multi-finger tap: ignore jitter so zoom/pan doesn't flicker.
+    if (_multiTapDownPos.length >= 2 && !_multiTapInvalid) {
+      return;
+    }
+
     if (_touchPointers.length == 2 &&
         _pinchInitialDistance != null &&
         _pinchInitialZoom != null &&
@@ -561,6 +736,19 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         }
       }
     }
+  }
+
+  /// Start pinch using the current finger span so zoom doesn't jump when a
+  /// multi-finger gesture graduates from tap → pinch.
+  void _beginPinchFromTouchesIfReady() {
+    if (_pinchInitialDistance != null) return;
+    if (_touchPointers.length != 2) return;
+    final positions = _touchPointers.values.toList();
+    final distance = (positions[0] - positions[1]).distance;
+    if (distance <= 5.0) return;
+    _pinchInitialDistance = distance;
+    _pinchInitialZoom = widget.zoomLevel;
+    _pinchContentFocal = _canvasPointUnderPinch(positions);
   }
 
   void _beginEraseGesture() {
@@ -816,6 +1004,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     for (final t in _pauseTimers.values) {
       t.cancel();
     }
+    // Don't mutate providers during dispose — just clear local temp-eraser state.
+    _sPenEraserActive = false;
+    _toolBeforeSPenEraser = null;
     _repaintTick.dispose();
     super.dispose();
   }
@@ -878,6 +1069,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         onPointerUp: _onPointerUp,
         onPointerCancel: _onPointerCancel,
         onPointerHover: (e) {
+          _updateSPenEraserFromEvent(e);
           // Stylus proximity only; ring auto-clears when hover events stop.
           if (ref.read(activeCanvasToolProvider) != CanvasTool.eraser) return;
           if (e.kind != PointerDeviceKind.stylus &&

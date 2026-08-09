@@ -42,10 +42,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   final ScrollController _horizontalScrollController = ScrollController();
   final CanvasOcrService _ocrService = CanvasOcrService();
   final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
+  final GlobalKey<SmeltPopupState> _pinnedSmeltPopupKey =
+      GlobalKey<SmeltPopupState>();
 
   Timer? _ocrDebounce;
+  /// Active (unpinned) smelt response overlay.
   OverlayEntry? _smeltPopupEntry;
-  bool _smeltPopupPinned = false;
+  /// Pinned smelt response overlay (at most one).
+  OverlayEntry? _pinnedSmeltPopupEntry;
+  SmeltState? _pinnedSmeltState;
+  Rect? _pinnedSelectionRect;
+  String? _pinnedCacheKey;
+  Rect? _pinnedPopupBounds;
   final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
   Rect? _lassoPreviewRect;
@@ -142,14 +150,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     _scrollController.dispose();
     _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
+    _pinnedSmeltPopupEntry?.remove();
     super.dispose();
   }
 
   void _onCanvasTapDown(TapDownDetails details) {
     final worldPos = _toWorld(details.localPosition);
     if (_selectionRect != null && !_selectionRect!.contains(worldPos)) {
-      // Keep the selection highlight while a pinned smelt popup is open.
-      if (_smeltPopupPinned && _smeltPopupEntry != null) return;
       _clearSelectionState();
       _hidePasteMenu();
       return;
@@ -198,13 +205,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final world = _toWorld(position);
     if (_tapHitsManualSelectMenu(world)) return;
 
-    final cluster = ref
-        .read(detectedClustersProvider.notifier)
-        .hitTest(world);
+    final noteId = ref.read(activeNoteIdProvider);
+    // Prefer user-corrected boxes so a manually fixed selection stays tappable
+    // after the Smelt popup is dismissed.
+    final cluster = ref.read(manualClustersProvider.notifier).hitTest(
+              world,
+              noteId: noteId,
+            ) ??
+        ref.read(detectedClustersProvider.notifier).hitTest(world);
 
     if (cluster == null) {
       if (ref.read(stylusOnlyModeProvider)) return;
-      if (_smeltPopupPinned && _smeltPopupEntry != null) return;
 
       _hidePasteMenu();
       setState(() {
@@ -227,6 +238,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _selectionRect = cluster.bounds;
       _selectedStrokeIds = Set<String>.from(cluster.strokeIds);
       _activeClusterId = cluster.id;
+      // Manual corrections render like detected boxes (same dashed style).
       _selectionFromDetection = true;
       _showSelectionMenu = false;
       _isResizingSelection = false;
@@ -235,13 +247,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     });
 
     if (hasCached) {
+      // Already showing this result as the pinned popup — leave it alone.
+      if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
+        return;
+      }
       // Reopen the saved popup for this expression — no API call / no action menu.
       ref.read(smeltProvider.notifier).restoreCached(cacheKey);
       _showSmeltPopup(cluster.bounds);
       return;
     }
 
-    // Keep action chips hidden while a response popup is already open.
+    // Keep action chips hidden while an active response popup is already open.
     if (_smeltPopupEntry != null) return;
 
     setState(() => _showSelectionMenu = true);
@@ -261,7 +277,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         .hasCached(_smeltCacheKeyFor(_selectedStrokeIds));
   }
 
-  /// Action chips stay hidden while a response popup is open or already cached.
+  /// Action chips stay hidden while an active response popup is open or already cached.
   bool get _smeltActionMenuAllowed =>
       _smeltPopupEntry == null && !_selectionHasCachedSmelt();
 
@@ -271,6 +287,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     if (_smeltPopupEntry != null) return;
 
     final key = _smeltCacheKeyFor(_selectedStrokeIds);
+    if (_pinnedCacheKey == key && _pinnedSmeltPopupEntry != null) {
+      return;
+    }
     final notifier = ref.read(smeltProvider.notifier);
     if (notifier.hasCached(key)) {
       notifier.restoreCached(key);
@@ -454,7 +473,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _clearSelectionState() {
-    if (_smeltPopupPinned && _smeltPopupEntry != null) return;
     if (_selectionRect == null &&
         _selectedStrokeIds.isEmpty &&
         !_showSelectionMenu &&
@@ -890,6 +908,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
     _hideSelectionMenu();
 
+    // Persist user-corrected boxes for the session so tapping the expression
+    // reopens the cached Smelt popup after dismiss.
+    if (!_selectionFromDetection) {
+      ref.read(manualClustersProvider.notifier).remember(
+            noteId: ref.read(activeNoteIdProvider),
+            strokeIds: _selectedStrokeIds,
+          );
+    }
+
     final rect = _selectionRect!;
     final cacheKey = _smeltCacheKeyFor(_selectedStrokeIds);
     final notifier = ref.read(smeltProvider.notifier);
@@ -1060,52 +1087,157 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _showSmeltPopup(Rect selectionRect) {
+    // If a pinned popup is up and there isn't room for a second card, drop the
+    // pin (cache remains) so the new smelt can take the screen.
+    if (_pinnedSmeltPopupEntry != null && !_canFitSecondSmeltPopup()) {
+      _removePinnedSmeltPopup(notify: false);
+    }
+
     _smeltPopupEntry?.remove();
-    _smeltPopupPinned = false;
     if (_showSelectionMenu) {
       _showSelectionMenu = false;
     }
 
-    // Convert to global coordinates for the popup positioning
     final globalRect = _convertToGlobalRect(selectionRect);
     ScrapFeedback.action();
 
     _smeltPopupEntry = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // Tap outside to dismiss — disabled while pinned so canvas stays usable.
-          Positioned.fill(
-            child: IgnorePointer(
-              ignoring: _smeltPopupPinned,
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _dismissSmeltPopup,
-                child: const SizedBox.expand(),
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        final hasPinned = _pinnedSmeltPopupEntry != null;
+        return Stack(
+          children: [
+            // Full-screen dismiss only when this is the sole popup. With a
+            // pinned sibling, rely on TapRegion so the canvas stays usable.
+            if (!hasPinned)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: _dismissSmeltPopup,
+                  child: const SizedBox.expand(),
+                ),
               ),
+            SmeltPopup(
+              key: _smeltPopupKey,
+              selectionRect: globalRect,
+              onDismiss: _removeSmeltPopup,
+              onCollapse: _collapseSmeltPopup,
+              onTryAnotherModel: _tryAnotherModelFromSmelt,
+              allowPin: !hasPinned,
+              avoidRect: hasPinned ? _pinnedPopupBounds : null,
+              onPinnedChanged: _onActivePopupPinnedChanged,
+              screenSize: screenSize,
             ),
-          ),
-          SmeltPopup(
-            key: _smeltPopupKey,
-            selectionRect: globalRect,
-            onDismiss: _removeSmeltPopup,
-            onCollapse: _collapseSmeltPopup,
-            onTryAnotherModel: _tryAnotherModelFromSmelt,
-            onPinnedChanged: (pinned) {
-              _smeltPopupPinned = pinned;
-              _smeltPopupEntry?.markNeedsBuild();
-            },
-            screenSize: MediaQuery.of(context).size,
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
     Overlay.of(context).insert(_smeltPopupEntry!);
     // Rebuild canvas overlays so the action menu hides while popup is open.
     if (mounted) setState(() {});
   }
 
+  bool _canFitSecondSmeltPopup() {
+    final bounds = _pinnedPopupBounds ??
+        _pinnedSmeltPopupKey.currentState?.currentBounds;
+    if (bounds == null) {
+      // Bounds not measured yet — assume room on large screens only.
+      final size = MediaQuery.sizeOf(context);
+      return size.shortestSide >= 600;
+    }
+    return SmeltPopupState.canFitSecondPopup(
+      screen: MediaQuery.sizeOf(context),
+      padding: MediaQuery.viewPaddingOf(context),
+      pinnedBounds: bounds,
+    );
+  }
+
+  void _onActivePopupPinnedChanged(bool pinned) {
+    if (!pinned) return;
+    _promoteActivePopupToPinned();
+  }
+
+  void _promoteActivePopupToPinned() {
+    final live = ref.read(smeltProvider);
+    // Only pin a finished response (not mid-load).
+    if (live.isLoading || (live.response == null && live.error == null)) {
+      return;
+    }
+
+    final selectionWorld = _selectionRect;
+    final selectionGlobal = selectionWorld != null
+        ? _convertToGlobalRect(selectionWorld)
+        : Rect.fromCenter(
+            center: MediaQuery.sizeOf(context).center(Offset.zero),
+            width: 1,
+            height: 1,
+          );
+    final cacheKey = live.cacheKey ??
+        (_selectedStrokeIds.isEmpty
+            ? null
+            : _smeltCacheKeyFor(_selectedStrokeIds));
+    final frozen = SmeltState(
+      response: live.response,
+      error: live.error,
+      showSteps: live.showSteps,
+      showCodeOutput: live.showCodeOutput,
+      lastImageBytes: live.lastImageBytes,
+      cacheKey: cacheKey,
+      forceCodeExecution: live.forceCodeExecution,
+    );
+    final priorBounds = _smeltPopupKey.currentState?.currentBounds;
+
+    _smeltPopupEntry?.remove();
+    _smeltPopupEntry = null;
+
+    _pinnedSmeltState = frozen;
+    _pinnedSelectionRect = selectionWorld;
+    _pinnedCacheKey = cacheKey;
+    _pinnedPopupBounds = priorBounds;
+
+    _pinnedSmeltPopupEntry?.remove();
+    _pinnedSmeltPopupEntry = OverlayEntry(
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        return SmeltPopup(
+          key: _pinnedSmeltPopupKey,
+          selectionRect: selectionGlobal,
+          frozenState: _pinnedSmeltState,
+          initiallyPinned: true,
+          allowPin: true,
+          onDismiss: () => _removePinnedSmeltPopup(),
+          onCollapse: () => _removePinnedSmeltPopup(),
+          onTryAnotherModel: () {},
+          onPinnedChanged: (stillPinned) {
+            if (stillPinned) return;
+            // Unpin → allow outside-tap dismiss via TapRegion inside the popup.
+            _pinnedSmeltPopupEntry?.markNeedsBuild();
+          },
+          onBoundsChanged: (bounds) {
+            _pinnedPopupBounds = bounds;
+            _smeltPopupEntry?.markNeedsBuild();
+          },
+          screenSize: screenSize,
+        );
+      },
+    );
+    Overlay.of(context).insert(_pinnedSmeltPopupEntry!);
+
+    // Free the live provider / selection so the user can draw and smelt again.
+    ref.read(smeltProvider.notifier).clearState();
+    setState(() {
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _showSelectionMenu = false;
+      _isResizingSelection = false;
+      _isSmelting = false;
+      _activeClusterId = null;
+      _selectionFromDetection = false;
+      _manualSelectMenuAnchor = null;
+    });
+  }
+
   void _dismissSmeltPopup() {
-    if (_smeltPopupPinned) return;
     final state = _smeltPopupKey.currentState;
     if (state != null) {
       state.dismiss();
@@ -1117,7 +1249,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _collapseSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
-    _smeltPopupPinned = false;
     if (mounted) setState(() {});
   }
 
@@ -1175,10 +1306,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _removeSmeltPopup() {
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
-    _smeltPopupPinned = false;
     ref.read(smeltProvider.notifier).clearState();
     // Rebuild so action-menu gating re-evaluates after popup closes.
     if (mounted) setState(() {});
+  }
+
+  void _removePinnedSmeltPopup({bool notify = true}) {
+    _pinnedSmeltPopupEntry?.remove();
+    _pinnedSmeltPopupEntry = null;
+    _pinnedSmeltState = null;
+    _pinnedSelectionRect = null;
+    _pinnedCacheKey = null;
+    _pinnedPopupBounds = null;
+    // Active popup may regain the ability to pin.
+    _smeltPopupEntry?.markNeedsBuild();
+    if (notify && mounted) setState(() {});
   }
 
   void _deleteSelection() {
@@ -1538,6 +1680,21 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           child: IgnorePointer(
             child: CustomPaint(
               painter: _LassoPainter(lassoScreen),
+            ),
+          ),
+        ),
+      );
+    }
+    final pinnedScreen = overlayRect(_pinnedSelectionRect);
+    if (pinnedScreen != null &&
+        _pinnedSmeltPopupEntry != null &&
+        (_selectionRect == null ||
+            _pinnedSelectionRect != _selectionRect)) {
+      contentOverlays.add(
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: _PinnedSelectionPainter(pinnedScreen),
             ),
           ),
         ),
@@ -1963,6 +2120,31 @@ class _LassoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LassoPainter oldDelegate) => oldDelegate.rect != rect;
+}
+
+/// Subtle dashed outline for the expression tied to a pinned smelt popup.
+class _PinnedSelectionPainter extends CustomPainter {
+  final Rect rect;
+
+  _PinnedSelectionPainter(this.rect);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = ScrapTheme.accent.withValues(alpha: 0.06)
+      ..style = PaintingStyle.fill;
+    final border = Paint()
+      ..color = ScrapTheme.accent.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    canvas.drawRect(rect, fill);
+    canvas.drawRect(rect, border);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PinnedSelectionPainter oldDelegate) =>
+      oldDelegate.rect != rect;
 }
 
 class _SelectionBoxHighlight extends StatefulWidget {

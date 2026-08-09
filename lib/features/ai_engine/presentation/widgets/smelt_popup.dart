@@ -27,6 +27,16 @@ class SmeltPopup extends ConsumerStatefulWidget {
   final VoidCallback onTryAnotherModel;
   final ValueChanged<bool>? onPinnedChanged;
   final Size screenSize;
+  /// When false, the pin button is hidden (e.g. a second popup while one is pinned).
+  final bool allowPin;
+  /// Start already pinned (used when promoting an active popup to the pinned overlay).
+  final bool initiallyPinned;
+  /// Snapshot of smelt UI state. When set, the popup ignores [smeltProvider].
+  final SmeltState? frozenState;
+  /// Screen-space rect of another popup to avoid overlapping.
+  final Rect? avoidRect;
+  /// Reports the popup's current screen bounds after layout / drag.
+  final ValueChanged<Rect>? onBoundsChanged;
 
   const SmeltPopup({
     super.key,
@@ -36,6 +46,11 @@ class SmeltPopup extends ConsumerStatefulWidget {
     required this.onTryAnotherModel,
     required this.screenSize,
     this.onPinnedChanged,
+    this.allowPin = true,
+    this.initiallyPinned = false,
+    this.frozenState,
+    this.avoidRect,
+    this.onBoundsChanged,
   });
 
   @override
@@ -58,17 +73,87 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   _PopupSide _side = _PopupSide.below;
   double _maxHeight = 400;
   EdgeInsets _safePadding = EdgeInsets.zero;
+  late bool _localShowSteps;
+  late bool _localShowCodeOutput;
 
   static const double _margin = 16.0;
   static const double _gap = 12.0;
   static const double _minSideSpace = 160.0;
   static const double _hardMaxHeight = 400.0;
+  static const double _minSecondPopupWidth = 300.0;
+  static const double _minSecondPopupHeight = 180.0;
 
   bool get isPinned => _pinned;
+
+  /// Whether [screen] has a free region large enough for a second popup
+  /// that does not overlap [pinnedBounds].
+  static bool canFitSecondPopup({
+    required Size screen,
+    required EdgeInsets padding,
+    required Rect pinnedBounds,
+  }) {
+    final usable = Rect.fromLTRB(
+      padding.left + _margin,
+      padding.top + _margin,
+      screen.width - padding.right - _margin,
+      screen.height - padding.bottom - _margin,
+    );
+    if (usable.width < _minSecondPopupWidth ||
+        usable.height < _minSecondPopupHeight) {
+      return false;
+    }
+
+    const gap = _gap;
+    final regions = <Rect>[
+      Rect.fromLTRB(
+        usable.left,
+        usable.top,
+        usable.right,
+        pinnedBounds.top - gap,
+      ),
+      Rect.fromLTRB(
+        usable.left,
+        pinnedBounds.bottom + gap,
+        usable.right,
+        usable.bottom,
+      ),
+      Rect.fromLTRB(
+        usable.left,
+        usable.top,
+        pinnedBounds.left - gap,
+        usable.bottom,
+      ),
+      Rect.fromLTRB(
+        pinnedBounds.right + gap,
+        usable.top,
+        usable.right,
+        usable.bottom,
+      ),
+    ];
+
+    return regions.any(
+      (r) => r.width >= _minSecondPopupWidth && r.height >= _minSecondPopupHeight,
+    );
+  }
+
+  /// Current on-screen bounds of the popup card, if measured.
+  Rect? get currentBounds {
+    if (_cardSize == null) return null;
+    final pos = _calculatePopupPosition();
+    return Rect.fromLTWH(
+      pos.dx,
+      pos.dy,
+      _cardSize!.width,
+      math.min(_cardSize!.height, _maxHeight),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    _pinned = widget.initiallyPinned;
+    _localShowSteps = widget.frozenState?.showSteps ?? false;
+    _localShowCodeOutput = widget.frozenState?.showCodeOutput ?? false;
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
@@ -126,9 +211,33 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     if (mounted) widget.onCollapse();
   }
 
+  SmeltState _effectiveState({bool watch = false}) {
+    final frozen = widget.frozenState;
+    if (frozen != null) return frozen;
+    return watch ? ref.watch(smeltProvider) : ref.read(smeltProvider);
+  }
+
   void _togglePinned() {
+    if (!widget.allowPin) {
+      _shakeController.forward(from: 0);
+      return;
+    }
+    if (!_pinned) {
+      final live = _effectiveState();
+      if (live.isLoading || (live.response == null && live.error == null)) {
+        _shakeController.forward(from: 0);
+        return;
+      }
+    }
     setState(() => _pinned = !_pinned);
     widget.onPinnedChanged?.call(_pinned);
+  }
+
+  void _notifyBounds() {
+    final bounds = currentBounds;
+    if (bounds != null) {
+      widget.onBoundsChanged?.call(bounds);
+    }
   }
 
   @override
@@ -145,6 +254,24 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
         oldWidget.screenSize != widget.screenSize &&
         _cardSize != null) {
       _dragPosition = _clampToScreen(_dragPosition!, _cardSize!);
+    }
+    if (oldWidget.avoidRect != widget.avoidRect && _cardSize != null) {
+      _nudgeAwayFromAvoidRect();
+    }
+  }
+
+  void _nudgeAwayFromAvoidRect() {
+    if (widget.avoidRect == null || _cardSize == null) return;
+    final size = Size(
+      _popupWidth(),
+      math.min(_cardSize!.height, _maxHeight),
+    );
+    final pos = _calculatePopupPosition();
+    final rect = Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height);
+    if (!rect.overlaps(widget.avoidRect!)) return;
+    final adjusted = _resolveAvoidOverlap(pos, size);
+    if (adjusted != pos) {
+      setState(() => _dragPosition = adjusted);
     }
   }
 
@@ -167,6 +294,11 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
       } else {
         _dragPosition = _clampToScreen(_dragPosition!, size);
       }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _nudgeAwayFromAvoidRect();
+      _notifyBounds();
     });
     if (first && !_closing) {
       _animController.forward();
@@ -322,7 +454,58 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
       }
     }
 
-    return Offset(left, top);
+    return _resolveAvoidOverlap(Offset(left, top), Size(popupWidth, height));
+  }
+
+  /// Shift [pos] so a card of [size] does not overlap [widget.avoidRect].
+  Offset _resolveAvoidOverlap(Offset pos, Size size) {
+    final avoid = widget.avoidRect;
+    if (avoid == null) return pos;
+
+    var left = pos.dx;
+    var top = pos.dy;
+    var popupRect = Rect.fromLTWH(left, top, size.width, size.height);
+    if (!popupRect.overlaps(avoid)) return pos;
+
+    final pad = _safePadding;
+    final screen = widget.screenSize;
+    final minLeft = pad.left + _margin;
+    final maxLeft = math.max(
+      minLeft,
+      screen.width - pad.right - _margin - size.width,
+    );
+    final minTop = pad.top + _margin;
+    final maxTop = math.max(
+      minTop,
+      screen.height - pad.bottom - _margin - size.height,
+    );
+
+    // Prefer sliding into the largest free region around the avoid rect.
+    final candidates = <Offset>[
+      Offset(left, avoid.top - size.height - _gap), // above avoid
+      Offset(left, avoid.bottom + _gap), // below avoid
+      Offset(avoid.left - size.width - _gap, top), // left of avoid
+      Offset(avoid.right + _gap, top), // right of avoid
+    ];
+
+    Offset? best;
+    var bestScore = double.negativeInfinity;
+    for (final c in candidates) {
+      final clamped = Offset(
+        c.dx.clamp(minLeft, maxLeft).toDouble(),
+        c.dy.clamp(minTop, maxTop).toDouble(),
+      );
+      final r = Rect.fromLTWH(clamped.dx, clamped.dy, size.width, size.height);
+      if (r.overlaps(avoid)) continue;
+      // Prefer staying near the original placement.
+      final score = -((clamped.dx - pos.dx).abs() + (clamped.dy - pos.dy).abs());
+      if (score > bestScore) {
+        bestScore = score;
+        best = clamped;
+      }
+    }
+
+    return best ?? pos;
   }
 
   Offset _clampToScreen(Offset pos, Size size) {
@@ -351,7 +534,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   @override
   Widget build(BuildContext context) {
     _safePadding = MediaQuery.viewPaddingOf(context);
-    final state = ref.watch(smeltProvider);
+    final state = _effectiveState(watch: true);
     final position = _calculatePopupPosition();
     final anchor = _anchorAlignment;
 
@@ -374,8 +557,13 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
               ),
             ),
             child: TapRegion(
+              groupId: 'smelt-popups',
               onTapOutside: (_) {
-                if (!_pinned) dismiss();
+                if (_pinned) return;
+                // Secondary popup beside a pinned one stays open so the
+                // canvas remains usable for drawing / selecting.
+                if (!widget.allowPin) return;
+                dismiss();
               },
               child: _MeasureSize(
                 onChange: _onCardSize,
@@ -389,6 +577,9 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildHeader() {
+    final live = _effectiveState(watch: true);
+    final canPinNow = widget.allowPin && !live.isLoading;
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (_) {
@@ -402,6 +593,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             size,
           );
         });
+        _notifyBounds();
       },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
@@ -414,14 +606,21 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
                 margin: EdgeInsets.fromLTRB(8, 6, 4, 0),
               ),
             ),
-            PaperIconButton(
-              icon: _pinned ? Icons.push_pin : Icons.push_pin_outlined,
-              tooltip: _pinned ? 'Unpin' : 'Keep open',
-              color: _pinned ? ScrapTheme.accent : ScrapTheme.secondaryText,
-              size: 32,
-              iconSize: 18,
-              onPressed: _togglePinned,
-            ),
+            if (widget.allowPin || _pinned)
+              PaperIconButton(
+                icon: _pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                tooltip: !canPinNow && !_pinned
+                    ? (live.isLoading
+                        ? 'Wait for result to pin'
+                        : 'Another result is already pinned')
+                    : (_pinned ? 'Unpin' : 'Keep open'),
+                color: _pinned ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                size: 32,
+                iconSize: 18,
+                onPressed: canPinNow || _pinned
+                    ? _togglePinned
+                    : () => _shakeController.forward(from: 0),
+              ),
             PaperIconButton(
               icon: Icons.close,
               tooltip: 'Close',
@@ -483,10 +682,16 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     if (state.response == null) {
       return const SizedBox();
     }
+    final showSteps = widget.frozenState != null
+        ? _localShowSteps
+        : state.showSteps;
+    final showCodeOutput = widget.frozenState != null
+        ? _localShowCodeOutput
+        : state.showCodeOutput;
     return _buildResponseContent(
       state.response!,
-      showSteps: state.showSteps,
-      showCodeOutput: state.showCodeOutput,
+      showSteps: showSteps,
+      showCodeOutput: showCodeOutput,
     );
   }
 
@@ -573,7 +778,13 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             expanded: showSteps,
             expandedLabel: 'Hide steps',
             collapsedLabel: 'Show steps',
-            onTap: () => ref.read(smeltProvider.notifier).toggleSteps(),
+            onTap: () {
+              if (widget.frozenState != null) {
+                setState(() => _localShowSteps = !_localShowSteps);
+              } else {
+                ref.read(smeltProvider.notifier).toggleSteps();
+              }
+            },
           ),
           if (showSteps) ...[
             const SizedBox(height: 12),
@@ -594,7 +805,13 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             expanded: showCodeOutput,
             expandedLabel: 'Hide code',
             collapsedLabel: 'Show code',
-            onTap: () => ref.read(smeltProvider.notifier).toggleCodeOutput(),
+            onTap: () {
+              if (widget.frozenState != null) {
+                setState(() => _localShowCodeOutput = !_localShowCodeOutput);
+              } else {
+                ref.read(smeltProvider.notifier).toggleCodeOutput();
+              }
+            },
           ),
           if (showCodeOutput) ...[
             const SizedBox(height: 12),
@@ -661,6 +878,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   Widget _buildFooter(SmeltResponse response) {
+    final showModelSwap = widget.frozenState == null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -677,8 +895,9 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
         ],
         Row(
           children: [
-            _buildTryAnotherModelButton(),
-            const Spacer(),
+            if (showModelSwap) _buildTryAnotherModelButton(),
+            if (showModelSwap) const Spacer(),
+            if (!showModelSwap) const Spacer(),
             Text(
               'Powered by Gemini ${GeminiChatModel.displayLabel(response.modelUsed)}',
               style: ScrapTextStyles.stamp.copyWith(
@@ -695,7 +914,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   void _openChat({String? autoSend}) {
-    final smelt = ref.read(smeltProvider);
+    final smelt = _effectiveState();
     final response = smelt.response;
     if (response == null) return;
 

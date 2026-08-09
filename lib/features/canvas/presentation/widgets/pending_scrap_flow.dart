@@ -15,6 +15,32 @@ final pendingNewScrapsProvider =
 bool isPendingNewScrap(WidgetRef ref, String id) =>
     ref.read(pendingNewScrapsProvider).containsKey(id);
 
+/// Default title for scraps that have not been named yet.
+const defaultNewScrapTitle = 'New scrap';
+
+bool isUnnamedScrapTitle(String title) =>
+    title.trim().isEmpty || title.trim() == defaultNewScrapTitle;
+
+/// Open a pending new scrap in a new editor tab (name & file later).
+void openNewScrapInTab(WidgetRef ref, {String parentId = 'root'}) {
+  final node = HomeNode.create(
+    title: defaultNewScrapTitle,
+    type: NodeType.note,
+    parentId: parentId,
+  );
+  ref
+      .read(pendingNewScrapsProvider.notifier)
+      .update((m) => {...m, node.id: node});
+  openNoteTab(ref, node.id, node.title, ephemeral: true);
+}
+
+/// Open an ephemeral loose scrap in a new editor tab (never saved to disk).
+void openLooseScrapInTab(WidgetRef ref) {
+  ScrapFeedback.action();
+  final id = 'loose-${DateTime.now().microsecondsSinceEpoch}';
+  openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
+}
+
 /// File a pending scrap under [title] and persist in-memory canvas data.
 Future<void> filePendingNewScrap(
   WidgetRef ref,
@@ -82,7 +108,13 @@ Future<bool> resolvePendingScrapForTab(
 ) async {
   if (!isPendingNewScrap(ref, id)) return true;
 
-  final result = await showNameNewScrapDialog(context);
+  final pendingTitle = ref.read(pendingNewScrapsProvider)[id]?.title;
+  final initialTitle =
+      pendingTitle != null && !isUnnamedScrapTitle(pendingTitle)
+          ? pendingTitle
+          : '';
+
+  final result = await showNameNewScrapDialog(context, initialTitle: initialTitle);
   if (result == null) return false;
 
   if (result.discard) {

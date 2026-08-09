@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
+import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../../home/domain/models/home_node.dart';
+import '../../../home/presentation/providers/home_providers.dart';
 import '../providers/canvas_providers.dart';
 import 'pending_scrap_flow.dart';
 
@@ -96,20 +99,7 @@ class DocumentTabBar extends ConsumerWidget {
               },
             ),
           ),
-          // New tab button
-          GestureDetector(
-            onTap: () {}, // hook from outside to open note picker
-            child: Container(
-              width: 36, height: 36,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: ScrapTheme.kraft.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: ScrapTheme.dividers),
-              ),
-              child: const Icon(Icons.add, size: 16, color: ScrapTheme.mutedText),
-            ),
-          ),
+          const _NewTabButton(),
         ],
       ),
     );
@@ -158,42 +148,20 @@ class _TabChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isLooseScrap = isEphemeral && !isPending;
-    final borderStyle = isLooseScrap
-        ? Border(
-            top: BorderSide(
-              color: isActive
-                  ? tab.accent.withValues(alpha: 0.7)
-                  : ScrapTheme.dividers,
-              width: isActive ? 2 : 1,
-              style: BorderStyle.solid,
-            ),
-            left: BorderSide(
-              color: ScrapTheme.dividers.withValues(alpha: 0.85),
-              width: 0.5,
-            ),
-            right: BorderSide(
-              color: ScrapTheme.dividers.withValues(alpha: 0.85),
-              width: 0.5,
-            ),
-            bottom: isActive
-                ? BorderSide.none
-                : BorderSide(
-                    color: ScrapTheme.dividers.withValues(alpha: 0.85),
-                    width: 0.5,
-                  ),
-          )
-        : Border(
-            top: BorderSide(
-              color: isActive ? tab.accent : ScrapTheme.dividers,
-              width: isActive ? 3 : 1,
-            ),
-            left: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
-            right: const BorderSide(color: ScrapTheme.dividers, width: 0.5),
-            // Active tab merges into canvas — no bottom border
-            bottom: isActive
-                ? BorderSide.none
-                : const BorderSide(color: ScrapTheme.dividers, width: 0.5),
-          );
+    final displayTitle =
+        isLooseScrap ? 'Loose scrap' : tab.title;
+    final bgColor = isActive
+        ? ScrapTheme.cardSurface
+        : ScrapTheme.codeSurface.withValues(alpha: isLooseScrap ? 0.65 : 1);
+    // Uniform border color is required when using borderRadius — mixed per-side
+    // colors throw and can prevent the tab contents from painting.
+    final borderColor = isActive ? bgColor : ScrapTheme.dividers;
+    final labelStyle = ScrapTextStyles.body.copyWith(
+      fontSize: 12,
+      color: isLooseScrap ? ScrapTheme.secondaryText : ScrapTheme.primaryText,
+      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+      fontStyle: isLooseScrap ? FontStyle.italic : FontStyle.normal,
+    );
 
     return GestureDetector(
       onTap: onTap,
@@ -201,17 +169,12 @@ class _TabChip extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: EdgeInsets.only(right: 4, top: isActive ? 0 : 3),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+        constraints: const BoxConstraints(minHeight: 28),
         decoration: BoxDecoration(
-          color: isActive
-              ? (isLooseScrap
-                  ? ScrapTheme.codeSurface
-                  : ScrapTheme.cardSurface)
-              : ScrapTheme.codeSurface.withValues(
-                  alpha: isLooseScrap ? 0.65 : 1,
-                ),
+          color: bgColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-          border: borderStyle,
+          border: Border.all(color: borderColor, width: 0.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -229,25 +192,8 @@ class _TabChip extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 100),
               child: Text(
-                tab.title,
-                style: isActive
-                    ? ScrapTextStyles.body.copyWith(
-                        fontSize: 12,
-                        color: isLooseScrap
-                            ? ScrapTheme.secondaryText
-                            : ScrapTheme.primaryText,
-                        fontWeight: FontWeight.w600,
-                        fontStyle: isLooseScrap
-                            ? FontStyle.italic
-                            : FontStyle.normal,
-                      )
-                    : ScrapTextStyles.stamp.copyWith(
-                        fontSize: 10,
-                        color: ScrapTheme.secondaryText,
-                        fontStyle: isLooseScrap
-                            ? FontStyle.italic
-                            : FontStyle.normal,
-                      ),
+                displayTitle,
+                style: labelStyle,
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),
@@ -262,10 +208,10 @@ class _TabChip extends StatelessWidget {
             const SizedBox(width: 6),
             GestureDetector(
               onTap: () => onClose(),
-              child: Icon(
+              child: const Icon(
                 Icons.close,
                 size: 12,
-                color: isActive ? ScrapTheme.secondaryText : ScrapTheme.mutedText,
+                color: ScrapTheme.secondaryText,
               ),
             ),
           ],
@@ -293,6 +239,8 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
         ref.watch(ephemeralNoteIdsProvider).contains(widget.tab.id);
     final isPending = isPendingNewScrap(ref, widget.tab.id);
     final isLooseScrap = isEphemeral && !isPending;
+    final displayTitle =
+        isLooseScrap ? 'Loose scrap' : widget.tab.title;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
@@ -315,7 +263,7 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
             Container(width: 8, height: 8,
                 decoration: BoxDecoration(color: widget.tab.accent, shape: BoxShape.circle)),
             const SizedBox(width: 10),
-            Flexible(child: Text(widget.tab.title,
+            Flexible(child: Text(displayTitle,
                 style: ScrapTextStyles.heading.copyWith(fontSize: 16))),
           ]),
           const SizedBox(height: 20),
@@ -390,6 +338,111 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
               Navigator.pop(context);
             },
           )).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewTabButton extends ConsumerWidget {
+  const _NewTabButton();
+
+  void _showMenu(BuildContext context, WidgetRef ref, RenderBox button) {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final topLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final bottomRight = button.localToGlobal(
+      button.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(topLeft, bottomRight),
+      Offset.zero & overlay.size,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      color: ScrapTheme.cardSurface,
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        side: const BorderSide(color: ScrapTheme.dividers),
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'new',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('New scrap', style: ScrapTextStyles.body),
+              Text(
+                'Name & file when you leave',
+                style: ScrapTextStyles.caption.copyWith(
+                  color: ScrapTheme.mutedText,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem<String>(
+          value: 'loose',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '~  Loose scrap',
+                style: ScrapTextStyles.body.copyWith(
+                  color: ScrapTheme.secondaryText,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              Text(
+                'Unsaved — drifts off when you leave',
+                style: ScrapTextStyles.caption.copyWith(
+                  color: ScrapTheme.mutedText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      if (value == 'new') {
+        ScrapFeedback.tap();
+        final folderId = ref.read(currentFolderIdProvider);
+        final parentId = folderId == trashFolderId ? 'root' : folderId;
+        openNewScrapInTab(ref, parentId: parentId);
+      } else if (value == 'loose') {
+        openLooseScrapInTab(ref);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Tooltip(
+      message: 'New scrap',
+      child: Builder(
+        builder: (ctx) => GestureDetector(
+          onTap: () {
+            final box = ctx.findRenderObject() as RenderBox?;
+            if (box == null) return;
+            _showMenu(context, ref, box);
+          },
+          child: Container(
+            width: 36,
+            height: 36,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: ScrapTheme.kraft.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: ScrapTheme.dividers),
+            ),
+            child: const Icon(Icons.add, size: 16, color: ScrapTheme.mutedText),
+          ),
         ),
       ),
     );

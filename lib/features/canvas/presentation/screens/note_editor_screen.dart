@@ -1865,6 +1865,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       }
     });
 
+    ref.listen<List<OpenedTab>>(openedTabsProvider, (previous, next) {
+      if (next.isEmpty && context.mounted) {
+        Navigator.of(context).pop();
+      }
+    });
+
     final isPenMode       = ref.watch(isPenModeActiveProvider);
     final stylusOnly      = ref.watch(stylusOnlyModeProvider);
     final activeTool      = ref.watch(activeCanvasToolProvider);

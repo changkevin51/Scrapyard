@@ -1,15 +1,21 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
-import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../ai_chat/presentation/providers/chat_providers.dart';
+import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
+import '../../../ai_engine/presentation/widgets/smelt_action_menu.dart';
+import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
+import '../../../canvas/presentation/screens/note_editor_screen.dart';
+import '../../../canvas/presentation/widgets/canvas_smart_widgets.dart';
 import '../providers/pdf_providers.dart';
 import '../widgets/annotation_toolbar.dart';
 import '../widgets/split_screen_layout.dart';
 import '../widgets/annotation_layer.dart';
-import '../../../canvas/presentation/screens/note_editor_screen.dart';
 
 class PdfViewerScreen extends ConsumerStatefulWidget {
   const PdfViewerScreen({super.key});
@@ -20,26 +26,167 @@ class PdfViewerScreen extends ConsumerStatefulWidget {
 
 class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
   final PdfViewerController _pdfController = PdfViewerController();
-
-  // Mocked for testing, realistically we pick a file
-  final String _mockDocId = 'test-doc-id-1234';
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(pdfDocumentIdProvider.notifier).state = _mockDocId;
-    });
-  }
+  final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
+  OverlayEntry? _smeltPopupEntry;
+  OverlayEntry? _smeltMenuEntry;
+  Future<void> Function({bool forceRefresh, bool forceCodeExecution})?
+      _activeSmeltRunner;
+  Future<Uint8List?> Function()? _captureSelection;
+  Rect? _menuSelectionRect;
 
   @override
   void dispose() {
+    _smeltPopupEntry?.remove();
+    _smeltMenuEntry?.remove();
+    _smeltPopupEntry = null;
+    _smeltMenuEntry = null;
     super.dispose();
+  }
+
+  void _showSmeltActionMenu(Rect selectionRect) {
+    _smeltMenuEntry?.remove();
+    _menuSelectionRect = selectionRect;
+    ScrapFeedback.tap();
+
+    _smeltMenuEntry = OverlayEntry(
+      builder: (context) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _dismissSmeltMenu,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // Same scrap SmeltActionMenu — positioned above the selection.
+            SmeltActionMenu(
+              rect: selectionRect,
+              onSmelt: () => _runSmeltFromMenu(forceCodeExecution: false),
+              onSmeltWithCode: () =>
+                  _runSmeltFromMenu(forceCodeExecution: true),
+              onAddToChat: _attachSelectionToChat,
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_smeltMenuEntry!);
+  }
+
+  void _dismissSmeltMenu() {
+    _smeltMenuEntry?.remove();
+    _smeltMenuEntry = null;
+    ref.read(pdfSmeltRectProvider.notifier).state = null;
+    _menuSelectionRect = null;
+    _captureSelection = null;
+  }
+
+  Future<void> _attachSelectionToChat() async {
+    final capture = _captureSelection;
+    _smeltMenuEntry?.remove();
+    _smeltMenuEntry = null;
+
+    Uint8List? bytes;
+    try {
+      bytes = await capture?.call();
+    } catch (_) {}
+
+    if (!mounted) return;
+    if (bytes != null) {
+      ref.read(pendingChatAttachmentProvider.notifier).state = bytes;
+      // Open chat beside the PDF — do not force the scrap split on.
+      ref.read(chatPanelOpenProvider.notifier).state = true;
+    }
+    ref.read(pdfSmeltRectProvider.notifier).state = null;
+    _menuSelectionRect = null;
+    _captureSelection = null;
+    _activeSmeltRunner = null;
+  }
+
+  Future<void> _runSmeltFromMenu({required bool forceCodeExecution}) async {
+    final runner = _activeSmeltRunner;
+    final rect = _menuSelectionRect;
+    if (runner == null || rect == null) return;
+
+    _smeltMenuEntry?.remove();
+    _smeltMenuEntry = null;
+
+    _showSmeltPopup(rect);
+    await runner(forceCodeExecution: forceCodeExecution);
+    _smeltPopupEntry?.markNeedsBuild();
+  }
+
+  void _showSmeltPopup(Rect selectionRect) {
+    _smeltPopupEntry?.remove();
+    ScrapFeedback.action();
+
+    _smeltPopupEntry = OverlayEntry(
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _dismissSmeltPopup,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            SmeltPopup(
+              key: _smeltPopupKey,
+              selectionRect: selectionRect,
+              onDismiss: _removeSmeltPopup,
+              onCollapse: _removeSmeltPopup,
+              onTryAnotherModel: _tryAnotherModelFromSmelt,
+              screenSize: screenSize,
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context).insert(_smeltPopupEntry!);
+  }
+
+  void _removeSmeltPopup() {
+    _smeltPopupEntry?.remove();
+    _smeltPopupEntry = null;
+    _activeSmeltRunner = null;
+    _captureSelection = null;
+    ref.read(pdfSmeltRectProvider.notifier).state = null;
+    _menuSelectionRect = null;
+  }
+
+  void _dismissSmeltPopup() {
+    _removeSmeltPopup();
+  }
+
+  Future<void> _tryAnotherModelFromSmelt() async {
+    final runner = _activeSmeltRunner;
+    if (runner == null) return;
+    await runner(forceRefresh: true);
+    _smeltPopupEntry?.markNeedsBuild();
+  }
+
+  void _onSmeltSelection({
+    required Rect selectionRect,
+    required Future<void> Function({
+      bool forceRefresh,
+      bool forceCodeExecution,
+    }) runSmelt,
+    required Future<Uint8List?> Function() captureSelection,
+  }) {
+    _activeSmeltRunner = runSmelt;
+    _captureSelection = captureSelection;
+    _showSmeltActionMenu(selectionRect);
   }
 
   @override
   Widget build(BuildContext context) {
     final isSplitScreen = ref.watch(isSplitScreenProvider);
+    final pdfPath = ref.watch(activePdfPathProvider);
+    final pdfTitle = ref.watch(activePdfTitleProvider);
+    final documentId = ref.watch(pdfDocumentIdProvider);
 
     return Scaffold(
       backgroundColor: ScrapTheme.cardSurface,
@@ -47,7 +194,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
         backgroundColor: ScrapTheme.background,
         elevation: 0,
         title: Text(
-          'Document',
+          pdfTitle?.isNotEmpty == true ? pdfTitle! : 'Document',
           style: ScrapTextStyles.heading.copyWith(fontSize: 18),
         ),
         iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
@@ -72,55 +219,65 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
           ),
         ],
       ),
-      body: Stack(
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          AnimatedSwitcher(
-            duration: ScrapMotion.panel,
-            switchInCurve: ScrapMotion.panelCurve,
-            switchOutCurve: ScrapMotion.exitCurve,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
-            child: isSplitScreen
-                ? SplitScreenLayout(
-                    key: const ValueKey('split'),
-                    leftChild: _buildPdfViewer(),
-                    rightChild:
-                        const NoteEditorScreen(), // Phase 4 placeholder inside split
-                  )
-                : KeyedSubtree(
-                    key: const ValueKey('single'),
-                    child: _buildPdfViewer(),
+          Expanded(
+            child: Stack(
+              children: [
+                // Keep a single PdfViewer mounted across split toggles.
+                // AnimatedSwitcher previously created a second viewer that
+                // disposed first and called controller._attach(null), killing
+                // finger pan/zoom while a draw tool was active.
+                SplitScreenLayout(
+                  split: isSplitScreen,
+                  leftChild: _buildPdfViewer(pdfPath, documentId),
+                  rightChild: const NoteEditorScreen(
+                    showChatChrome: false,
                   ),
+                ),
+                const AnnotationToolbar(),
+                // Chat FAB stays available even when scrap split is off.
+                const Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: CanvasSmartBar(),
+                ),
+              ],
+            ),
           ),
-
-          // Draggable formatting pill
-          const AnnotationToolbar(),
+          const AiChatPanel(),
         ],
       ),
     );
   }
 
-  Widget _buildPdfViewer() {
-    return PdfViewer.asset(
-      'assets/sample.pdf', // Requires adding a default asset or switching to empty state
+  Widget _buildPdfViewer(String? pdfPath, String? documentId) {
+    if (pdfPath == null || pdfPath.isEmpty) {
+      return const Center(
+        child: Text(
+          'No PDF selected',
+          style: TextStyle(color: ScrapTheme.secondaryText),
+        ),
+      );
+    }
+
+    final docId = documentId ?? pdfPath;
+
+    return PdfViewer.file(
+      pdfPath,
       controller: _pdfController,
       params: PdfViewerParams(
         backgroundColor: ScrapTheme.codeSurface,
-        // Custom page processing can be added here
-        viewerOverlayBuilder: (context, size, params) {
+        pageOverlaysBuilder: (context, pageRect, page) {
           return [
-            // Overlaying a generic annotation canvas since pdf pages handle scrolling.
-            // Using pdfrx, annotations can be painted in viewerOverlayBuilder.
-            // Here we overlay above the entire viewer for freehand drawing.
-            // Full integration maps page coords via PdfViewer params.
             Positioned.fill(
               child: AnnotationLayer(
-                pageNumber: 1, // Simplified for now
-                documentId: _mockDocId,
+                pageNumber: page.pageNumber,
+                documentId: docId,
+                page: page,
+                viewerController: _pdfController,
+                onSmeltSelection: _onSmeltSelection,
               ),
             ),
           ];

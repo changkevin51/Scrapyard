@@ -754,40 +754,49 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     required bool showSteps,
     required bool showCodeOutput,
   }) {
+    final hasAnswer = response.hasDirectAnswer;
+    final hasSteps = response.steps.trim().isNotEmpty;
+    // Process-style answers (proofs, etc.) live entirely in steps — no answer box.
+    final stepsExpanded = hasSteps && (showSteps || !hasAnswer);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (response.isMath) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: ScrapTheme.accentSurface,
-              borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        if (hasAnswer) ...[
+          if (response.isMath) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: ScrapTheme.accentSurface,
+                borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              ),
+              child: _buildMathAnswer(response.answer),
             ),
-            child: _buildMathAnswer(response.answer),
-          ),
-        ] else ...[
-          SelectableText(
-            response.answer,
-            style: ScrapTextStyles.body.copyWith(fontSize: 15, height: 1.5),
-          ),
+          ] else ...[
+            SelectableText(
+              response.answer,
+              style: ScrapTextStyles.body.copyWith(fontSize: 15, height: 1.5),
+            ),
+          ],
         ],
-        if (response.steps.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _buildExpandToggle(
-            expanded: showSteps,
-            expandedLabel: 'Hide steps',
-            collapsedLabel: 'Show steps',
-            onTap: () {
-              if (widget.frozenState != null) {
-                setState(() => _localShowSteps = !_localShowSteps);
-              } else {
-                ref.read(smeltProvider.notifier).toggleSteps();
-              }
-            },
-          ),
-          if (showSteps) ...[
+        if (hasSteps) ...[
+          if (hasAnswer) ...[
             const SizedBox(height: 12),
+            _buildExpandToggle(
+              expanded: stepsExpanded,
+              expandedLabel: 'Hide steps',
+              collapsedLabel: 'Show steps',
+              onTap: () {
+                if (widget.frozenState != null) {
+                  setState(() => _localShowSteps = !_localShowSteps);
+                } else {
+                  ref.read(smeltProvider.notifier).toggleSteps();
+                }
+              },
+            ),
+          ],
+          if (stepsExpanded) ...[
+            if (hasAnswer) const SizedBox(height: 12),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),

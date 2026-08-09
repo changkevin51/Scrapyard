@@ -18,6 +18,7 @@ import '../../domain/models/stroke.dart';
 import '../../domain/services/stroke_spatial_index.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
+import 'eraser_preview.dart';
 
 // ══════════════════════════════════════════════════════════════════
 // Saved-stroke picture cache
@@ -177,7 +178,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   bool _eraseUndoPushed = false;
   Offset? _lastErasePos;
   /// Live brush preview under the pointer (eraser tool).
-  final _eraserPreview = _EraserPreviewState();
+  final _eraserPreview = EraserPreviewState();
   Timer? _eraserHoverHideTimer;
 
   // Touch tracking for palm-rejection scroll/zoom
@@ -899,18 +900,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   void _setEraserPreview(Offset? pos) {
-    if (pos == null) {
-      if (_eraserPreview.pos == null) return;
-      _eraserPreview.pos = null;
-      _tick();
-      return;
-    }
-    if (_eraserPreview.pos != null &&
-        (_eraserPreview.pos! - pos).distanceSquared < 0.25) {
-      return;
-    }
     _eraserPreview.pos = pos;
-    _tick();
   }
 
   /// Stylus proximity preview — auto-hides if hover events stop (pen left range).
@@ -926,8 +916,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   /// Eraser radius from the toolbar thickness dots (same control as pen width).
   /// In infinite mode this is a world-space radius so on-screen size stays stable.
   double _eraserRadius() {
-    final mod = ref.read(strokeWidthModifierProvider);
-    final screenR = 10.0 * mod;
+    final screenR = eraserScreenRadius(ref.read(strokeWidthModifierProvider));
     if (widget.infiniteMode) {
       final scale = ref.read(canvasViewportProvider).scale;
       return screenR / max(scale, 0.01);
@@ -939,16 +928,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   void _eraseAlong(Offset localPos) {
     final pos = _toWorld(localPos);
     final radius = _eraserRadius();
-    final last = _lastErasePos;
-    if (last == null) {
-      _eraseAt(pos, radius);
-    } else {
-      final dist = (pos - last).distance;
-      final steps = max(1, (dist / max(radius * 0.4, 2.0)).ceil());
-      for (var i = 1; i <= steps; i++) {
-        final t = i / steps;
-        _eraseAt(Offset.lerp(last, pos, t)!, radius);
-      }
+    for (final sample in sampleErasePath(_lastErasePos, pos, radius)) {
+      _eraseAt(sample, radius);
     }
     _lastErasePos = pos;
   }
@@ -1001,7 +982,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final deleteIds = <String>[];
     final hideIds = <String>[];
     final pad = radius + 4;
-    final r2 = radius * radius;
 
     for (final s in strokes) {
       if (s.isHidden || s.points.isEmpty) continue;
@@ -1017,38 +997,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         continue;
       }
 
-      final keptRuns = <List<StrokePoint>>[];
-      var run = <StrokePoint>[];
-      var anyRemoved = false;
-      Offset? prevKept;
-
-      for (final pt in s.points) {
-        final p = Offset(pt.x, pt.y);
-        final inCircle = (p - pos).distanceSquared <= r2;
-        final segmentCrosses = prevKept != null &&
-            _distToSegmentSq(pos, prevKept, p) <= r2;
-
-        if (inCircle) {
-          anyRemoved = true;
-          if (run.length >= 2) keptRuns.add(run);
-          run = [];
-          prevKept = null;
-        } else if (segmentCrosses) {
-          // Brush crossed the ink between samples — split so the path
-          // does not redraw across the erased gap.
-          anyRemoved = true;
-          if (run.length >= 2) keptRuns.add(run);
-          run = [pt];
-          prevKept = p;
-        } else {
-          run.add(pt);
-          prevKept = p;
-        }
+      final keptRuns = carveStrokePoints(s.points, pos, radius);
+      if (keptRuns.length == 1 && keptRuns.first.length == s.points.length) {
+        continue;
       }
-      if (run.length >= 2) keptRuns.add(run);
-
-      if (!anyRemoved) continue;
-
       if (keptRuns.isEmpty) {
         deleteIds.add(s.id);
         continue;
@@ -1106,39 +1058,21 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   }
 
   bool _strokeNearPoint(Stroke s, Offset pos, {double radius = 20}) {
-    final r2 = radius * radius;
-    final pts = s.points;
-    for (var i = 0; i < pts.length; i++) {
-      final a = Offset(pts[i].x, pts[i].y);
-      if ((a - pos).distanceSquared <= r2) return true;
-      if (i + 1 < pts.length) {
-        final b = Offset(pts[i + 1].x, pts[i + 1].y);
-        if (_distToSegmentSq(pos, a, b) <= r2) return true;
-      }
-    }
+    if (pointsNearPoint(s.points, pos, radius: radius)) return true;
     // Shape strokes may have sparse/empty freehand points — use vertices.
     if (s.shapeType != ShapeType.none && s.shapeVertices.length >= 2) {
+      final r2 = radius * radius;
       final verts = s.shapeVertices;
       for (var i = 0; i + 1 < verts.length; i += 2) {
         final a = Offset(verts[i], verts[i + 1]);
         if ((a - pos).distanceSquared <= r2) return true;
         if (i + 3 < verts.length) {
           final b = Offset(verts[i + 2], verts[i + 3]);
-          if (_distToSegmentSq(pos, a, b) <= r2) return true;
+          if (distToSegmentSq(pos, a, b) <= r2) return true;
         }
       }
     }
     return false;
-  }
-
-  double _distToSegmentSq(Offset p, Offset a, Offset b) {
-    final ab = b - a;
-    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
-    if (len2 == 0) return (p - a).distanceSquared;
-    final t = ((p.dx - a.dx) * ab.dx + (p.dy - a.dy) * ab.dy) / len2;
-    final clamped = t.clamp(0.0, 1.0);
-    final proj = Offset(a.dx + ab.dx * clamped, a.dy + ab.dy * clamped);
-    return (p - proj).distanceSquared;
   }
 
   StrokePoint _makePoint(PointerEvent e) {
@@ -1172,7 +1106,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     final penSettings = ref.watch(penSettingsProvider);
     final activeTool = ref.watch(activeCanvasToolProvider);
     final widthMod = ref.watch(strokeWidthModifierProvider);
-    final eraserRadius = 10.0 * widthMod;
+    final eraserRadius = eraserScreenRadius(widthMod);
     final showEraserPreview = activeTool == CanvasTool.eraser;
     _eraserPreview.radius = eraserRadius;
     _eraserPreview.mode = penSettings.eraser;
@@ -1311,11 +1245,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
             // Layer 5: eraser brush size — only while erasing / stylus hover
             if (showEraserPreview)
               CustomPaint(
-                painter: _EraserPreviewPainter(
+                painter: EraserPreviewPainter(
                   preview: _eraserPreview,
                   radius: eraserRadius,
                   mode: penSettings.eraser,
-                  repaint: _repaintTick,
                 ),
                 size: Size.infinite,
               ),
@@ -1324,77 +1257,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       ),
     );
   }
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Eraser brush size preview — follows pointer in stroke + area modes
-// ══════════════════════════════════════════════════════════════════
-class _EraserPreviewState {
-  Offset? pos;
-  double radius = 10;
-  EraserMode mode = EraserMode.stroke;
-}
-
-class _EraserPreviewPainter extends CustomPainter {
-  final _EraserPreviewState preview;
-  final double radius;
-  final EraserMode mode;
-
-  _EraserPreviewPainter({
-    required this.preview,
-    required this.radius,
-    required this.mode,
-    required Listenable repaint,
-  }) : super(repaint: repaint);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = preview.pos;
-    // Prefer live state radius (kept in sync); fall back to ctor value.
-    final r = preview.radius > 0 ? preview.radius : radius;
-    if (c == null || r <= 0) return;
-    final m = preview.mode;
-
-    final fill = Paint()
-      ..color = ScrapTheme.accent
-          .withValues(alpha: m == EraserMode.area ? 0.12 : 0.07)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(c, r, fill);
-
-    final ring = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = m == EraserMode.area ? 1.75 : 1.25;
-    if (m == EraserMode.stroke) {
-      _drawDashedCircle(canvas, c, r, ring);
-    } else {
-      canvas.drawCircle(c, r, ring);
-    }
-
-    final tick = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.7)
-      ..strokeWidth = 1.0
-      ..strokeCap = StrokeCap.round;
-    const arm = 3.5;
-    canvas.drawLine(c.translate(-arm, 0), c.translate(arm, 0), tick);
-    canvas.drawLine(c.translate(0, -arm), c.translate(0, arm), tick);
-  }
-
-  void _drawDashedCircle(Canvas canvas, Offset c, double r, Paint paint) {
-    const dashCount = 28;
-    const dashFraction = 0.55;
-    final path = Path();
-    for (var i = 0; i < dashCount; i++) {
-      final start = (i / dashCount) * 2 * pi;
-      const sweep = (1 / dashCount) * 2 * pi * dashFraction;
-      path.addArc(Rect.fromCircle(center: c, radius: r), start, sweep);
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _EraserPreviewPainter old) =>
-      old.radius != radius || old.mode != mode;
 }
 
 // ══════════════════════════════════════════════════════════════════

@@ -13,6 +13,7 @@ import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
+import '../../../ai_engine/presentation/widgets/smelt_action_menu.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
@@ -32,7 +33,11 @@ import '../../data/canvas_ocr_service.dart';
 
 
 class NoteEditorScreen extends ConsumerStatefulWidget {
-  const NoteEditorScreen({super.key});
+  /// When false, the AI chat FAB/panel are omitted (hosted by a parent such as
+  /// [PdfViewerScreen] so chat can open without the scrap split).
+  final bool showChatChrome;
+
+  const NoteEditorScreen({super.key, this.showChatChrome = true});
 
   @override
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -2069,7 +2074,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 ),
               ],
               if (_showSelectionMenu && isSmeltMode && _smeltActionMenuAllowed)
-                _SmeltActionMenu(
+                SmeltActionMenu(
                   rect: selectionScreen,
                   showManualSelect: _selectionFromDetection,
                   onSmelt: () => _smeltSelection(),
@@ -2282,12 +2287,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 ),
               ),
             ),
-          // AI chat FAB — bottom right, always on screen
-          const Positioned(
-            right: 16,
-            bottom: 16,
-            child: CanvasSmartBar(),
-          ),
+          // AI chat FAB — bottom right (skipped when parent hosts chat chrome)
+          if (widget.showChatChrome)
+            const Positioned(
+              right: 16,
+              bottom: 16,
+              child: CanvasSmartBar(),
+            ),
         ],
       ),
     );
@@ -2377,7 +2383,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               ],
             ),
           ),
-          const AiChatPanel(),
+          if (widget.showChatChrome) const AiChatPanel(),
         ],
       ),
     ),
@@ -2802,45 +2808,6 @@ class _CopiedSelection {
   const _CopiedSelection({required this.strokes, required this.bounds});
 }
 
-/// Shared paper-chit shell for selection / smelt / paste menus.
-class _PaperChit extends StatelessWidget {
-  final Widget child;
-
-  const _PaperChit({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.94, end: 1.0),
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeOut,
-      builder: (context, scale, child) => Transform.scale(
-        scale: scale,
-        child: child,
-      ),
-      child: Transform.rotate(
-        angle: -0.8 * math.pi / 180,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-            decoration: BoxDecoration(
-              color: ScrapTheme.cardSurface,
-              borderRadius: BorderRadius.circular(3),
-              border: Border.all(
-                color: ScrapTheme.kraft.withValues(alpha: 0.75),
-                width: 0.85,
-              ),
-              boxShadow: ScrapTheme.deskShadow,
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _FreshScrapHint extends StatefulWidget {
   final bool ephemeral;
 
@@ -2918,7 +2885,7 @@ class _SelectionActionMenu extends StatelessWidget {
     return Positioned(
       top: top,
       left: left,
-      child: _PaperChit(
+      child: PaperChit(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -2934,51 +2901,6 @@ class _SelectionActionMenu extends StatelessWidget {
   }
 }
 
-class _SmeltActionMenu extends StatelessWidget {
-  final Rect rect;
-  final bool showManualSelect;
-  final VoidCallback onSmelt;
-  final VoidCallback onSmeltWithCode;
-  final VoidCallback onAddToChat;
-  final VoidCallback onManualSelect;
-
-  const _SmeltActionMenu({
-    required this.rect,
-    required this.showManualSelect,
-    required this.onSmelt,
-    required this.onSmeltWithCode,
-    required this.onAddToChat,
-    required this.onManualSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final top = math.max(rect.top - 64, 12.0);
-    final left = math.max(rect.left, 12.0);
-
-    return Positioned(
-      top: top,
-      left: left,
-      child: _PaperChit(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SmeltPillButton(onTap: onSmelt),
-            const SizedBox(width: 8),
-            _SmeltCodePillButton(onTap: onSmeltWithCode),
-            const SizedBox(width: 8),
-            _AddToChatButton(onTap: onAddToChat),
-            if (showManualSelect) ...[
-              const SizedBox(width: 8),
-              _ManualSelectButton(onTap: onManualSelect),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _ManualSelectActionMenu extends StatelessWidget {
   final VoidCallback onSelect;
 
@@ -2986,229 +2908,8 @@ class _ManualSelectActionMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaperChit(
-      child: _ManualSelectButton(onTap: onSelect),
-    );
-  }
-}
-
-class _MenuPressable extends StatefulWidget {
-  final Widget child;
-  final VoidCallback onTap;
-
-  const _MenuPressable({required this.child, required this.onTap});
-
-  @override
-  State<_MenuPressable> createState() => _MenuPressableState();
-}
-
-class _MenuPressableState extends State<_MenuPressable> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
-        setState(() => _pressed = false);
-        ScrapFeedback.tap();
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedContainer(
-        duration: ScrapMotion.press,
-        curve: Curves.easeOut,
-        transform: Matrix4.translationValues(
-          _pressed ? 1.5 : 0.0,
-          _pressed ? 1.5 : 0.0,
-          0,
-        ),
-        transformAlignment: Alignment.center,
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-/// Compact stamp-style chip for floating selection menus.
-enum _PaperMenuChipTone { primary, secondary, ghost, danger }
-
-class _PaperMenuChip extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  final IconData? icon;
-  final _PaperMenuChipTone tone;
-
-  const _PaperMenuChip({
-    required this.label,
-    required this.onTap,
-    this.icon,
-    this.tone = _PaperMenuChipTone.secondary,
-  });
-
-  Color get _fill => switch (tone) {
-        _PaperMenuChipTone.primary => ScrapTheme.accentSurface,
-        _PaperMenuChipTone.secondary => ScrapTheme.codeSurface,
-        _PaperMenuChipTone.ghost => Colors.transparent,
-        _PaperMenuChipTone.danger => ScrapTheme.inkRed.withValues(alpha: 0.08),
-      };
-
-  Color get _border => switch (tone) {
-        _PaperMenuChipTone.primary => ScrapTheme.accent.withValues(alpha: 0.45),
-        _PaperMenuChipTone.secondary => ScrapTheme.dividers,
-        _PaperMenuChipTone.ghost => ScrapTheme.dividers,
-        _PaperMenuChipTone.danger => ScrapTheme.inkRed.withValues(alpha: 0.4),
-      };
-
-  Color get _ink => switch (tone) {
-        _PaperMenuChipTone.primary => ScrapTheme.accent,
-        _PaperMenuChipTone.secondary => ScrapTheme.primaryText,
-        _PaperMenuChipTone.ghost => ScrapTheme.secondaryText,
-        _PaperMenuChipTone.danger => ScrapTheme.inkRed,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return _MenuPressable(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: _fill,
-          borderRadius: BorderRadius.circular(3),
-          border: Border.all(color: _border, width: 1),
-          boxShadow: tone == _PaperMenuChipTone.ghost
-              ? const []
-              : ScrapTheme.deskShadow,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 13, color: _ink),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: ScrapTextStyles.stamp.copyWith(
-                color: _ink,
-                fontSize: 10,
-                letterSpacing: 1.1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ManualSelectButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _ManualSelectButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return _PaperMenuChip(
-      label: 'Select manually',
-      onTap: onTap,
-      tone: _PaperMenuChipTone.ghost,
-    );
-  }
-}
-
-class _AddToChatButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddToChatButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return _PaperMenuChip(
-      label: 'Add to chat',
-      icon: Icons.chat_bubble_outline,
-      onTap: onTap,
-      tone: _PaperMenuChipTone.ghost,
-    );
-  }
-}
-
-class _SmeltPillButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _SmeltPillButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return _PaperMenuChip(
-      label: '⟨ Smelt ⟩',
-      onTap: onTap,
-      tone: _PaperMenuChipTone.primary,
-    );
-  }
-}
-
-class _SmeltCodePillButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _SmeltCodePillButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        _PaperMenuChip(
-          label: 'Smelt + code',
-          icon: Icons.code,
-          onTap: onTap,
-          tone: _PaperMenuChipTone.secondary,
-        ),
-        const Positioned(
-          top: -7,
-          right: -5,
-          child: _PaperNewSticker(),
-        ),
-      ],
-    );
-  }
-}
-
-/// Tiny tape sticker for corner badges on menu chips.
-class _PaperNewSticker extends StatelessWidget {
-  const _PaperNewSticker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Transform.rotate(
-      angle: 9 * math.pi / 180,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        decoration: BoxDecoration(
-          color: ScrapTheme.tape,
-          borderRadius: BorderRadius.circular(2),
-          border: Border.all(
-            color: ScrapTheme.kraft.withValues(alpha: 0.75),
-            width: 0.75,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x16000000),
-              offset: Offset(1, 1),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Text(
-          'NEW',
-          style: ScrapTextStyles.stamp.copyWith(
-            color: ScrapTheme.accent,
-            fontSize: 7,
-            letterSpacing: 0.9,
-          ),
-        ),
-      ),
+    return PaperChit(
+      child: ManualSelectButton(onTap: onSelect),
     );
   }
 }
@@ -3222,10 +2923,10 @@ class _MenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaperMenuChip(
+    return PaperMenuChip(
       label: label,
       onTap: onTap,
-      tone: danger ? _PaperMenuChipTone.danger : _PaperMenuChipTone.secondary,
+      tone: danger ? PaperMenuChipTone.danger : PaperMenuChipTone.secondary,
     );
   }
 }
@@ -3237,11 +2938,11 @@ class _PasteMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _PaperChit(
-      child: _PaperMenuChip(
+    return PaperChit(
+      child: PaperMenuChip(
         label: 'Paste',
         onTap: onPaste,
-        tone: _PaperMenuChipTone.primary,
+        tone: PaperMenuChipTone.primary,
       ),
     );
   }

@@ -79,6 +79,22 @@ class PDFDocumentRepository {
     );
   }
 
+  Future<void> deleteAnnotation(String id) async {
+    final db = await database;
+    await db.delete('annotations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteAnnotations(Iterable<String> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.delete(
+      'annotations',
+      where: 'id IN ($placeholders)',
+      whereArgs: ids.toList(),
+    );
+  }
+
   Future<void> exportPdfWithAnnotations(String documentId, String outPath) async {
     // Placeholder: Need a native PDF manipulation library to truly flatten custom annotations.
     // For now, this is a mocked endpoint.

@@ -27,6 +27,7 @@ import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
 import '../../../splash/presentation/providers/splash_providers.dart';
+import '../../../pdf_viewer/presentation/providers/pdf_providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -130,6 +131,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         showPaperToast(context, 'Loose scrap drifted off');
       }
     });
+  }
+
+  void _openPdf(WidgetRef ref, HomeNode node) {
+    final path = node.externalPath;
+    if (path == null || path.isEmpty) return;
+    ScrapFeedback.tap();
+    ref.read(activePdfPathProvider.notifier).state = path;
+    ref.read(activePdfTitleProvider.notifier).state = node.title;
+    ref.read(pdfDocumentIdProvider.notifier).state = node.id;
+    context.push('/pdf_viewer');
   }
 
   /// Refresh home timestamps/thumbnails after canvas edits.
@@ -610,8 +621,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }
           if (node.type == NodeType.document) {
             if (node.externalPath != null &&
-                node.externalPath!.endsWith('.pdf')) {
-              context.push('/pdf_viewer');
+                node.externalPath!.toLowerCase().endsWith('.pdf')) {
+              _openPdf(ref, node);
             } else if (node.externalPath != null) {
               OpenFilex.open(node.externalPath!);
             }
@@ -636,8 +647,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ];
         } else if (node.type == NodeType.document) {
           if (node.externalPath != null &&
-              node.externalPath!.endsWith('.pdf')) {
-            context.push('/pdf_viewer');
+              node.externalPath!.toLowerCase().endsWith('.pdf')) {
+            _openPdf(ref, node);
           } else if (node.externalPath != null) {
             OpenFilex.open(node.externalPath!);
           }

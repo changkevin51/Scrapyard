@@ -146,10 +146,13 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   bool restoreCached(String key) {
     final entry = _sessionCache[key];
     if (entry == null) return false;
+    final response = entry.response;
     state = SmeltState(
-      response: entry.response,
+      response: response,
       lastImageBytes: entry.imageBytes,
       cacheKey: key,
+      // Process-style answers (empty answer box) should show steps by default.
+      showSteps: !response.hasDirectAnswer && response.steps.trim().isNotEmpty,
     );
     return true;
   }
@@ -272,12 +275,17 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         );
       }
 
+      // No punchline answer (e.g. proofs) — show steps immediately.
+      final autoShowSteps =
+          !response.hasDirectAnswer && response.steps.trim().isNotEmpty;
+
       state = SmeltState(
         isLoading: false,
         lastImageBytes: imageBytes,
         response: response,
         cacheKey: key,
         forceCodeExecution: forceCodeExecution,
+        showSteps: autoShowSteps,
       );
     } catch (e) {
       state = SmeltState(

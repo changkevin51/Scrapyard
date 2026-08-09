@@ -26,6 +26,9 @@ class InkRenderer {
     double streamline = 0.35,
     double sensitivity = 0.5,
     bool isComplete = true,
+    /// When true (PDF overlays), multiply directly with the backdrop so
+    /// underlying black text stays crisp instead of washing out.
+    bool multiplyWithBackdrop = false,
   }) {
     if (pts.isEmpty) return;
 
@@ -36,6 +39,7 @@ class InkRenderer {
         color,
         baseWidth,
         streamline: streamline,
+        multiplyWithBackdrop: multiplyWithBackdrop,
       );
       return;
     }
@@ -73,6 +77,7 @@ class InkRenderer {
     Stroke stroke, {
     double streamline = 0.35,
     double sensitivity = 0.5,
+    bool multiplyWithBackdrop = false,
   }) {
     paint(
       canvas: canvas,
@@ -84,6 +89,7 @@ class InkRenderer {
       streamline: streamline,
       sensitivity: sensitivity,
       isComplete: true,
+      multiplyWithBackdrop: multiplyWithBackdrop,
     );
   }
 
@@ -368,6 +374,7 @@ class InkRenderer {
     Color color,
     double baseWidth, {
     double streamline = 0.35,
+    bool multiplyWithBackdrop = false,
   }) {
     if (pts.isEmpty) return;
 
@@ -394,26 +401,30 @@ class InkRenderer {
       path.lineTo(smoothed.last.x, smoothed.last.y);
     }
 
+    // Concentration is baked into color.a — 100% means full mark strength.
+    final markAlpha = color.a.clamp(0.02, 1.0);
+    final stroke = Paint()
+      ..color = color.withValues(alpha: markAlpha)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = baseWidth
+      ..strokeCap = StrokeCap.butt
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    if (multiplyWithBackdrop) {
+      // Composite multiply against whatever is already on the destination
+      // (e.g. PDF page pixels under a page overlay).
+      stroke.blendMode = BlendMode.multiply;
+      canvas.drawPath(path, stroke);
+      return;
+    }
+
     final bounds = path.getBounds().inflate(baseWidth);
     canvas.saveLayer(
       bounds,
       Paint()..blendMode = BlendMode.multiply,
     );
-
-    // Concentration is baked into color.a — 100% means full mark strength.
-    final markAlpha = color.a.clamp(0.02, 1.0);
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color.withValues(alpha: markAlpha)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = baseWidth
-        ..strokeCap = StrokeCap.butt
-        ..strokeJoin = StrokeJoin.round
-        ..isAntiAlias = true,
-    );
-
+    canvas.drawPath(path, stroke);
     canvas.restore();
   }
 

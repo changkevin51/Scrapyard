@@ -1,18 +1,17 @@
-import 'dart:ui' show PointerDeviceKind;
-
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/paper_controls.dart';
-import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../../core/widgets/toolbar_tool_icons.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
 import 'canvas_smart_widgets.dart';
+import 'ink_color_controls.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
 import 'sticker_library.dart';
@@ -128,7 +127,7 @@ class CanvasToolbar extends ConsumerWidget {
 
       // ── Colour palette ─────────────────────────────────
       for (var i = 0; i < palette.length; i++)
-        _ColorDot(color: palette[i], index: i),
+        InkColorDot(color: palette[i], index: i),
       _sep(isHorizontal),
 
       // ── Thickness dots ──────────────────────────────────
@@ -352,10 +351,10 @@ class _ToolButton extends ConsumerWidget {
 
 Widget _toolGlyph(_ToolDef def, {required double size, required Color color}) {
   if (def.tool == CanvasTool.eraser) {
-    return _EraserIcon(size: size, color: color);
+    return EraserIcon(size: size, color: color);
   }
   if (def.tool == CanvasTool.highlighter) {
-    return _HighlighterIcon(size: size, color: color);
+    return HighlighterIcon(size: size, color: color);
   }
   if (def.tool == CanvasTool.lasso) {
     return _LassoIcon(size: size, color: color);
@@ -418,161 +417,16 @@ class _LassoIconPainter extends CustomPainter {
   bool shouldRepaint(covariant _LassoIconPainter old) => old.color != color;
 }
 
-/// Chisel-tip highlighter marker — fat barrel, slanted nib.
-class _HighlighterIcon extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _HighlighterIcon({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _HighlighterIconPainter(color)),
-    );
-  }
-}
-
-class _HighlighterIconPainter extends CustomPainter {
-  final Color color;
-  const _HighlighterIconPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-
-    final w = size.width;
-    final h = size.height;
-
-    // Marker @ ~45°, nib pointing bottom-left.
-    // Chisel nib — shaded wedge with the signature slanted cut.
-    final nib = Path()
-      ..moveTo(w * 0.171, h * 0.671)
-      ..lineTo(w * 0.270, h * 0.770)
-      ..lineTo(w * 0.157, h * 0.883)
-      ..lineTo(w * 0.128, h * 0.714)
-      ..close();
-    canvas.drawPath(
-      nib,
-      Paint()
-        ..color = color.withValues(alpha: 0.3)
-        ..style = PaintingStyle.fill,
-    );
-    canvas.drawPath(nib, stroke);
-
-    // Fat barrel — noticeably chunkier than the pencil, no eraser.
-    final barrel = Path()
-      ..moveTo(w * 0.667, h * 0.047)
-      ..lineTo(w * 0.893, h * 0.273)
-      ..lineTo(w * 0.493, h * 0.673)
-      ..lineTo(w * 0.267, h * 0.447)
-      ..close();
-    canvas.drawPath(barrel, stroke);
-
-    // Neck — taper from barrel down to the nib.
-    canvas.drawLine(
-        Offset(w * 0.267, h * 0.447), Offset(w * 0.171, h * 0.671), stroke);
-    canvas.drawLine(
-        Offset(w * 0.493, h * 0.673), Offset(w * 0.270, h * 0.770), stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _HighlighterIconPainter old) =>
-      old.color != color;
-}
-
-/// Classic angled rubber eraser — outlined to match other toolbar tools.
-class _EraserIcon extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _EraserIcon({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _EraserIconPainter(color)),
-    );
-  }
-}
-
-class _EraserIconPainter extends CustomPainter {
-  final Color color;
-  const _EraserIconPainter(this.color);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.55
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-
-    final w = size.width;
-    final h = size.height;
-
-    // Angled eraser body (parallelogram).
-    // Corners: tip (top), then clockwise — A tip-left, B tip-right, C base-right, D base-left.
-    final a = Offset(w * 0.52, h * 0.16);
-    final b = Offset(w * 0.84, h * 0.30);
-    final c = Offset(w * 0.50, h * 0.84);
-    final d = Offset(w * 0.18, h * 0.70);
-
-    // Split a bit above center so the shaded rubber reads larger.
-    final midLeft = Offset.lerp(a, d, 0.38)!;
-    final midRight = Offset.lerp(b, c, 0.38)!;
-
-    // Shade the bottom half (eraser rubber).
-    final shade = Path()
-      ..moveTo(midLeft.dx, midLeft.dy)
-      ..lineTo(midRight.dx, midRight.dy)
-      ..lineTo(c.dx, c.dy)
-      ..lineTo(d.dx, d.dy)
-      ..close();
-    canvas.drawPath(
-      shade,
-      Paint()
-        ..color = color.withValues(alpha: 0.28)
-        ..style = PaintingStyle.fill,
-    );
-
-    final body = Path()
-      ..moveTo(d.dx, d.dy)
-      ..lineTo(a.dx, a.dy)
-      ..lineTo(b.dx, b.dy)
-      ..lineTo(c.dx, c.dy)
-      ..close();
-    canvas.drawPath(body, stroke);
-
-    // Ferrule / band across the midpoint.
-    canvas.drawLine(midLeft, midRight, stroke..strokeWidth = 1.4);
-  }
-
-  @override
-  bool shouldRepaint(covariant _EraserIconPainter old) => old.color != color;
-}
-
-// ─────────────────────────────────────────────────────────
-// Stroke style inline chips  ─ Solid / Dotted / Dashed
-// ─────────────────────────────────────────────────────────
+// Stroke style inline chips  ΓöÇ Solid / Dotted / Dashed
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 class _StrokeStyleChip extends ConsumerWidget {
   final StrokeStyle style;
   final StrokeStyle current;
   const _StrokeStyleChip({required this.style, required this.current});
 
   static const _labels = {
-    StrokeStyle.solid:  '—',
-    StrokeStyle.dotted: '···',
+    StrokeStyle.solid:  'ΓÇö',
+    StrokeStyle.dotted: '┬╖┬╖┬╖',
     StrokeStyle.dashed: '- -',
   };
 
@@ -612,9 +466,9 @@ class _StrokeStyleChip extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // Action button (Undo / Redo)
-// ─────────────────────────────────────────────────────────
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 class _ActionButton extends ConsumerWidget {
   final IconData icon;
   final String tip;
@@ -641,311 +495,7 @@ class _ActionButton extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// Colour dots — ink-well ring, no blur glow
-// Palm rejection on: pen tap selects colour; finger tap opens picker.
-// Palm rejection off: single tap selects; double tap opens picker.
-// Custom picks rewrite this slot so the toolbar icon updates.
-// ─────────────────────────────────────────────────────────
-class _ColorDot extends ConsumerStatefulWidget {
-  final Color color;
-  final int index;
-  const _ColorDot({required this.color, required this.index});
-
-  @override
-  ConsumerState<_ColorDot> createState() => _ColorDotState();
-}
-
-class _ColorDotState extends ConsumerState<_ColorDot> {
-  bool _pressed = false;
-  PointerDeviceKind? _pointerKind;
-
-  static bool _isStylus(PointerDeviceKind kind) =>
-      kind == PointerDeviceKind.stylus ||
-      kind == PointerDeviceKind.invertedStylus;
-
-  void _selectColor() {
-    applyInkColor(ref, widget.color, paletteIndex: widget.index);
-  }
-
-  void _openPicker() {
-    showInkColorPicker(
-      context,
-      initialColor: widget.color,
-      paletteIndex: widget.index,
-    );
-  }
-
-  void _onTap() {
-    _selectColor();
-    final palmReject = ref.read(stylusOnlyModeProvider);
-    if (palmReject && !_isStylus(_pointerKind ?? PointerDeviceKind.touch)) {
-      _openPicker();
-    }
-    ScrapFeedback.tap();
-  }
-
-  void _onDoubleTap() {
-    _selectColor();
-    _openPicker();
-    ScrapFeedback.tap();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selectedIndex = ref.watch(paletteIndexProvider);
-    final isSelected = selectedIndex == widget.index;
-    final palmReject = ref.watch(stylusOnlyModeProvider);
-
-    return Tooltip(
-      message: 'Ink colour',
-      child: Listener(
-        onPointerDown: (e) {
-          _pointerKind = e.kind;
-          setState(() => _pressed = true);
-        },
-        child: GestureDetector(
-          onTapUp: (_) => setState(() => _pressed = false),
-          onTapCancel: () => setState(() => _pressed = false),
-          onTap: _onTap,
-          onDoubleTap: palmReject ? null : _onDoubleTap,
-          child: AnimatedScale(
-            scale: _pressed ? 0.93 : 1.0,
-            duration: ScrapMotion.press,
-            curve: ScrapMotion.pressCurve,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: isSelected
-                    ? Border.all(color: ScrapTheme.accent, width: 1.5)
-                    : Border.all(color: Colors.transparent, width: 1.5),
-              ),
-              padding: const EdgeInsets.all(2),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: widget.color,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────
-// Ink colour picker — scrap dialog wrapping flutter_colorpicker
-// ─────────────────────────────────────────────────────────
-Future<void> showInkColorPicker(
-  BuildContext context, {
-  required Color initialColor,
-  required int paletteIndex,
-}) {
-  return showScrapDialog(
-    context: context,
-    builder: (_) => _InkColorPickerDialog(
-      initialColor: initialColor,
-      paletteIndex: paletteIndex,
-    ),
-  );
-}
-
-class _InkColorPickerDialog extends ConsumerStatefulWidget {
-  final Color initialColor;
-  final int paletteIndex;
-  const _InkColorPickerDialog({
-    required this.initialColor,
-    required this.paletteIndex,
-  });
-
-  @override
-  ConsumerState<_InkColorPickerDialog> createState() =>
-      _InkColorPickerDialogState();
-}
-
-class _InkColorPickerDialogState
-    extends ConsumerState<_InkColorPickerDialog> {
-  late Color _picked;
-
-  @override
-  void initState() {
-    super.initState();
-    _picked = widget.initialColor.withValues(alpha: 1.0);
-  }
-
-  void _apply() {
-    applyInkColor(
-      ref,
-      _picked,
-      paletteIndex: widget.paletteIndex,
-    );
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: ScrapTheme.cardSurface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-      ),
-      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const ScrapStampLabel(text: '⟨ Ink ⟩'),
-          const SizedBox(height: 8),
-          Text(
-            'Pick Colour',
-            style: ScrapTextStyles.heading.copyWith(fontSize: 18),
-          ),
-        ],
-      ),
-      content: SingleChildScrollView(
-        child: Theme(
-          data: Theme.of(context).copyWith(
-            textTheme: Theme.of(context).textTheme.copyWith(
-                  bodyLarge: ScrapTextStyles.body.copyWith(fontSize: 13),
-                  bodyMedium: ScrapTextStyles.caption.copyWith(fontSize: 12),
-                ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: ScrapTheme.background,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 10,
-              ),
-              hintStyle: ScrapTextStyles.caption
-                  .copyWith(color: ScrapTheme.mutedText),
-              enabledBorder: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-                borderSide: const BorderSide(color: ScrapTheme.dividers),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-                borderSide: const BorderSide(
-                  color: ScrapTheme.accent,
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ColorPicker(
-                pickerColor: _picked,
-                onColorChanged: (c) => setState(() => _picked = c),
-                enableAlpha: false,
-                hexInputBar: true,
-                portraitOnly: true,
-                labelTypes: const [],
-                pickerAreaHeightPercent: 0.72,
-                pickerAreaBorderRadius: BorderRadius.circular(
-                  ScrapTheme.borderRadiusDefault,
-                ),
-                displayThumbColor: true,
-              ),
-              const SizedBox(height: 4),
-              // Preset ink swatches — same palette as the toolbar
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'PRESETS',
-                  style: ScrapTextStyles.stamp.copyWith(fontSize: 10),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final c in defaultInkPalette)
-                    GestureDetector(
-                      onTap: () => setState(() => _picked = c),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: c,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _picked.toARGB32() == c.toARGB32()
-                                ? ScrapTheme.accent
-                                : ScrapTheme.dividers,
-                            width: _picked.toARGB32() == c.toARGB32()
-                                ? 2
-                                : 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Live preview chip
-              Row(
-                children: [
-                  Text('PREVIEW',
-                      style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
-                  const Spacer(),
-                  Container(
-                    width: 36,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: _picked,
-                      borderRadius: BorderRadius.circular(2),
-                      border: Border.all(color: ScrapTheme.dividers),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText),
-          ),
-        ),
-        GestureDetector(
-          onTap: _apply,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              color: ScrapTheme.accent,
-              borderRadius:
-                  BorderRadius.circular(ScrapTheme.borderRadiusDefault),
-            ),
-            child: Text(
-              'Use Colour',
-              style: ScrapTextStyles.body.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
+// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // ─────────────────────────────────────────────────────────
 // Thickness dot-size selector
 // ─────────────────────────────────────────────────────────

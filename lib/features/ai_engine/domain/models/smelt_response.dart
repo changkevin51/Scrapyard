@@ -13,12 +13,16 @@ class SmeltCodeRun {
 
 /// Response model for the Smelt AI feature
 class SmeltResponse {
-  /// The direct answer (for math questions, this is the final answer)
+  /// The direct answer (for math questions, this is the final answer).
+  /// Empty when the solution has no single concise result (e.g. proofs).
   final String answer;
 
   /// Step-by-step solution in markdown with LaTeX support
   /// Empty string if no steps are needed
   final String steps;
+
+  /// Whether a punchline answer should be shown in the answer box.
+  bool get hasDirectAnswer => answer.trim().isNotEmpty;
 
   /// Whether this is a math question
   final bool isMath;

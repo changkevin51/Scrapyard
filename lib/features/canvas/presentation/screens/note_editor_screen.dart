@@ -92,6 +92,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   bool _isSelectionTool(CanvasTool tool) =>
       tool == CanvasTool.lasso || tool == CanvasTool.smelt;
 
+  bool _pointerHitsMovableSelection(Offset localPosition) {
+    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return false;
+    if (_isResizingSelection || _isSmelting) return false;
+    return _selectionRect!.contains(_toWorld(localPosition));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -304,6 +310,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _onSelectionPointerDown(PointerDownEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
     if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
+    // Let the selection-box pan handler move the box (stylus or finger).
+    if (_pointerHitsMovableSelection(event.localPosition)) return;
 
     final isStylus = _isStylusPointer(event.kind);
     final isTouchSmelt = event.kind == PointerDeviceKind.touch &&

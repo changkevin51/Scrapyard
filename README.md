@@ -60,6 +60,7 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 - **True splitscreen for study chat** allows users to keep writing on the canvas while the chat panel is open
 - **Smelt popup can be pinned** and be dragged so that it doesn't disappear from writing.
 - **Redesigned highlighter, eraser, and lasso icons** with clearer custom glyphs in the toolbar.
+- **Improved automatic bounding box detection** that uses a sophisticated algorithm taking into account timing, proximity, outliers, and patterns. 
 - **Infinite canvas** page style with unbounded pan and zoom.
 
 ## Getting started

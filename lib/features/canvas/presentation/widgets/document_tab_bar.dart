@@ -35,10 +35,15 @@ class DocumentTabBar extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Back button - navigate to home (PopScope on NoteEditorScreen
-          // prompts to name or discard pending new scraps before leaving).
+          // Back button - prompt to name/discard pending scraps, then leave.
           _BackHomeButton(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () async {
+              final canLeave =
+                  await resolvePendingScrapsBeforeLeaving(context, ref);
+              if (canLeave && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
           ),
           Expanded(
             child: ListView.builder(
@@ -392,7 +397,7 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
 }
 
 class _BackHomeButton extends StatefulWidget {
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
 
   const _BackHomeButton({required this.onTap});
 
@@ -402,16 +407,29 @@ class _BackHomeButton extends StatefulWidget {
 
 class _BackHomeButtonState extends State<_BackHomeButton> {
   bool _pressed = false;
+  bool _busy = false;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: 'Back to the pile',
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) => setState(() => _pressed = false),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.onTap,
+        onTapDown: _busy ? null : (_) => setState(() => _pressed = true),
+        onTapUp: _busy ? null : (_) => setState(() => _pressed = false),
+        onTapCancel: _busy ? null : () => setState(() => _pressed = false),
+        onTap: _busy
+            ? null
+            : () async {
+                setState(() {
+                  _busy = true;
+                  _pressed = false;
+                });
+                try {
+                  await widget.onTap();
+                } finally {
+                  if (mounted) setState(() => _busy = false);
+                }
+              },
         child: AnimatedScale(
           scale: _pressed ? 0.92 : 1.0,
           duration: ScrapMotion.press,

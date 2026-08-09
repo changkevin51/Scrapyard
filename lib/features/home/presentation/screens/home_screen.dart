@@ -105,10 +105,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _createAndOpenScrap() async {
     final folderId = ref.read(currentFolderIdProvider);
+    final parentId = folderId == trashFolderId ? 'root' : folderId;
     final node = HomeNode.create(
       title: 'New scrap',
       type: NodeType.note,
-      parentId: folderId,
+      parentId: parentId,
     );
     if (!mounted) return;
     ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m, node.id: node});
@@ -133,6 +134,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Refresh home timestamps/thumbnails after canvas edits.
   Future<void> _onNoteEditorClosed(String noteId) async {
+    // If the editor was dismissed without resolving (e.g. system back race),
+    // still offer to name/file pending scraps from home.
+    final pending = ref.read(pendingNewScrapsProvider);
+    if (pending.isNotEmpty && mounted) {
+      final canLeave = await resolvePendingScrapsBeforeLeaving(context, ref);
+      if (!canLeave) {
+        // User cancelled — reopen the desk so the scrap isn't lost.
+        if (!mounted) return;
+        final pendingId = ref.read(activeNoteIdProvider);
+        final id = pending.containsKey(pendingId)
+            ? pendingId
+            : pending.keys.first;
+        final title = pending[id]?.title ?? 'New scrap';
+        openNoteTab(ref, id, title, ephemeral: true);
+        context.push('/note_editor').then((_) => _onNoteEditorClosed(id));
+        return;
+      }
+    }
+
     final dirty = ref.read(dirtyNoteIdsProvider);
     final ephemeral = ref.read(ephemeralNoteIdsProvider);
     final toTouch = dirty.where((id) => !ephemeral.contains(id)).toSet();
@@ -147,7 +167,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     ref.read(dirtyNoteIdsProvider.notifier).state = {};
-    ref.read(pendingNewScrapsProvider.notifier).state = {};
+    // Pending should already be empty after resolve; never silently wipe.
     discardAllEphemeralNotes(ref);
   }
 
@@ -208,6 +228,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   },
                 ),
                 _SidebarItem(
+                  title: 'Recently Deleted',
+                  isSelected: currentFolder == trashFolderId,
+                  onTap: () {
+                    ref.read(currentFolderIdProvider.notifier).state =
+                        trashFolderId;
+                    ref.read(folderPathProvider.notifier).state = [];
+                  },
+                ),
+                _SidebarItem(
                   title: 'Settings',
                   isSelected: false,
                   onTap: () => context.push('/settings'),
@@ -224,86 +253,98 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ),
                   ),
                 const Spacer(),
-                Padding(
-                  padding: const EdgeInsets.all(32.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ScrapPressable(
-                        scale: 0.96,
-                        onTap: () {
-                          ScrapFeedback.tap();
-                          ref
-                              .read(currentHomeNodesProvider.notifier)
-                              .createFolder('New Folder');
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            '+  New folder',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: ScrapTheme.accent,
-                              fontWeight: FontWeight.w500,
+                if (currentFolder != trashFolderId)
+                  Padding(
+                    padding: const EdgeInsets.all(32.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ScrapPressable(
+                          scale: 0.96,
+                          onTap: () {
+                            ScrapFeedback.tap();
+                            ref
+                                .read(currentHomeNodesProvider.notifier)
+                                .createFolder('New Folder');
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              '+  New folder',
+                              style: ScrapTextStyles.body.copyWith(
+                                color: ScrapTheme.accent,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      ScrapPressable(
-                        scale: 0.96,
-                        onTap: () {
-                          ScrapFeedback.tap();
-                          _createAndOpenScrap();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            '+  New scrap',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: ScrapTheme.accent,
-                              fontWeight: FontWeight.w500,
+                        ScrapPressable(
+                          scale: 0.96,
+                          onTap: () {
+                            ScrapFeedback.tap();
+                            _createAndOpenScrap();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              '+  New scrap',
+                              style: ScrapTextStyles.body.copyWith(
+                                color: ScrapTheme.accent,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      ScrapPressable(
-                        scale: 0.96,
-                        onTap: () {
-                          ScrapFeedback.tap();
-                          _openLooseScrap();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            '~  Loose scrap',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: ScrapTheme.mutedText,
-                              fontWeight: FontWeight.w500,
+                        ScrapPressable(
+                          scale: 0.96,
+                          onTap: () {
+                            ScrapFeedback.tap();
+                            _openLooseScrap();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              '~  Loose scrap',
+                              style: ScrapTextStyles.body.copyWith(
+                                color: ScrapTheme.mutedText,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      ScrapPressable(
-                        scale: 0.96,
-                        onTap: () {
-                          ScrapFeedback.tap();
-                          ref
-                              .read(currentHomeNodesProvider.notifier)
-                              .importDocument();
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Text(
-                            '↑  Import app/doc',
-                            style: ScrapTextStyles.body.copyWith(
-                              color: ScrapTheme.accent,
-                              fontWeight: FontWeight.w500,
+                        ScrapPressable(
+                          scale: 0.96,
+                          onTap: () {
+                            ScrapFeedback.tap();
+                            ref
+                                .read(currentHomeNodesProvider.notifier)
+                                .importDocument();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Text(
+                              '↑  Import app/doc',
+                              style: ScrapTextStyles.body.copyWith(
+                                color: ScrapTheme.accent,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(32, 16, 32, 32),
+                    child: Text(
+                      'Crushed scraps linger here for ${trashRetention.inDays} days, then vanish for good.',
+                      style: ScrapTextStyles.caption.copyWith(
+                        color: ScrapTheme.mutedText,
+                        height: 1.45,
                       ),
-                    ],
+                    ),
                   ),
-                ),
                 const SizedBox(height: 32),
               ],
             ),
@@ -327,13 +368,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       const SliverToBoxAdapter(child: SizedBox(height: 24)),
                     ],
-                    SliverToBoxAdapter(
-                      child: _NewScrapButton(
-                        onTap: _createAndOpenScrap,
-                        onLooseTap: _openLooseScrap,
+                    if (currentFolder != trashFolderId) ...[
+                      SliverToBoxAdapter(
+                        child: _NewScrapButton(
+                          onTap: _createAndOpenScrap,
+                          onLooseTap: _openLooseScrap,
+                        ),
                       ),
-                    ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                      const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                    ],
 
                     // Breadcrumb Navigation
                     SliverToBoxAdapter(
@@ -345,16 +388,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: AnimatedSlide(
                               duration: ScrapMotion.panel,
                               curve: ScrapMotion.panelCurve,
-                              offset: currentFolder == 'root'
+                              offset: currentFolder == 'root' ||
+                                      currentFolder == trashFolderId
                                   ? const Offset(-0.35, 0)
                                   : Offset.zero,
                               child: AnimatedOpacity(
                                 duration: ScrapMotion.panel,
                                 curve: ScrapMotion.panelCurve,
-                                opacity:
-                                    currentFolder == 'root' ? 0.0 : 1.0,
+                                opacity: currentFolder == 'root' ||
+                                        currentFolder == trashFolderId
+                                    ? 0.0
+                                    : 1.0,
                                 child: IgnorePointer(
-                                  ignoring: currentFolder == 'root',
+                                  ignoring: currentFolder == 'root' ||
+                                      currentFolder == trashFolderId,
                                   child: IconButton(
                                     padding: EdgeInsets.zero,
                                     icon: const Icon(
@@ -421,9 +468,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 );
                               },
                               child: Text(
-                                currentFolder == 'root'
-                                    ? 'All Files'
-                                    : folderPath.last.title,
+                                currentFolder == trashFolderId
+                                    ? 'Recently Deleted'
+                                    : currentFolder == 'root'
+                                        ? 'All Files'
+                                        : folderPath.last.title,
                                 key: ValueKey(currentFolder),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -432,9 +481,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                             ),
                           ),
+                          if (currentFolder == trashFolderId)
+                            PaperButton(
+                              label: 'Empty trash',
+                              variant: PaperButtonVariant.danger,
+                              compact: true,
+                              icon: Icons.delete_forever_outlined,
+                              onPressed:
+                                  (nodesAsync.valueOrNull?.isNotEmpty ?? false)
+                                      ? () =>
+                                          _confirmEmptyTrash(context, ref)
+                                      : null,
+                            ),
                         ],
                       ),
                     ),
+                    if (currentFolder == trashFolderId)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 56, top: 8),
+                          child: Text(
+                            'Items stay here for ${trashRetention.inDays} days, then they\'re permanently crushed.',
+                            style: ScrapTextStyles.caption.copyWith(
+                              color: ScrapTheme.mutedText,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
                     const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
                     // Grid View of Nodes — remount on folder change so
@@ -465,7 +539,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     const EdgeInsets.symmetric(vertical: 48),
                                 child: Center(
                                   child: Text(
-                                    'Empty folder. Grab a scrap above, or import a doc.',
+                                    currentFolder == trashFolderId
+                                        ? 'Nothing crushed yet. Soft landings only.'
+                                        : 'Empty folder. Grab a scrap above, or import a doc.',
                                     style: ScrapTextStyles.caption.copyWith(
                                       color: ScrapTheme.mutedText,
                                     ),
@@ -523,8 +599,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
+    final inTrash = ref.read(currentFolderIdProvider) == trashFolderId;
     return ScrapPressable(
       onTap: () {
+        if (inTrash) {
+          if (node.type == NodeType.folder) {
+            ScrapFeedback.tap();
+            showPaperToast(context, 'Restore this pile to open it');
+            return;
+          }
+          if (node.type == NodeType.document) {
+            if (node.externalPath != null &&
+                node.externalPath!.endsWith('.pdf')) {
+              context.push('/pdf_viewer');
+            } else if (node.externalPath != null) {
+              OpenFilex.open(node.externalPath!);
+            }
+            return;
+          }
+          if (node.type == NodeType.note) {
+            ref.read(activeNoteIdProvider.notifier).state = node.id;
+            openNoteTab(ref, node.id, node.title);
+            context
+                .push('/note_editor')
+                .then((_) => _onNoteEditorClosed(node.id));
+          }
+          return;
+        }
+
         if (node.type == NodeType.folder) {
           ScrapFeedback.action();
           ref.read(currentFolderIdProvider.notifier).state = node.id;
@@ -782,6 +884,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _cardMeta(HomeNode node) {
+    final inTrash = node.isDeleted;
+    final daysLeft = node.trashDaysRemaining;
+    final subtitle = inTrash && daysLeft != null
+        ? (daysLeft == 0
+            ? 'Crushed · vanishes today'
+            : daysLeft == 1
+                ? 'Crushed · 1 day left'
+                : 'Crushed · $daysLeft days left')
+        : _formatNodeUpdatedAt(node.updatedAt);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -796,26 +908,143 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          _formatNodeUpdatedAt(node.updatedAt),
+          subtitle,
           style: ScrapTextStyles.caption.copyWith(
-            color: ScrapTheme.mutedText,
+            color: inTrash ? ScrapTheme.inkRed.withValues(alpha: 0.75) : ScrapTheme.mutedText,
           ),
         ),
       ],
     );
   }
 
-  /// Snapshot the card and play the crush overlay; the node is deleted as
-  /// soon as the snapshot is captured so the grid reflows under the animation.
+  /// Snapshot the card and play the crush overlay; the node is soft-deleted
+  /// as soon as the snapshot is captured so the grid reflows under the animation.
   void _crushNode(BuildContext context, WidgetRef ref, HomeNode node) {
     ScrapFeedback.warn();
     final key = _crushKeys.remove(node.id);
     ScrapCrush.crush(
       context,
       key,
-      onCrushed: () =>
-          ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id),
+      onCrushed: () async {
+        await ref
+            .read(currentHomeNodesProvider.notifier)
+            .moveToTrash(node.id);
+        if (context.mounted) {
+          showPaperToast(context, 'Moved to Recently Deleted');
+        }
+      },
     );
+  }
+
+  Future<void> _restoreNode(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    ScrapFeedback.action();
+    await ref.read(currentHomeNodesProvider.notifier).restoreFromTrash(node.id);
+    if (context.mounted) {
+      showPaperToast(context, 'Restored "${node.title}"');
+    }
+  }
+
+  Future<void> _permanentlyCrushNode(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    ScrapFeedback.warn();
+    final confirmed = await showScrapDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ScrapTheme.cardSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        ),
+        title: Text('Crush forever?', style: ScrapTextStyles.heading),
+        content: Text(
+          '"${node.title}" will be permanently deleted. This cannot be undone.',
+          style: ScrapTextStyles.body,
+        ),
+        actions: [
+          PaperButton(
+            label: 'Cancel',
+            variant: PaperButtonVariant.ghost,
+            compact: true,
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          PaperButton(
+            label: 'Crush forever',
+            variant: PaperButtonVariant.danger,
+            compact: true,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !context.mounted) return;
+
+    final key = _crushKeys.remove(node.id);
+    ScrapCrush.crush(
+      context,
+      key,
+      onCrushed: () async {
+        await ref
+            .read(currentHomeNodesProvider.notifier)
+            .permanentlyDelete(node.id);
+        final tabs = ref
+            .read(openedTabsProvider)
+            .where((t) => t.id != node.id)
+            .toList();
+        ref.read(openedTabsProvider.notifier).state = tabs;
+      },
+    );
+  }
+
+  Future<void> _confirmEmptyTrash(BuildContext context, WidgetRef ref) async {
+    final nodes = ref.read(currentHomeNodesProvider).valueOrNull ?? [];
+    if (nodes.isEmpty) {
+      showPaperToast(context, 'Trash is already empty');
+      return;
+    }
+
+    ScrapFeedback.warn();
+    final confirmed = await showScrapDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ScrapTheme.cardSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        ),
+        title: Text('Empty trash?', style: ScrapTextStyles.heading),
+        content: Text(
+          'Permanently crush everything in Recently Deleted. This cannot be undone.',
+          style: ScrapTextStyles.body,
+        ),
+        actions: [
+          PaperButton(
+            label: 'Cancel',
+            variant: PaperButtonVariant.ghost,
+            compact: true,
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          PaperButton(
+            label: 'Crush everything',
+            variant: PaperButtonVariant.danger,
+            compact: true,
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    await ref.read(currentHomeNodesProvider.notifier).emptyTrash();
+    if (context.mounted) {
+      showPaperToast(context, 'Trash emptied');
+    }
   }
 
   Future<void> _renameNode(
@@ -869,6 +1098,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     HomeNode node,
     String typeLabel,
   ) {
+    final inTrash = ref.read(currentFolderIdProvider) == trashFolderId;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -879,36 +1110,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? ScrapTheme.accent
               : ScrapTheme.mutedText,
         ),
-        PopupMenuButton<String>(
-          icon: const Icon(
-            Icons.more_horiz,
-            color: ScrapTheme.mutedText,
-            size: 20,
-          ),
-          tooltip: 'Options',
-          elevation: 1,
-          color: ScrapTheme.cardSurface,
-          onSelected: (val) {
-            if (val == 'rename') {
-              _renameNode(context, ref, node);
-            } else if (val == 'delete') {
-              _crushNode(context, ref, node);
-            }
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(
-              value: 'rename',
-              child: Text('Rename'),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: Text(
-                'Crush',
-                style: TextStyle(color: ScrapTheme.inkRed),
+        if (inTrash)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Tooltip(
+                message: 'Restore',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _restoreNode(context, ref, node),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.restore_outlined,
+                      color: ScrapTheme.mutedText,
+                      size: 20,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
+              Tooltip(
+                message: 'Crush forever',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _permanentlyCrushNode(context, ref, node),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.delete_forever_outlined,
+                      color: ScrapTheme.inkRed,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Own the tap so ScrapPressable doesn't open the card instead.
+              Tooltip(
+                message: 'Crush',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _crushNode(context, ref, node),
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.delete_outline,
+                      color: ScrapTheme.mutedText,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(
+                  Icons.more_horiz,
+                  color: ScrapTheme.mutedText,
+                  size: 20,
+                ),
+                tooltip: 'Options',
+                elevation: 1,
+                color: ScrapTheme.cardSurface,
+                onSelected: (val) {
+                  if (val == 'rename') {
+                    _renameNode(context, ref, node);
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'rename',
+                    child: Text('Rename'),
+                  ),
+                ],
+              ),
+            ],
+          ),
       ],
     );
   }

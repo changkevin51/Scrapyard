@@ -44,7 +44,10 @@ Future<void> filePendingNewScrap(
         .upsertPageConfig(id, pageConfig);
   }
 
-  await ref.read(currentHomeNodesProvider.notifier).insertNote(node);
+  await ref.read(homeRepositoryProvider).insertNode(node);
+
+  // Refresh the visible folder list if it's currently being watched.
+  ref.invalidate(currentHomeNodesProvider);
 
   ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m}..remove(id));
   ref.read(ephemeralNoteIdsProvider.notifier).update((s) => {...s}..remove(id));
@@ -59,6 +62,7 @@ Future<void> filePendingNewScrap(
                 title: trimmed,
                 accent: t.accent,
                 groupId: t.groupId,
+                isEphemeral: false,
               )
             : t,
       )

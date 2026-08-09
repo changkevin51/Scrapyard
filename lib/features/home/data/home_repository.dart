@@ -16,15 +16,15 @@ class HomeRepository {
   Future<Database> _initDB() async {
     String path;
     if (kIsWeb) {
-       path = 'koto_home_v2.db';
+      path = 'koto_home_v2.db';
     } else {
-       final dbPath = await getDatabasesPath();
-       path = join(dbPath, 'koto_home_v2.db');
+      final dbPath = await getDatabasesPath();
+      path = join(dbPath, 'koto_home_v2.db');
     }
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_tableName (
@@ -33,48 +33,114 @@ class HomeRepository {
             title TEXT NOT NULL,
             type TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            external_path TEXT
+            external_path TEXT,
+            deleted_at TEXT
           )
         ''');
 
-        // Insert initial Welcome Note setup
-        final welcomeNote = HomeNode.create(title: 'Welcome to Scrapyard', type: NodeType.note);
+        final welcomeNote =
+            HomeNode.create(title: 'Welcome to Scrapyard', type: NodeType.note);
         await db.insert(_tableName, welcomeNote.toMap());
 
-        // Insert sample content
-        final ideasFolder = HomeNode.create(title: 'Loose Ideas', type: NodeType.folder);
+        final ideasFolder =
+            HomeNode.create(title: 'Loose Ideas', type: NodeType.folder);
         await db.insert(_tableName, ideasFolder.toMap());
-        
-        final sketchNote = HomeNode.create(title: 'Quick Sketch', type: NodeType.note, parentId: ideasFolder.id);
+
+        final sketchNote = HomeNode.create(
+          title: 'Quick Sketch',
+          type: NodeType.note,
+          parentId: ideasFolder.id,
+        );
         await db.insert(_tableName, sketchNote.toMap());
-        
-        final doodleNote = HomeNode.create(title: 'Margin Doodles', type: NodeType.note, parentId: ideasFolder.id);
+
+        final doodleNote = HomeNode.create(
+          title: 'Margin Doodles',
+          type: NodeType.note,
+          parentId: ideasFolder.id,
+        );
         await db.insert(_tableName, doodleNote.toMap());
 
-        final physicsFolder = HomeNode.create(title: 'Physics 205', type: NodeType.folder);
+        final physicsFolder =
+            HomeNode.create(title: 'Physics 205', type: NodeType.folder);
         await db.insert(_tableName, physicsFolder.toMap());
-        
-        final kinematicsNote = HomeNode.create(title: 'Kinematics Equations', type: NodeType.note, parentId: physicsFolder.id);
+
+        final kinematicsNote = HomeNode.create(
+          title: 'Kinematics Equations',
+          type: NodeType.note,
+          parentId: physicsFolder.id,
+        );
         await db.insert(_tableName, kinematicsNote.toMap());
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN deleted_at TEXT',
+          );
+        }
       },
     );
   }
 
+  /// Active (non-deleted) children of [parentId].
   Future<List<HomeNode>> getNodes(String parentId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      _tableName,
+      where: 'parent_id = ? AND deleted_at IS NULL',
+      whereArgs: [parentId],
+      orderBy: 'type ASC, updated_at DESC',
+    );
+
+    return maps.map(HomeNode.fromMap).toList();
+  }
+
+  /// Children of [parentId] including soft-deleted ones.
+  Future<List<HomeNode>> getChildrenAny(String parentId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       _tableName,
       where: 'parent_id = ?',
       whereArgs: [parentId],
-      orderBy: 'type ASC, updated_at DESC', // Folders first, then by date
     );
+    return maps.map(HomeNode.fromMap).toList();
+  }
 
-    return maps.map((map) => HomeNode.fromMap(map)).toList();
+  Future<HomeNode?> getNodeById(String id) async {
+    final db = await database;
+    final maps = await db.query(
+      _tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return HomeNode.fromMap(maps.first);
+  }
+
+  /// Top-level crushed items (deleted nodes whose parent is not also deleted).
+  Future<List<HomeNode>> getDeletedNodes() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      _tableName,
+      where: 'deleted_at IS NOT NULL',
+      orderBy: 'deleted_at DESC',
+    );
+    final all = maps.map(HomeNode.fromMap).toList();
+    final deletedIds = all.map((n) => n.id).toSet();
+    return all
+        .where(
+          (n) => n.parentId == 'root' || !deletedIds.contains(n.parentId),
+        )
+        .toList();
   }
 
   Future<void> insertNode(HomeNode node) async {
     final db = await database;
-    await db.insert(_tableName, node.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert(
+      _tableName,
+      node.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<void> updateNode(HomeNode node) async {
@@ -87,7 +153,6 @@ class HomeRepository {
     );
   }
 
-  /// Bump [updated_at] without loading the full row (e.g. after canvas edits).
   Future<void> touchUpdatedAt(String id) async {
     final db = await database;
     await db.update(
@@ -98,19 +163,109 @@ class HomeRepository {
     );
   }
 
-  Future<void> deleteNode(String id) async {
-    final db = await database;
-    
-    // Check if it's a folder, recursively delete contents
+  /// Soft-delete [id] and all active descendants.
+  Future<void> softDeleteNode(String id) async {
+    final stamp = DateTime.now().toIso8601String();
+    await _softDeleteRecursive(id, stamp);
+  }
+
+  Future<void> _softDeleteRecursive(String id, String deletedAt) async {
     final children = await getNodes(id);
-    for (var child in children) {
-       await deleteNode(child.id);
+    for (final child in children) {
+      await _softDeleteRecursive(child.id, deletedAt);
     }
-    
+    final db = await database;
+    await db.update(
+      _tableName,
+      {'deleted_at': deletedAt},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Restore [id] and soft-deleted descendants. Reparents to root if needed.
+  Future<void> restoreNode(String id) async {
+    final node = await getNodeById(id);
+    if (node == null) return;
+
+    var parentId = node.parentId;
+    if (parentId != 'root') {
+      final parent = await getNodeById(parentId);
+      if (parent == null || parent.isDeleted) {
+        parentId = 'root';
+      }
+    }
+
+    await _restoreRecursive(id);
+    if (parentId != node.parentId) {
+      final db = await database;
+      await db.update(
+        _tableName,
+        {'parent_id': parentId},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  Future<void> _restoreRecursive(String id) async {
+    final children = await getChildrenAny(id);
+    for (final child in children) {
+      if (child.isDeleted) {
+        await _restoreRecursive(child.id);
+      }
+    }
+    final db = await database;
+    await db.update(
+      _tableName,
+      {'deleted_at': null},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Hard-delete [id] and every descendant (deleted or not).
+  Future<void> permanentlyDeleteNode(String id) async {
+    final children = await getChildrenAny(id);
+    for (final child in children) {
+      await permanentlyDeleteNode(child.id);
+    }
+    final db = await database;
     await db.delete(
       _tableName,
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<void> emptyTrash() async {
+    final db = await database;
+    await db.delete(
+      _tableName,
+      where: 'deleted_at IS NOT NULL',
+    );
+  }
+
+  /// Permanently remove items whose [deletedAt] is older than [retention].
+  Future<void> purgeExpiredTrash({
+    Duration retention = trashRetention,
+  }) async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().subtract(retention).toIso8601String();
+    final expired = await db.query(
+      _tableName,
+      columns: ['id'],
+      where: 'deleted_at IS NOT NULL AND deleted_at < ?',
+      whereArgs: [cutoff],
+    );
+    for (final row in expired) {
+      await permanentlyDeleteNode(row['id'] as String);
+    }
+  }
+
+  /// Legacy hard delete — prefer [softDeleteNode] / [permanentlyDeleteNode].
+  Future<void> deleteNode(String id) async {
+    await permanentlyDeleteNode(id);
   }
 }

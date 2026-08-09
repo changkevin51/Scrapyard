@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../ai_chat/domain/models/gemini_model.dart';
 import '../domain/models/smelt_response.dart';
+import '../domain/latex_json_repair.dart';
 import '../_debug_log_helper.dart';
 
 /// Callback for streaming progress updates
@@ -197,6 +198,9 @@ IMPORTANT RULES:
    - Use bullet points or numbered lists
    - Keep steps EXTREMELY CONCISE - 1-2 lines maximum per step.
    - NEVER put sentence punctuation (like periods or commas) on a new line after a latex expression. Omit trailing punctuation for display math entirely.
+   - CRITICAL JSON escaping: every LaTeX backslash must be doubled in the JSON string
+     (write "\\\\neg", "\\\\frac", "\\\\Rightarrow", "\\\\(" — NOT "\\neg" / "\\frac").
+     A single "\\neg" is parsed as a newline and corrupts the math.
 
 4. Be concise and clear. The answer should be immediately useful to a student.
 
@@ -511,17 +515,18 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
   /// `\boxed`, `\right`, `\tan`, `\theta`). If we "protect" `\b`/`\f`/`\r`/`\t`
   /// as already-valid escapes, we end up decoding `\f` in `\frac` as an actual
   /// form-feed control character, silently eating the `f` and corrupting the
-  /// LaTeX (observed as `\frac` rendering as `<FF>rac`). `\n` is the one
-  /// exception: this app's prompt relies on the model emitting real `\n` for
-  /// line breaks between steps, and that usage is unambiguous in practice, so
-  /// it stays protected.
+  /// LaTeX (observed as `\frac` rendering as `<FF>rac`). `\n` is kept as a
+  /// protected escape for real step line-breaks, but TeX commands that start
+  /// with those letters (`\neg`, `\times`, …) are double-escaped first via
+  /// [protectLatexCommandsInRawJson] so they are not mistaken for JSON escapes.
   static String _fixJsonEscapeSequences(String json) {
     const placeholderStart = '\x00PE\x00';
     const placeholderEnd = '\x00PE_END\x00';
     
     final validEscapes = ['\\\\', '\\"', '\\/', '\\n'];
     
-    var result = json;
+    // Turn `\neg` into `\\neg` before protecting `\n` line breaks.
+    var result = protectLatexCommandsInRawJson(json);
     
     for (final escape in validEscapes) {
       final placeholder = '$placeholderStart${escape.hashCode}$placeholderEnd';

@@ -1,3 +1,5 @@
+import '../latex_json_repair.dart';
+
 /// One code-execution turn from Gemini (source + optional stdout).
 class SmeltCodeRun {
   final String language;
@@ -66,8 +68,12 @@ class SmeltResponse {
           .toList();
     }
     return SmeltResponse(
-      answer: json['answer'] as String? ?? '',
-      steps: json['steps'] as String? ?? '',
+      answer: repairLatexCorruptedByJsonEscapes(
+        json['answer'] as String? ?? '',
+      ),
+      steps: repairLatexCorruptedByJsonEscapes(
+        json['steps'] as String? ?? '',
+      ),
       isMath: json['isMath'] as bool? ?? false,
       modelUsed: modelUsed,
       suggestions: suggestions,

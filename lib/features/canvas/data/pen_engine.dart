@@ -38,7 +38,7 @@ enum PenStyle {
   marker,      // Felt-tip, constant width, square caps
   // Brush family
   calligraphy, // Fixed-nib calligraphy: thick downstrokes, thin crossstrokes
-  fountain,    // Flexible fountain pen: organic nib-angle variation
+  fountain,    // Same as pen, with heavily exaggerated pressure response
   inkBrush,    // Ink brush: high pressure sensitivity, heavy taper
 }
 
@@ -59,7 +59,7 @@ extension PenStyleInfo on PenStyle {
     PenStyle.pencil      => 'Graphite feel, pressure-sensitive',
     PenStyle.marker      => 'Felt-tip, consistent width',
     PenStyle.calligraphy => 'Thick & thin nib strokes',
-    PenStyle.fountain    => 'Flexible nib, organic flow',
+    PenStyle.fountain    => 'Pen feel, exaggerated pressure',
     PenStyle.inkBrush    => 'Ink brush, pressure-heavy',
   };
 
@@ -145,7 +145,7 @@ class PenSettings {
   static const Map<PenStyle, double> _defaultSensitivity = {
     PenStyle.pen: 0.5,
     PenStyle.pencil: 0.6,
-    PenStyle.fountain: 0.55,
+    PenStyle.fountain: 0.9,
     PenStyle.inkBrush: 0.75,
   };
 

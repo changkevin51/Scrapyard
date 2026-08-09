@@ -8,9 +8,9 @@ import 'pen_engine.dart';
 
 /// Industry-standard stroke renderer.
 ///
-/// Freehand styles (pen / pencil / marker / inkBrush) use
+/// Freehand styles (pen / fountain / pencil / marker / inkBrush) use
 /// [perfect_freehand] outline polygons — one filled Path per stroke.
-/// Nib styles (calligraphy / fountain) use a custom quad-strip polygon.
+/// Calligraphy uses a custom fixed-nib quad-strip polygon.
 /// Highlighters use a continuous flat-cap stroke with multiply blending.
 class InkRenderer {
   InkRenderer._();
@@ -46,18 +46,9 @@ class InkRenderer {
 
     switch (style) {
       case PenStyle.calligraphy:
-        _paintNib(
-          canvas, pts, color, baseWidth,
-          dynamicAngle: false,
-          sensitivity: 0.0,
-        );
-      case PenStyle.fountain:
-        _paintNib(
-          canvas, pts, color, baseWidth,
-          dynamicAngle: true,
-          sensitivity: sensitivity,
-        );
+        _paintNib(canvas, pts, color, baseWidth);
       case PenStyle.pen:
+      case PenStyle.fountain:
       case PenStyle.ballpoint:
       case PenStyle.pencil:
       case PenStyle.marker:
@@ -200,6 +191,18 @@ class InkRenderer {
           start: StrokeEndOptions.start(cap: true, taperEnabled: false),
           end: StrokeEndOptions.end(cap: true, taperEnabled: false),
         );
+      case PenStyle.fountain:
+        // Same profile as pen, but pressure thinning is heavily exaggerated.
+        return StrokeOptions(
+          size: baseWidth * 2.2,
+          thinning: (0.85 + sensitivity * 0.15).clamp(0.85, 1.0),
+          smoothing: 0.45,
+          streamline: sl,
+          simulatePressure: false,
+          isComplete: isComplete,
+          start: StrokeEndOptions.start(cap: true, taperEnabled: false),
+          end: StrokeEndOptions.end(cap: true, taperEnabled: false),
+        );
       case PenStyle.ballpoint:
         // Constant width — same as the former Pen profile.
         return StrokeOptions(
@@ -246,8 +249,7 @@ class InkRenderer {
           end: StrokeEndOptions.end(cap: true, taperEnabled: true),
         );
       case PenStyle.calligraphy:
-      case PenStyle.fountain:
-        // Unreachable — nib styles use _paintNib.
+        // Unreachable — calligraphy uses _paintNib.
         return StrokeOptions(size: baseWidth * 2);
     }
   }
@@ -269,16 +271,14 @@ class InkRenderer {
     return color;
   }
 
-  // ─── Nib quad-strip (calligraphy / fountain) ─────────────────
+  // ─── Nib quad-strip (calligraphy) ────────────────────────────
 
   static void _paintNib(
     Canvas canvas,
     List<StrokePoint> pts,
     Color color,
-    double baseWidth, {
-    required bool dynamicAngle,
-    required double sensitivity,
-  }) {
+    double baseWidth,
+  ) {
     if (pts.length < 2) {
       // Single-point tap → small filled oval
       final p = pts.first;
@@ -291,7 +291,7 @@ class InkRenderer {
     }
 
     const fixedNibAngle = pi / 4; // 45°
-    double nibAngle = pi / 5;
+    final nibDir = Offset(cos(fixedNibAngle), sin(fixedNibAngle));
 
     final left = <Offset>[];
     final right = <Offset>[];
@@ -311,32 +311,10 @@ class InkRenderer {
       }
       final len = dir.distance;
       final strokeDir = len > 0.01 ? dir / len : const Offset(1, 0);
-
-      if (dynamicAngle && len > 0.5) {
-        final strokeAngle = atan2(strokeDir.dy, strokeDir.dx);
-        nibAngle = nibAngle + (strokeAngle - nibAngle) * 0.2;
-      }
-
-      final angle = dynamicAngle ? nibAngle : fixedNibAngle;
-      final nibDir = Offset(cos(angle), sin(angle));
       final cross = (strokeDir.dx * nibDir.dy - strokeDir.dy * nibDir.dx).abs();
 
-      // Speed factor from timestamps (microseconds)
-      double swell = 1.0;
-      if (i > 0) {
-        final dt = max(1, pts[i].timestamp - pts[i - 1].timestamp);
-        final spd = len / (dt / 1000.0); // px per ms
-        swell = max(0.6, 1.0 - spd * 0.015);
-      }
-
-      final sensScale = dynamicAngle ? (0.5 + sensitivity * 0.5) : 1.0;
-      final halfW = dynamicAngle
-          ? (baseWidth * 0.1 + baseWidth * 1.1 * cross) *
-              (0.4 + press * 0.8) *
-              swell *
-              sensScale
-          : (baseWidth * 0.08 + baseWidth * 1.3 * cross) *
-              (0.5 + press * 0.5);
+      final halfW = (baseWidth * 0.08 + baseWidth * 1.3 * cross) *
+          (0.5 + press * 0.5);
 
       final hw = max(0.3, halfW);
       // Offset along the nib for classic flat-nib look

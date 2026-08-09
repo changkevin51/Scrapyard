@@ -202,7 +202,12 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   CanvasTool? _toolBeforeSPenEraser;
 
   // Hold-and-pause shape snap
+  // Stylus devices keep emitting tiny move events while "held still";
+  // ignore movement below this screen-space threshold so the pause timer
+  // can fire and so a live snap preview is not immediately cleared.
+  static const _shapeSnapPauseSlop = 6.0;
   final _pauseTimers = <int, Timer>{};
+  final _pauseAnchorLocal = <int, Offset>{};
   final _liveSnap = <int, ({ShapeType type, List<double> vertices})>{};
 
   final _uuid = const Uuid();
@@ -315,6 +320,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     _activeColor[e.pointer] = effectiveColor;
     _activeWidth[e.pointer] = bWidth;
     _activeStrokes[e.pointer] = [_makePoint(e)];
+    _pauseAnchorLocal[e.pointer] = e.localPosition;
     _liveSnap.remove(e.pointer);
     _armPauseTimer(e.pointer);
     _tick();
@@ -372,10 +378,20 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       return;
     }
 
-    // Clear any live snap preview when the user continues drawing.
-    _liveSnap.remove(e.pointer);
+    final pt = _makePoint(e);
+    final anchor = _pauseAnchorLocal[e.pointer];
+    if (anchor != null &&
+        (e.localPosition - anchor).distance < _shapeSnapPauseSlop) {
+      // Micro-jitter while holding: refresh the tip sample, keep the pause.
+      points[points.length - 1] = pt;
+      _tick();
+      return;
+    }
 
-    points.add(_makePoint(e));
+    // Clear any live snap preview when the user continues drawing.
+    _pauseAnchorLocal[e.pointer] = e.localPosition;
+    _liveSnap.remove(e.pointer);
+    points.add(pt);
     _armPauseTimer(e.pointer);
     _tick();
   }
@@ -404,6 +420,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
     _endEraseGesture();
     _cancelPauseTimer(e.pointer);
+    _pauseAnchorLocal.remove(e.pointer);
     final points = _activeStrokes.remove(e.pointer);
     final isHL = _activeIsHighlighter.remove(e.pointer) ?? false;
     final style = _activePenStyle.remove(e.pointer) ?? PenStyle.pen;
@@ -517,6 +534,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
     _endEraseGesture();
     _cancelPauseTimer(e.pointer);
+    _pauseAnchorLocal.remove(e.pointer);
     _activeStrokes.remove(e.pointer);
     _activeIsHighlighter.remove(e.pointer);
     _activePenStyle.remove(e.pointer);
@@ -540,6 +558,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       _activeColor.remove(pointer);
       _activeWidth.remove(pointer);
       _liveSnap.remove(pointer);
+      _pauseAnchorLocal.remove(pointer);
       _cancelPauseTimer(pointer);
     }
     if (changed) _tick();
@@ -598,6 +617,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         _activeColor.clear();
         _activeWidth.clear();
         _liveSnap.clear();
+        _pauseAnchorLocal.clear();
         _tick();
       }
       ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.eraser;

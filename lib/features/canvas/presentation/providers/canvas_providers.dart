@@ -14,8 +14,6 @@ export '../../domain/models/canvas_text_item.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
-enum StrokeStyle { solid, dotted, dashed }
-
 final canvasRepositoryProvider = Provider((ref) => StrokeRepository());
 
 final activeCanvasToolProvider = StateProvider<CanvasTool>((ref) => CanvasTool.pen);
@@ -72,12 +70,42 @@ bool isInkColorTool(CanvasTool tool) =>
     tool == CanvasTool.brush ||
     tool == CanvasTool.highlighter;
 
+/// Tools that keep their mode when a colour swatch is tapped.
+bool keepsToolOnColorSelect(CanvasTool tool) =>
+    tool == CanvasTool.pen ||
+    tool == CanvasTool.brush ||
+    tool == CanvasTool.straightLine ||
+    tool == CanvasTool.shape;
+
+/// If the scrap tool is not pen/brush/line/shape, switch to pen for drawing.
+void ensureCanvasToolForColorSelect(WidgetRef ref) {
+  final tool = ref.read(activeCanvasToolProvider);
+  if (keepsToolOnColorSelect(tool)) return;
+
+  ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
+  ref.read(isPenModeActiveProvider.notifier).state = true;
+  ref.read(activeInkFamilyProvider.notifier).state = InkFamily.pen;
+  final settings = ref.read(penSettingsProvider);
+  if (settings.penStyle.family != InkFamily.pen) {
+    ref.read(penSettingsProvider.notifier).state =
+        settings.copyWith(penStyle: PenStyle.pen);
+  }
+}
+
 /// Apply an ink colour to the canvas, current tool memory, and optional swatch.
-void applyInkColor(WidgetRef ref, Color color, {int? paletteIndex}) {
+///
+/// [storeFor] overrides which tool colour slot is updated (used by PDF
+/// annotation so scrap tool state is left alone).
+void applyInkColor(
+  WidgetRef ref,
+  Color color, {
+  int? paletteIndex,
+  CanvasTool? storeFor,
+}) {
   final c = color.withValues(alpha: 1.0);
   ref.read(canvasColorProvider.notifier).state = c;
 
-  final tool = ref.read(activeCanvasToolProvider);
+  final CanvasTool tool = storeFor ?? ref.read(activeCanvasToolProvider);
   if (isInkColorTool(tool)) {
     ref.read(toolColorsProvider.notifier).update((m) => {...m, tool: c});
   }
@@ -534,7 +562,6 @@ final isPenModeActiveProvider = StateProvider<bool>((ref) => true);
 final stylusOnlyModeProvider = StateProvider<bool>((ref) => true);
 final canvasZoomProvider = StateProvider<double>((ref) => 1.0);
 final strokeWidthModifierProvider = StateProvider<double>((ref) => 1.0);
-final strokeStyleProvider = StateProvider<StrokeStyle>((ref) => StrokeStyle.solid);
 final penSettingsProvider = StateProvider<PenSettings>((ref) => const PenSettings());
 
 /// Sticky Pen-vs-Brush settings family. Survives switching to lasso/eraser/text.

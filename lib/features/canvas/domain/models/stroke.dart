@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../data/pen_engine.dart';
-import '../../presentation/providers/canvas_providers.dart';
 import 'canvas_smart_models.dart';
 
 class StrokePoint {
@@ -39,7 +38,6 @@ class Stroke {
   final bool isTape;
   final bool isHidden;
   final bool isStraightLine;
-  final StrokeStyle style;
 
   // Smart shape fields — default to none
   final ShapeType shapeType;
@@ -57,7 +55,6 @@ class Stroke {
     this.isTape = false,
     this.isHidden = false,
     this.isStraightLine = false,
-    this.style = StrokeStyle.solid,
     this.shapeType = ShapeType.none,
     this.shapeVertices = const [],
     this.isBeautified = false,
@@ -80,7 +77,6 @@ class Stroke {
         isHighlighter: isHighlighter,
         isTape: isTape,
         isStraightLine: isStraightLine ?? this.isStraightLine,
-        style: style,
         shapeType: shapeType ?? this.shapeType,
         shapeVertices: shapeVertices ?? this.shapeVertices,
         isBeautified: isBeautified,
@@ -98,7 +94,6 @@ class Stroke {
         isHighlighter: isHighlighter,
         isTape: isTape,
         isStraightLine: false,
-        style: style,
         shapeType: ShapeType.none,
         shapeVertices: const [],
         isBeautified: isBeautified,
@@ -116,7 +111,6 @@ class Stroke {
     'isTape': isTape ? 1 : 0,
     'isHidden': isHidden ? 1 : 0,
     'isStraightLine': isStraightLine ? 1 : 0,
-    'style': style.name,
     'shapeType': shapeType.name,
     'shapeVertices': shapeVertices,
     'isBeautified': isBeautified ? 1 : 0,
@@ -133,7 +127,6 @@ class Stroke {
     isTape: map['isTape'] == 1,
     isHidden: map['isHidden'] == 1,
     isStraightLine: map['isStraightLine'] == 1,
-    style: StrokeStyle.values.firstWhere((e) => e.name == map['style'], orElse: () => StrokeStyle.solid),
     shapeType: ShapeType.values.firstWhere(
       (e) => e.name == (map['shapeType'] ?? 'none'),
       orElse: () => ShapeType.none,

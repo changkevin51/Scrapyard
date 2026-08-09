@@ -94,7 +94,6 @@ class CanvasToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isPenMode    = ref.watch(isPenModeActiveProvider);
     final position     = ref.watch(toolbarPositionProvider);
-    final strokeStyle  = ref.watch(strokeStyleProvider);
     final palette      = ref.watch(inkPaletteProvider);
     final isHorizontal = position == ToolbarPosition.top || position == ToolbarPosition.bottom;
 
@@ -109,11 +108,6 @@ class CanvasToolbar extends ConsumerWidget {
       const PenSettingsButton(),
       // Sticker library button
       const _StickerButton(),
-      _sep(isHorizontal),
-
-      // ── Stroke style chips – inline ────────────────────
-      for (final s in StrokeStyle.values)
-        _StrokeStyleChip(style: s, current: strokeStyle),
       _sep(isHorizontal),
 
       // ── Undo / Redo ────────────────────────────────────
@@ -417,58 +411,7 @@ class _LassoIconPainter extends CustomPainter {
   bool shouldRepaint(covariant _LassoIconPainter old) => old.color != color;
 }
 
-// Stroke style inline chips  ΓöÇ Solid / Dotted / Dashed
-// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-class _StrokeStyleChip extends ConsumerWidget {
-  final StrokeStyle style;
-  final StrokeStyle current;
-  const _StrokeStyleChip({required this.style, required this.current});
-
-  static const _labels = {
-    StrokeStyle.solid:  'ΓÇö',
-    StrokeStyle.dotted: '┬╖┬╖┬╖',
-    StrokeStyle.dashed: '- -',
-  };
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isActive = style == current;
-    return Tooltip(
-      message: style.name[0].toUpperCase() + style.name.substring(1),
-      child: _ToolPressable(
-        onTap: () => ref.read(strokeStyleProvider.notifier).state = style,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 130),
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: isActive ? ScrapTheme.accent.withValues(alpha: 0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: isActive
-                  ? ScrapTheme.accent.withValues(alpha: 0.35)
-                  : ScrapTheme.dividers,
-              width: 1,
-            ),
-          ),
-          child: Text(
-            _labels[style]!,
-            style: ScrapTextStyles.label.copyWith(
-              fontSize: 13,
-              letterSpacing: 1.5,
-              color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
-              fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // Action button (Undo / Redo)
-// ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 class _ActionButton extends ConsumerWidget {
   final IconData icon;
   final String tip;

@@ -421,7 +421,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     final tool = ref.read(activeCanvasToolProvider);
-    final strokeStyle = ref.read(strokeStyleProvider);
     final settings = ref.read(penSettingsProvider);
 
     if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) {
@@ -471,7 +470,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       isHighlighter: isHL,
       isTape: tool == CanvasTool.tape,
       isStraightLine: tool == CanvasTool.straightLine,
-      style: strokeStyle,
       shapeType: shapeType,
       shapeVertices: vertices,
       isBeautified: settings.beautify &&

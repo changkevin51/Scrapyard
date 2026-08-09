@@ -9,7 +9,40 @@ import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../../pdf_viewer/presentation/providers/pdf_providers.dart';
+import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
+
+/// If the PDF annotation tool is not pen/shape, switch to pen for drawing.
+void ensurePdfToolForColorSelect(WidgetRef ref) {
+  final tool = ref.read(activeToolProvider);
+  if (tool == AnnotationTool.pen || tool == AnnotationTool.shape) return;
+
+  ref.read(activeToolProvider.notifier).state = AnnotationTool.pen;
+  ref.read(activeInkFamilyProvider.notifier).state = InkFamily.pen;
+}
+
+/// Select an ink colour, switching to pen when the active tool is not a
+/// drawing-with-colour mode (pen / brush / line / shape).
+void selectInkColor(
+  WidgetRef ref,
+  Color color, {
+  int? paletteIndex,
+  bool pdfMode = false,
+}) {
+  if (pdfMode) {
+    ensurePdfToolForColorSelect(ref);
+    applyInkColor(
+      ref,
+      color,
+      paletteIndex: paletteIndex,
+      storeFor: CanvasTool.pen,
+    );
+  } else {
+    ensureCanvasToolForColorSelect(ref);
+    applyInkColor(ref, color, paletteIndex: paletteIndex);
+  }
+}
 
 /// Colour dots — ink-well ring, no blur glow.
 /// Palm rejection on: pen tap selects colour; finger tap opens picker.
@@ -17,7 +50,14 @@ import '../providers/canvas_providers.dart';
 class InkColorDot extends ConsumerStatefulWidget {
   final Color color;
   final int index;
-  const InkColorDot({super.key, required this.color, required this.index});
+  /// When true, colour picks drive the PDF annotation tool (not scrap canvas).
+  final bool pdfMode;
+  const InkColorDot({
+    super.key,
+    required this.color,
+    required this.index,
+    this.pdfMode = false,
+  });
 
   @override
   ConsumerState<InkColorDot> createState() => _InkColorDotState();
@@ -32,7 +72,12 @@ class _InkColorDotState extends ConsumerState<InkColorDot> {
       kind == PointerDeviceKind.invertedStylus;
 
   void _selectColor() {
-    applyInkColor(ref, widget.color, paletteIndex: widget.index);
+    selectInkColor(
+      ref,
+      widget.color,
+      paletteIndex: widget.index,
+      pdfMode: widget.pdfMode,
+    );
   }
 
   void _openPicker() {
@@ -40,6 +85,7 @@ class _InkColorDotState extends ConsumerState<InkColorDot> {
       context,
       initialColor: widget.color,
       paletteIndex: widget.index,
+      pdfMode: widget.pdfMode,
     );
   }
 
@@ -111,12 +157,14 @@ Future<void> showInkColorPicker(
   BuildContext context, {
   required Color initialColor,
   required int paletteIndex,
+  bool pdfMode = false,
 }) {
   return showScrapDialog(
     context: context,
     builder: (_) => _InkColorPickerDialog(
       initialColor: initialColor,
       paletteIndex: paletteIndex,
+      pdfMode: pdfMode,
     ),
   );
 }
@@ -124,9 +172,11 @@ Future<void> showInkColorPicker(
 class _InkColorPickerDialog extends ConsumerStatefulWidget {
   final Color initialColor;
   final int paletteIndex;
+  final bool pdfMode;
   const _InkColorPickerDialog({
     required this.initialColor,
     required this.paletteIndex,
+    this.pdfMode = false,
   });
 
   @override
@@ -144,10 +194,11 @@ class _InkColorPickerDialogState extends ConsumerState<_InkColorPickerDialog> {
   }
 
   void _apply() {
-    applyInkColor(
+    selectInkColor(
       ref,
       _picked,
       paletteIndex: widget.paletteIndex,
+      pdfMode: widget.pdfMode,
     );
     Navigator.pop(context);
   }

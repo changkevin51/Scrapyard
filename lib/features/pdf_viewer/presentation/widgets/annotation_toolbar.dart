@@ -165,7 +165,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var i = 0; i < palette.length; i++)
-                InkColorDot(color: palette[i], index: i),
+                InkColorDot(color: palette[i], index: i, pdfMode: true),
             ],
           ),
         ],

@@ -144,7 +144,7 @@ void convertOcrToTextNode(
     position: const Offset(80, 200),
     text: combined,
   );
-  ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, node]);
+  ref.read(canvasTextNodesProvider.notifier).add(node);
   ref.read(strokesProvider.notifier).hideStrokes(ocrStrokeIds);
   showPaperToast(context, 'Converted to text node');
 }

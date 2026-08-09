@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/stroke.dart';
 import '../../domain/models/canvas_smart_models.dart';
+import '../../domain/models/canvas_text_item.dart';
 import '../../domain/models/page_layout.dart';
 import '../../data/stroke_repository.dart';
 import '../../data/canvas_settings_repository.dart';
@@ -9,6 +10,7 @@ import '../../data/pen_engine.dart';
 import '../../data/canvas_ocr_service.dart';
 
 export '../../domain/models/page_layout.dart';
+export '../../domain/models/canvas_text_item.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
@@ -208,23 +210,118 @@ class PageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
 final toolbarPositionProvider =
     StateProvider<ToolbarPosition>((ref) => ToolbarPosition.top);
 
-class CanvasTextItem {
-  final String id;
-  final Offset position;
-  final String text;
+class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
+  final StrokeRepository _repository;
+  final String _noteId;
+  final bool _ephemeral;
+  final void Function(String noteId)? _onContentChanged;
 
-  CanvasTextItem({required this.id, required this.position, this.text = ''});
-  
-  CanvasTextItem copyWith({Offset? position, String? text}) {
-    return CanvasTextItem(
-       id: id,
-       position: position ?? this.position,
-       text: text ?? this.text,
-    );
+  TextNodesNotifier(
+    this._repository,
+    this._noteId, {
+    bool ephemeral = false,
+    void Function(String noteId)? onContentChanged,
+  })  : _ephemeral = ephemeral,
+        _onContentChanged = onContentChanged,
+        super([]) {
+    if (!_ephemeral) _load();
+  }
+
+  void _markContentChanged() {
+    if (!_ephemeral) _onContentChanged?.call(_noteId);
+  }
+
+  Future<void> _load() async {
+    state = await _repository.loadTextNodes(_noteId);
+  }
+
+  void add(CanvasTextItem item) {
+    state = [...state, item];
+    // Empty placeholders stay in memory only until the user types.
+    if (!_ephemeral && item.text.trim().isNotEmpty) {
+      _repository.saveTextNodes(_noteId, [item]);
+      _markContentChanged();
+    }
+  }
+
+  void upsert(CanvasTextItem item) {
+    final idx = state.indexWhere((n) => n.id == item.id);
+    if (idx < 0) {
+      add(item);
+      return;
+    }
+    final next = List<CanvasTextItem>.from(state);
+    next[idx] = item;
+    state = next;
+    if (!_ephemeral) {
+      if (item.text.trim().isEmpty) {
+        _repository.deleteTextNodes([item.id]);
+      } else {
+        _repository.saveTextNodes(_noteId, [item]);
+      }
+      _markContentChanged();
+    }
+  }
+
+  void updateMany(List<CanvasTextItem> updates) {
+    if (updates.isEmpty) return;
+    final map = {for (final u in updates) u.id: u};
+    state = [for (final n in state) map[n.id] ?? n];
+    if (!_ephemeral) {
+      final persistable =
+          updates.where((u) => u.text.trim().isNotEmpty).toList();
+      if (persistable.isNotEmpty) {
+        _repository.saveTextNodes(_noteId, persistable);
+        _markContentChanged();
+      }
+    }
+  }
+
+  void replaceAll(List<CanvasTextItem> items) {
+    state = List<CanvasTextItem>.from(items);
+    if (!_ephemeral) {
+      _repository.saveTextNodes(_noteId, items);
+      _markContentChanged();
+    }
+  }
+
+  void deleteIds(Iterable<String> ids) {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+    state = state.where((n) => !idSet.contains(n.id)).toList();
+    if (!_ephemeral) {
+      _repository.deleteTextNodes(idSet.toList());
+      _markContentChanged();
+    }
   }
 }
 
-final canvasTextNodesProvider = StateProvider<List<CanvasTextItem>>((ref) => []);
+final canvasTextNodesProvider =
+    StateNotifierProvider<TextNodesNotifier, List<CanvasTextItem>>((ref) {
+  final repo = ref.watch(canvasRepositoryProvider);
+  final noteId = ref.watch(activeNoteIdProvider);
+  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  return TextNodesNotifier(
+    repo,
+    noteId,
+    ephemeral: ephemeral,
+    onContentChanged: (id) {
+      ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
+    },
+  );
+});
+
+/// Currently editing/selected text node id, or null when none.
+final activeTextNodeIdProvider = StateProvider<String?>((ref) => null);
+
+/// When true, the next canvas tap in text mode is consumed (dismiss only —
+/// do not create a new text box). Cleared on consume.
+final consumeTextCanvasTapProvider = StateProvider<bool>((ref) => false);
+
+/// Latest global rect of the active text editor; note editor scrolls/pans to
+/// keep it above the keyboard.
+final activeTextGlobalRectProvider = StateProvider<Rect?>((ref) => null);
+
 final canvasTablesProvider = StateProvider<List<CanvasTable>>((ref) => []);
 final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 

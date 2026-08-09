@@ -68,6 +68,7 @@ class SmeltService {
   Future<SmeltStreamResult> analyzeSelectionStream(
     Uint8List? imageBytes, {
     String? preferredModel,
+    String? selectedText,
     bool singleModel = false,
     bool forceCodeExecution = false,
     SmeltProgressCallback? onProgress,
@@ -100,6 +101,7 @@ class SmeltService {
           base64Image,
           onProgress,
           forceCodeExecution: forceCodeExecution,
+          selectedText: selectedText,
         );
         return SmeltStreamResult(
           response: response.response,
@@ -128,6 +130,7 @@ class SmeltService {
     String? base64Image,
     SmeltProgressCallback? onProgress, {
     bool forceCodeExecution = false,
+    String? selectedText,
   }) async {
     final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
 
@@ -153,7 +156,8 @@ class SmeltService {
 ''';
 
     final systemPrompt = '''
-You are Scrapyard's AI smelt engine. Analyze the handwritten content in the image.
+You are Scrapyard's AI smelt engine. Analyze the selected canvas content
+(handwriting in the image and/or typed text provided below).
 
 IMPORTANT RULES:
 1. If this is a MATH question/problem:
@@ -205,6 +209,9 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
       {'text': systemPrompt},
     ];
 
+    final typed = selectedText?.trim();
+    final hasTyped = typed != null && typed.isNotEmpty;
+
     if (base64Image != null) {
       parts.add({
         'inline_data': {
@@ -213,13 +220,23 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
         },
       });
       final userHint = forceCodeExecution
-          ? 'Analyze this handwritten content. You MUST use code execution to verify the answer, then provide the JSON response.'
-          : 'Analyze this handwritten content and provide the answer. Use code execution only if the problem truly needs it; otherwise answer directly with no tool call.';
+          ? 'Analyze this selected content. You MUST use code execution to verify the answer, then provide the JSON response.'
+          : 'Analyze this selected content and provide the answer. Use code execution only if the problem truly needs it; otherwise answer directly with no tool call.';
       parts.add({'text': userHint});
-    } else {
-      parts.add({'text': 'No image available. Please respond that the image could not be captured.'});
     }
 
+    if (hasTyped) {
+      parts.add({
+        'text': 'Typed text from the canvas selection:\n$typed',
+      });
+    }
+
+    if (base64Image == null && !hasTyped) {
+      parts.add({
+        'text':
+            'No image or typed text available. Please respond that the selection could not be captured.',
+      });
+    }
     final requestBody = {
       'contents': [
         {

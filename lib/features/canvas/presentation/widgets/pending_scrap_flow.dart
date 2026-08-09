@@ -34,6 +34,10 @@ Future<void> filePendingNewScrap(
     if (strokes.isNotEmpty) {
       await ref.read(canvasRepositoryProvider).saveStrokes(id, strokes);
     }
+    final textNodes = ref.read(canvasTextNodesProvider);
+    if (textNodes.isNotEmpty) {
+      await ref.read(canvasRepositoryProvider).saveTextNodes(id, textNodes);
+    }
     final pageConfig = ref.read(pageLayoutProvider);
     await ref
         .read(canvasSettingsRepositoryProvider)

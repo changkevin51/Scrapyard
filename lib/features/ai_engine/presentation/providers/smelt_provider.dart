@@ -128,13 +128,16 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
 
   SmeltNotifier(this._smeltService) : super(const SmeltState());
 
-  /// Stable cache key for a note + selected stroke set.
+  /// Stable cache key for a note + selected stroke / text set.
   static String cacheKeyFor({
     required String noteId,
     required Iterable<String> strokeIds,
+    Iterable<String> textIds = const [],
   }) {
-    final sorted = strokeIds.toList()..sort();
-    return '$noteId:${sorted.join('|')}';
+    final strokes = strokeIds.toList()..sort();
+    final texts = textIds.toList()..sort();
+    if (texts.isEmpty) return '$noteId:${strokes.join('|')}';
+    return '$noteId:s=${strokes.join('|')};t=${texts.join('|')}';
   }
 
   bool hasCached(String key) => _sessionCache.containsKey(key);
@@ -196,6 +199,7 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
   /// On success, stores the result under [cacheKey] for this session.
   Future<void> smelt({
     Uint8List? imageBytes,
+    String? selectedText,
     String? cacheKey,
     String? preferredModel,
     bool singleModel = false,
@@ -216,6 +220,7 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
 
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
+        selectedText: selectedText,
         preferredModel: preferredModel,
         singleModel: singleModel,
         forceCodeExecution: forceCodeExecution,

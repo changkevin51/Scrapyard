@@ -38,7 +38,8 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
 }
 
-class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
+class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final ScrollController _horizontalScrollController = ScrollController();
   final CanvasOcrService _ocrService = CanvasOcrService();
@@ -47,6 +48,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       GlobalKey<SmeltPopupState>();
 
   Timer? _ocrDebounce;
+  int _textRevealGen = 0;
   /// Active (unpinned) smelt response overlay.
   OverlayEntry? _smeltPopupEntry;
   /// Pinned smelt response overlay (at most one).
@@ -60,6 +62,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   Rect? _lassoPreviewRect;
   Rect? _selectionRect;
   Set<String> _selectedStrokeIds = {};
+  Set<String> _selectedTextIds = {};
   bool _showSelectionMenu = false;
   bool _isResizingSelection = false;
   _CopiedSelection? _clipboardSelection;
@@ -94,7 +97,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       tool == CanvasTool.lasso || tool == CanvasTool.smelt;
 
   bool _pointerHitsMovableSelection(Offset localPosition) {
-    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return false;
+    if (_selectionRect == null) return false;
+    if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) return false;
     if (_isResizingSelection || _isSmelting) return false;
     return _selectionRect!.contains(_toWorld(localPosition));
   }
@@ -102,9 +106,92 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Warm up background cluster detection without watching (no rebuilds).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(detectedClustersProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ocrDebounce?.cancel();
+    _manualHintTimer?.cancel();
+    _selectionEdgeScrollTimer?.cancel();
+    _ocrService.dispose();
+    _scrollController.dispose();
+    _horizontalScrollController.dispose();
+    _smeltPopupEntry?.remove();
+    _pinnedSmeltPopupEntry?.remove();
+    super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (ref.read(activeTextNodeIdProvider) != null) {
+      _revealActiveTextAboveKeyboard();
+    }
+  }
+
+  /// Scroll (finite) or pan (infinite) so the active text box clears the keyboard.
+  void _revealActiveTextAboveKeyboard() {
+    final gen = ++_textRevealGen;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      if (!mounted || gen != _textRevealGen) return;
+      if (ref.read(activeTextNodeIdProvider) == null) return;
+
+      final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+      if (keyboard <= 0) return;
+
+      // Prefer the live sticker rect; fall back to world-position estimate.
+      Rect? globalRect = ref.read(activeTextGlobalRectProvider);
+      if (globalRect == null) {
+        final id = ref.read(activeTextNodeIdProvider);
+        CanvasTextItem? node;
+        for (final n in ref.read(canvasTextNodesProvider)) {
+          if (n.id == id) {
+            node = n;
+            break;
+          }
+        }
+        if (node == null) return;
+        final canvasBox = _canvasRepaintKey.currentContext?.findRenderObject()
+            as RenderBox?;
+        if (canvasBox == null || !canvasBox.hasSize) return;
+        final local = ref.read(pageLayoutProvider).isInfinite
+            ? _toScreen(node.position)
+            : node.position;
+        final topLeft = canvasBox.localToGlobal(local);
+        final h = math.max(40.0, node.fontSize * 1.4 + 36);
+        globalRect = Rect.fromLTWH(topLeft.dx, topLeft.dy, 120, h);
+      }
+
+      final screenH = MediaQuery.sizeOf(context).height;
+      const margin = 32.0;
+      final targetBottom = screenH - keyboard - margin;
+      final overflow = globalRect.bottom - targetBottom;
+      if (overflow <= 1) return;
+
+      if (ref.read(pageLayoutProvider).isInfinite) {
+        ref
+            .read(canvasViewportProvider.notifier)
+            .panByScreenDelta(Offset(0, -overflow));
+        return;
+      }
+
+      if (!_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      // Temporarily allow programmatic scroll even in pen mode.
+      final next =
+          (position.pixels + overflow).clamp(0.0, position.maxScrollExtent);
+      if ((next - position.pixels).abs() < 1) return;
+      await _scrollController.animateTo(
+        next,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -148,19 +235,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     return ref.read(canvasViewportProvider).toScreen(world);
   }
 
-  @override
-  void dispose() {
-    _ocrDebounce?.cancel();
-    _manualHintTimer?.cancel();
-    _selectionEdgeScrollTimer?.cancel();
-    _ocrService.dispose();
-    _scrollController.dispose();
-    _horizontalScrollController.dispose();
-    _smeltPopupEntry?.remove();
-    _pinnedSmeltPopupEntry?.remove();
-    super.dispose();
-  }
-
   void _onCanvasTapDown(TapDownDetails details) {
     final worldPos = _toWorld(details.localPosition);
     if (_selectionRect != null && !_selectionRect!.contains(worldPos)) {
@@ -179,17 +253,89 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final tool = ref.read(activeCanvasToolProvider);
     if (_isSelectionTool(tool)) return;
 
+    // Dismiss active text from any tool when tapping empty canvas.
+    final activeTextId = ref.read(activeTextNodeIdProvider);
+    final consumeDismiss = ref.read(consumeTextCanvasTapProvider);
+    if (consumeDismiss) {
+      ref.read(consumeTextCanvasTapProvider.notifier).state = false;
+      if (tool == CanvasTool.text) return;
+    }
+
     if (tool == CanvasTool.text) {
-      final newText = CanvasTextItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        position: worldPos,
-      );
-      ref.read(canvasTextNodesProvider.notifier).update((s) => [...s, newText]);
+      // Tapping an existing text node is handled by the sticker itself.
+      if (_hitsTextNode(worldPos)) return;
+
+      // Tap elsewhere while editing → deselect (empty nodes prune themselves).
+      if (activeTextId != null) {
+        ref.read(activeTextNodeIdProvider.notifier).state = null;
+        return;
+      }
+
+      final id = DateTime.now().millisecondsSinceEpoch.toString();
+      final newText = CanvasTextItem(id: id, position: worldPos);
+      ref.read(canvasTextNodesProvider.notifier).add(newText);
+      ref.read(activeTextNodeIdProvider.notifier).state = id;
       return;
+    }
+
+    if (activeTextId != null && !_hitsTextNode(worldPos)) {
+      ref.read(activeTextNodeIdProvider.notifier).state = null;
     }
 
     if (tool != CanvasTool.pen) return;
   }
+
+  /// Approximate hit-test for text stickers (world coordinates).
+  bool _hitsTextNode(Offset worldPos) => _hitTextItem(worldPos) != null;
+
+  Rect _textItemBounds(CanvasTextItem node) {
+    final text = node.text.isEmpty ? '…' : node.text;
+    final lines = text.split('\n');
+    final maxLineLen =
+        lines.fold<int>(1, (m, l) => l.length > m ? l.length : m);
+    final font = node.fontSize;
+    final w = math.max(48.0, maxLineLen * font * 0.55);
+    final h = (lines.length * font * 1.35).clamp(28.0, 240.0);
+    const chrome = 24.0;
+    return Rect.fromLTWH(
+      node.position.dx - chrome,
+      node.position.dy - chrome,
+      w + chrome * 2,
+      h + chrome + 32,
+    );
+  }
+
+  CanvasTextItem? _hitTextItem(Offset worldPos) {
+    final nodes = ref.read(canvasTextNodesProvider);
+    CanvasTextItem? best;
+    var bestArea = double.infinity;
+    for (final node in nodes) {
+      if (node.text.trim().isEmpty) continue;
+      final rect = _textItemBounds(node);
+      if (!rect.contains(worldPos)) continue;
+      final area = rect.width * rect.height;
+      if (area < bestArea) {
+        bestArea = area;
+        best = node;
+      }
+    }
+    return best;
+  }
+
+  String? _selectedTextPayload() {
+    if (_selectedTextIds.isEmpty) return null;
+    final nodes = ref.read(canvasTextNodesProvider);
+    final parts = nodes
+        .where((n) => _selectedTextIds.contains(n.id) && n.text.trim().isNotEmpty)
+        .map((n) => n.text.trim())
+        .toList();
+    if (parts.isEmpty) return null;
+    return parts.join('\n\n');
+  }
+
+  bool get _hasSmeltableSelection =>
+      _selectionRect != null &&
+      (_selectedStrokeIds.isNotEmpty || _selectedTextIds.isNotEmpty);
 
   bool _tapHitsManualSelectMenu(Offset p) {
     if (_manualSelectMenuAnchor == null) return false;
@@ -212,6 +358,40 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final world = _toWorld(position);
     if (_tapHitsManualSelectMenu(world)) return;
 
+    // Prefer typed text boxes so smelt works on canvas text stickers.
+    final textHit = _hitTextItem(world);
+    if (textHit != null) {
+      _hidePasteMenu();
+      final cacheKey = _smeltCacheKeyFor(const [], textIds: [textHit.id]);
+      final hasCached = ref.read(smeltProvider.notifier).hasCached(cacheKey);
+      final bounds = _textItemBounds(textHit).inflate(4);
+
+      setState(() {
+        _selectionRect = bounds;
+        _selectedStrokeIds = {};
+        _selectedTextIds = {textHit.id};
+        _activeClusterId = null;
+        _selectionFromDetection = true;
+        _showSelectionMenu = false;
+        _isResizingSelection = false;
+        _manualHintVisible = false;
+        _manualSelectMenuAnchor = null;
+      });
+
+      if (hasCached) {
+        if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
+          return;
+        }
+        ref.read(smeltProvider.notifier).restoreCached(cacheKey);
+        _showSmeltPopup(bounds);
+        return;
+      }
+
+      if (_smeltPopupEntry != null) return;
+      setState(() => _showSelectionMenu = true);
+      return;
+    }
+
     final noteId = ref.read(activeNoteIdProvider);
     // Prefer user-corrected boxes so a manually fixed selection stays tappable
     // after the Smelt popup is dismissed.
@@ -228,6 +408,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       setState(() {
         _selectionRect = null;
         _selectedStrokeIds = {};
+        _selectedTextIds = {};
         _activeClusterId = null;
         _selectionFromDetection = false;
         _showSelectionMenu = false;
@@ -244,6 +425,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     setState(() {
       _selectionRect = cluster.bounds;
       _selectedStrokeIds = Set<String>.from(cluster.strokeIds);
+      _selectedTextIds = {};
       _activeClusterId = cluster.id;
       // Manual corrections render like detected boxes (same dashed style).
       _selectionFromDetection = true;
@@ -270,18 +452,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     setState(() => _showSelectionMenu = true);
   }
 
-  String _smeltCacheKeyFor(Iterable<String> strokeIds) {
+  String _smeltCacheKeyFor(
+    Iterable<String> strokeIds, {
+    Iterable<String>? textIds,
+  }) {
     return SmeltNotifier.cacheKeyFor(
       noteId: ref.read(activeNoteIdProvider),
       strokeIds: strokeIds,
+      textIds: textIds ?? _selectedTextIds,
     );
   }
 
   bool _selectionHasCachedSmelt() {
-    if (_selectedStrokeIds.isEmpty) return false;
-    return ref
-        .read(smeltProvider.notifier)
-        .hasCached(_smeltCacheKeyFor(_selectedStrokeIds));
+    if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) return false;
+    return ref.read(smeltProvider.notifier).hasCached(
+          _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds),
+        );
   }
 
   /// Action chips stay hidden while an active response popup is open or already cached.
@@ -290,10 +476,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   /// Show the smelt action menu, or reopen a cached response instead.
   void _revealSmeltSelectionOrCachedPopup() {
-    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
+    if (!_hasSmeltableSelection) return;
     if (_smeltPopupEntry != null) return;
 
-    final key = _smeltCacheKeyFor(_selectedStrokeIds);
+    final key =
+        _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds);
     if (_pinnedCacheKey == key && _pinnedSmeltPopupEntry != null) {
       return;
     }
@@ -419,13 +606,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final selected = strokes
         .where((stroke) => !stroke.isHidden && _strokeIntersectsSelection(stroke, draggedRect))
         .toList();
+    final textNodes = ref.read(canvasTextNodesProvider);
+    final selectedTexts = textNodes
+        .where((n) =>
+            n.text.trim().isNotEmpty &&
+            _textItemBounds(n).overlaps(draggedRect))
+        .toList();
+
+    final boundRects = <Rect>[
+      ...selected.map((stroke) => _strokeBounds(stroke).inflate(4)),
+      ...selectedTexts.map((n) => _textItemBounds(n).inflate(4)),
+    ];
 
     setState(() {
       _lassoPreviewRect = draggedRect;
-      _selectionRect = selected.isEmpty
-          ? null
-          : _unionRects(selected.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
+      _selectionRect = boundRects.isEmpty ? null : _unionRects(boundRects);
       _selectedStrokeIds = selected.map((stroke) => stroke.id).toSet();
+      _selectedTextIds = selectedTexts.map((n) => n.id).toSet();
       _showSelectionMenu = false;
       _selectionFromDetection = false;
     });
@@ -439,12 +636,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _finishLassoGesture() {
     if (_lassoStart == null) return;
 
-    if (_selectionRect == null || _selectedStrokeIds.isEmpty) {
+    if (_selectionRect == null ||
+        (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty)) {
       setState(() {
         _lassoStart = null;
         _lassoPreviewRect = null;
         _selectionRect = null;
         _selectedStrokeIds = {};
+        _selectedTextIds = {};
         _showSelectionMenu = false;
         _selectionFromDetection = false;
         _activeClusterId = null;
@@ -484,6 +683,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _clearSelectionState() {
     if (_selectionRect == null &&
         _selectedStrokeIds.isEmpty &&
+        _selectedTextIds.isEmpty &&
         !_showSelectionMenu &&
         !_isResizingSelection &&
         _activeClusterId == null &&
@@ -498,6 +698,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _lassoPreviewRect = null;
       _selectionRect = null;
       _selectedStrokeIds = {};
+      _selectedTextIds = {};
       _showSelectionMenu = false;
       _isResizingSelection = false;
       _isSmelting = false;
@@ -514,6 +715,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _lassoPreviewRect = null;
       _selectionRect = null;
       _selectedStrokeIds = {};
+      _selectedTextIds = {};
       _showSelectionMenu = false;
       _isResizingSelection = false;
       _activeClusterId = null;
@@ -636,21 +838,34 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
   void _moveSelection(Offset delta) {
     if (_selectionRect == null) return;
-    if (_selectedStrokeIds.isEmpty) return;
+    if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) return;
 
     _hideSelectionMenu();
     _hidePasteMenu();
 
-    final strokes = ref.read(strokesProvider);
-    final movedStrokes = <Stroke>[];
+    if (_selectedStrokeIds.isNotEmpty) {
+      final strokes = ref.read(strokesProvider);
+      final movedStrokes = <Stroke>[];
 
-    for (final stroke in strokes) {
-      if (_selectedStrokeIds.contains(stroke.id)) {
-        movedStrokes.add(_translateStroke(stroke, delta));
+      for (final stroke in strokes) {
+        if (_selectedStrokeIds.contains(stroke.id)) {
+          movedStrokes.add(_translateStroke(stroke, delta));
+        }
       }
+
+      ref.read(strokesProvider.notifier).updateStrokes(movedStrokes);
     }
 
-    ref.read(strokesProvider.notifier).updateStrokes(movedStrokes);
+    if (_selectedTextIds.isNotEmpty) {
+      final nodes = ref.read(canvasTextNodesProvider);
+      final moved = [
+        for (final node in nodes)
+          if (_selectedTextIds.contains(node.id))
+            node.copyWith(position: node.position + delta),
+      ];
+      ref.read(canvasTextNodesProvider.notifier).updateMany(moved);
+    }
+
     setState(() {
       _selectionRect = _selectionRect!.shift(delta);
     });
@@ -914,12 +1129,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     bool forceRefresh = false,
     bool forceCodeExecution = false,
   }) async {
-    if (_selectionRect == null || _selectedStrokeIds.isEmpty) return;
+    if (!_hasSmeltableSelection) return;
     _hideSelectionMenu();
 
     // Persist user-corrected boxes for the session so tapping the expression
     // reopens the cached Smelt popup after dismiss.
-    if (!_selectionFromDetection) {
+    if (!_selectionFromDetection && _selectedStrokeIds.isNotEmpty) {
       ref.read(manualClustersProvider.notifier).remember(
             noteId: ref.read(activeNoteIdProvider),
             strokeIds: _selectedStrokeIds,
@@ -927,8 +1142,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     final rect = _selectionRect!;
-    final cacheKey = _smeltCacheKeyFor(_selectedStrokeIds);
+    final cacheKey =
+        _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds);
     final notifier = ref.read(smeltProvider.notifier);
+    final selectedText = _selectedTextPayload();
 
     // Reuse a session-cached response unless the user asked to retry / verify.
     if (!forceRefresh && !forceCodeExecution && notifier.hasCached(cacheKey)) {
@@ -959,6 +1176,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     // Send to AI (stores into session cache on success)
     await notifier.smelt(
       imageBytes: imageBytes,
+      selectedText: selectedText,
       cacheKey: cacheKey,
       forceCodeExecution: forceCodeExecution,
     );
@@ -973,7 +1191,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   /// Capture the current selection and stage it as a chat attachment.
   Future<void> _attachSelectionToChat() async {
     final rect = _selectionRect;
-    if (rect == null || _selectedStrokeIds.isEmpty) return;
+    if (rect == null ||
+        (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty)) {
+      return;
+    }
     _hideSelectionMenu();
 
     Uint8List? bytes;
@@ -995,6 +1216,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       _lassoPreviewRect = null;
       _selectionRect = null;
       _selectedStrokeIds = {};
+      _selectedTextIds = {};
       _showSelectionMenu = false;
       _selectionFromDetection = false;
       _activeClusterId = null;
@@ -1182,9 +1404,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             height: 1,
           );
     final cacheKey = live.cacheKey ??
-        (_selectedStrokeIds.isEmpty
+        ((_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty)
             ? null
-            : _smeltCacheKeyFor(_selectedStrokeIds));
+            : _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds));
     final frozen = SmeltState(
       response: live.response,
       error: live.error,
@@ -1237,6 +1459,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     setState(() {
       _selectionRect = null;
       _selectedStrokeIds = {};
+      _selectedTextIds = {};
       _showSelectionMenu = false;
       _isResizingSelection = false;
       _isSmelting = false;
@@ -1333,12 +1556,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _deleteSelection() {
-    if (_selectedStrokeIds.isEmpty) return;
+    if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) return;
     _hideSelectionMenu();
-    ref.read(strokesProvider.notifier).deleteStrokes(_selectedStrokeIds.toList());
+    if (_selectedStrokeIds.isNotEmpty) {
+      ref
+          .read(strokesProvider.notifier)
+          .deleteStrokes(_selectedStrokeIds.toList());
+    }
+    if (_selectedTextIds.isNotEmpty) {
+      ref.read(canvasTextNodesProvider.notifier).deleteIds(_selectedTextIds);
+    }
     setState(() {
       _selectionRect = null;
       _selectedStrokeIds = {};
+      _selectedTextIds = {};
       _isResizingSelection = false;
       _showSelectionMenu = false;
     });
@@ -1485,7 +1716,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   void _refreshSelectionBounds({required bool showMenu}) {
-    if (_selectedStrokeIds.isEmpty) {
+    if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) {
       setState(() {
         _selectionRect = null;
         _showSelectionMenu = false;
@@ -1495,18 +1726,29 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
 
     final strokes = ref.read(strokesProvider);
-    final selected = strokes.where((stroke) => _selectedStrokeIds.contains(stroke.id)).toList();
-    if (selected.isEmpty) {
+    final selected =
+        strokes.where((stroke) => _selectedStrokeIds.contains(stroke.id)).toList();
+    final textNodes = ref
+        .read(canvasTextNodesProvider)
+        .where((n) => _selectedTextIds.contains(n.id))
+        .toList();
+
+    if (selected.isEmpty && textNodes.isEmpty) {
       setState(() {
         _selectionRect = null;
         _selectedStrokeIds = {};
+        _selectedTextIds = {};
         _showSelectionMenu = false;
         _isResizingSelection = false;
       });
       return;
     }
 
-    final bounds = _unionRects(selected.map((stroke) => _strokeBounds(stroke).inflate(4)).toList());
+    final boundRects = <Rect>[
+      ...selected.map((stroke) => _strokeBounds(stroke).inflate(4)),
+      ...textNodes.map((n) => _textItemBounds(n).inflate(4)),
+    ];
+    final bounds = _unionRects(boundRects);
     setState(() {
       _selectionRect = bounds;
       _showSelectionMenu = showMenu;
@@ -1534,7 +1776,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       if (previous != null && next.length > previous.length) _triggerOcrRun();
     });
 
+    ref.listen<String?>(activeTextNodeIdProvider, (previous, next) {
+      if (next != null) {
+        _revealActiveTextAboveKeyboard();
+      } else {
+        ref.read(activeTextGlobalRectProvider.notifier).state = null;
+      }
+    });
+
+    ref.listen<Rect?>(activeTextGlobalRectProvider, (previous, next) {
+      if (next != null &&
+          ref.read(activeTextNodeIdProvider) != null &&
+          MediaQuery.viewInsetsOf(context).bottom > 0) {
+        _revealActiveTextAboveKeyboard();
+      }
+    });
+
     ref.listen<CanvasTool>(activeCanvasToolProvider, (previous, next) {
+      if (previous == CanvasTool.text && next != CanvasTool.text) {
+        ref.read(activeTextNodeIdProvider.notifier).state = null;
+      }
       if (previous != next && next != CanvasTool.lasso && next != CanvasTool.smelt) {
         _clearSelectionState();
         _hidePasteMenu();
@@ -1560,6 +1821,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           _lassoPreviewRect = null;
           _selectionRect = null;
           _selectedStrokeIds = {};
+          _selectedTextIds = {};
           _showSelectionMenu = false;
           _isResizingSelection = false;
           _selectionFromDetection = false;
@@ -2102,6 +2364,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       },
       child: Scaffold(
       backgroundColor: ScrapTheme.background,
+      // Keep full canvas height; we pan/scroll text above the keyboard ourselves.
+      resizeToAvoidBottomInset: false,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

@@ -262,7 +262,11 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     final tool = ref.read(activeCanvasToolProvider);
-    if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) return;
+    if (tool == CanvasTool.lasso ||
+        tool == CanvasTool.smelt ||
+        tool == CanvasTool.text) {
+      return;
+    }
     if (tool == CanvasTool.eraser) {
       _beginEraseGesture();
       _setEraserPreview(e.localPosition);
@@ -422,16 +426,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) {
       _tick();
       return;
-    }
-
-    // Text tool: short tap creates a text node (handled by note_editor).
-    if (tool == CanvasTool.text) {
-      final dx = points.last.x - points.first.x;
-      final dy = points.last.y - points.first.y;
-      if (dx * dx + dy * dy < 100) {
-        _tick();
-        return;
-      }
     }
 
     ShapeType shapeType = ShapeType.none;

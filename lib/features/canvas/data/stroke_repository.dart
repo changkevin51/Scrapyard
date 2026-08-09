@@ -2,9 +2,13 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/models/stroke.dart';
+import '../domain/models/canvas_text_item.dart';
 
 class StrokeRepository {
   static Database? _database;
+
+  /// Shared schema version — keep in sync with [CanvasSettingsRepository.dbVersion].
+  static const int dbVersion = 4;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -23,7 +27,7 @@ class StrokeRepository {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: dbVersion,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -39,6 +43,7 @@ class StrokeRepository {
       )
     ''');
     await _createNoteSettings(db);
+    await _createTextNodes(db);
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -47,6 +52,9 @@ class StrokeRepository {
     }
     if (oldVersion < 3) {
       await _migrateNoteSettingsToV3(db);
+    }
+    if (oldVersion < 4) {
+      await _createTextNodes(db);
     }
   }
 
@@ -61,6 +69,17 @@ class StrokeRepository {
         view_x REAL,
         view_y REAL,
         view_scale REAL
+      )
+    ''');
+  }
+
+  Future<void> _createTextNodes(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS text_nodes (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )
     ''');
   }
@@ -82,25 +101,24 @@ class StrokeRepository {
   }
 
   Future<void> saveStrokes(String noteId, List<Stroke> newStrokes) async {
-     final db = await database;
-     final batch = db.batch();
-     final now = DateTime.now().millisecondsSinceEpoch;
+    final db = await database;
+    final batch = db.batch();
+    final now = DateTime.now().millisecondsSinceEpoch;
 
-     // Incremental save: we assume 'newStrokes' only contains strokes not yet saved
-     for (final stroke in newStrokes) {
-       batch.insert(
-         'strokes',
-         {
-           'id': stroke.id,
-           'note_id': noteId,
-           'data': stroke.toJson(),
-           'created_at': now,
-         },
-         conflictAlgorithm: ConflictAlgorithm.replace,
-       );
-     }
-     
-     await batch.commit(noResult: true);
+    for (final stroke in newStrokes) {
+      batch.insert(
+        'strokes',
+        {
+          'id': stroke.id,
+          'note_id': noteId,
+          'data': stroke.toJson(),
+          'created_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+
+    await batch.commit(noResult: true);
   }
 
   Future<void> updateStrokes(String noteId, List<Stroke> updatedStrokes) async {
@@ -127,6 +145,53 @@ class StrokeRepository {
     for (final id in strokeIds) {
       batch.delete(
         'strokes',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveTextNodes(String noteId, List<CanvasTextItem> nodes) async {
+    if (nodes.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final node in nodes) {
+      batch.insert(
+        'text_nodes',
+        {
+          'id': node.id,
+          'note_id': noteId,
+          'data': node.toJson(),
+          'created_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<CanvasTextItem>> loadTextNodes(String noteId) async {
+    final db = await database;
+    final maps = await db.query(
+      'text_nodes',
+      where: 'note_id = ?',
+      whereArgs: [noteId],
+      orderBy: 'created_at ASC',
+    );
+    return List.generate(maps.length, (i) {
+      return CanvasTextItem.fromJson(maps[i]['data'] as String);
+    });
+  }
+
+  Future<void> deleteTextNodes(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final id in ids) {
+      batch.delete(
+        'text_nodes',
         where: 'id = ?',
         whereArgs: [id],
       );

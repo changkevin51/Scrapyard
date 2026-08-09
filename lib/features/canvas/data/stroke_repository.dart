@@ -23,7 +23,7 @@ class StrokeRepository {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -45,6 +45,9 @@ class StrokeRepository {
     if (oldVersion < 2) {
       await _createNoteSettings(db);
     }
+    if (oldVersion < 3) {
+      await _migrateNoteSettingsToV3(db);
+    }
   }
 
   Future<void> _createNoteSettings(Database db) async {
@@ -52,12 +55,29 @@ class StrokeRepository {
       CREATE TABLE IF NOT EXISTS note_settings (
         note_id TEXT PRIMARY KEY,
         page_layout TEXT NOT NULL,
+        is_infinite INTEGER NOT NULL DEFAULT 0,
         home_x REAL,
         home_y REAL,
         view_x REAL,
         view_y REAL,
         view_scale REAL
       )
+    ''');
+  }
+
+  Future<void> _migrateNoteSettingsToV3(Database db) async {
+    final cols = await db.rawQuery('PRAGMA table_info(note_settings)');
+    final hasInfinite =
+        cols.any((c) => (c['name'] as String?) == 'is_infinite');
+    if (!hasInfinite) {
+      await db.execute(
+        'ALTER TABLE note_settings ADD COLUMN is_infinite INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    await db.execute('''
+      UPDATE note_settings
+      SET is_infinite = 1, page_layout = 'grid'
+      WHERE page_layout = 'infinite'
     ''');
   }
 

@@ -1173,7 +1173,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
   @override
   Widget build(BuildContext context) {
     final strokes = ref.watch(strokesProvider);
-    final pageLayout = ref.watch(pageLayoutProvider);
+    final pageConfig = ref.watch(pageLayoutProvider);
+    final pageStyle = pageConfig.style;
     final penSettings = ref.watch(penSettingsProvider);
     final activeTool = ref.watch(activeCanvasToolProvider);
     final widthMod = ref.watch(strokeWidthModifierProvider);
@@ -1252,7 +1253,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
             CustomPaint(
               painter: _HighlightLayerPainter(
                 strokes: hlStrokes,
-                pageLayout: pageLayout,
+                pageLayout: pageStyle,
                 cache: _hlCache,
                 infiniteCache: _infiniteHlCache,
                 allStrokes: strokes,
@@ -1777,11 +1778,6 @@ void _drawPageLines(Canvas canvas, Size size, PageLayout pageLayout) {
     for (double y = 72; y < size.height; y += 36) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
     }
-    final marginPaint = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.10)
-      ..strokeWidth = 1.0;
-    canvas.drawLine(
-        const Offset(56, 0), Offset(56, size.height), marginPaint);
   } else if (pageLayout == PageLayout.grid) {
     for (double y = 36; y < size.height; y += 36) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
@@ -1817,10 +1813,7 @@ void _drawInfinitePageLines(
   Rect visible,
   PageLayout pageLayout,
 ) {
-  // Prefer a subtle grid even when the note was converted from plain/ruled.
-  final style = pageLayout == PageLayout.infinite || pageLayout == PageLayout.plain
-      ? PageLayout.grid
-      : pageLayout;
+  if (pageLayout == PageLayout.plain) return;
 
   const spacing = 36.0;
   // Skip subdivisions when cells would be tiny on screen.
@@ -1835,7 +1828,7 @@ void _drawInfinitePageLines(
   final right = visible.right;
   final bottom = visible.bottom;
 
-  if (style == PageLayout.dotted) {
+  if (pageLayout == PageLayout.dotted) {
     final dp = Paint()
       ..color = ScrapTheme.notebookLines.withValues(alpha: 0.7)
       ..style = PaintingStyle.fill;
@@ -1848,7 +1841,7 @@ void _drawInfinitePageLines(
     return;
   }
 
-  if (style == PageLayout.ruled) {
+  if (pageLayout == PageLayout.ruled) {
     for (double y = top; y <= bottom; y += spacing) {
       final a = vp.toScreen(Offset(visible.left, y));
       final b = vp.toScreen(Offset(visible.right, y));
@@ -1857,7 +1850,7 @@ void _drawInfinitePageLines(
     return;
   }
 
-  // Grid (default for infinite)
+  // Grid
   for (double y = top; y <= bottom; y += spacing) {
     final a = vp.toScreen(Offset(visible.left, y));
     final b = vp.toScreen(Offset(visible.right, y));

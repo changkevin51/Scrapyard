@@ -1027,45 +1027,49 @@ class _CanvasSettingsSheet extends ConsumerWidget {
   Future<void> _onPageStyleTap(
     BuildContext context,
     WidgetRef ref,
-    PageLayout current,
-    PageLayout next,
+    PageCanvasConfig current,
+    PageLayout style,
   ) async {
-    if (next == current) return;
-    if (current.isInfinite) return; // locked
+    if (style == current.style) return;
+    await ref.read(pageLayoutProvider.notifier).setStyle(style);
+  }
 
-    if (next.isInfinite) {
-      final confirmed = await showScrapDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: ScrapTheme.cardSurface,
-          title: Text('Switch to Infinite?', style: ScrapTextStyles.heading),
-          content: Text(
-            'Once enabled, you cannot convert this note back to Plain, Ruled, '
-            'Dotted, or Grid. Pan and zoom freely on an unbounded canvas.',
-            style: ScrapTextStyles.body,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: ScrapTextStyles.body),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(
-                'Enable Infinite',
-                style: ScrapTextStyles.body.copyWith(color: ScrapTheme.accent),
-              ),
-            ),
-          ],
+  Future<void> _onInfiniteTap(
+    BuildContext context,
+    WidgetRef ref,
+    PageCanvasConfig current,
+  ) async {
+    if (current.isInfinite) return; // already locked on
+
+    final confirmed = await showScrapDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ScrapTheme.cardSurface,
+        title: Text('Switch to Infinite?', style: ScrapTextStyles.heading),
+        content: Text(
+          'Once enabled, you cannot return this note to a fixed page size. '
+          'You can still change the background style (Plain, Ruled, Dotted, or Grid). '
+          'Pan and zoom freely on an unbounded canvas.',
+          style: ScrapTextStyles.body,
         ),
-      );
-      if (confirmed == true) {
-        await ref.read(pageLayoutProvider.notifier).convertToInfinite();
-      }
-      return;
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: ScrapTextStyles.body),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Enable Infinite',
+              style: ScrapTextStyles.body.copyWith(color: ScrapTheme.accent),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(pageLayoutProvider.notifier).convertToInfinite();
     }
-
-    await ref.read(pageLayoutProvider.notifier).setFinite(next);
   }
 
   @override
@@ -1145,24 +1149,36 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: PageLayout.values.map((l) {
-                final sel = l == layout;
-                final disabled = lockedInfinite && l.isFinite;
-                return Opacity(
-                  opacity: disabled ? 0.4 : 1,
-                  child: GestureDetector(
-                    onTap: disabled
-                        ? null
-                        : () => _onPageStyleTap(context, ref, layout, l),
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                ...PageLayout.values.map((l) {
+                  final sel = l == layout.style;
+                  return GestureDetector(
+                    onTap: () => _onPageStyleTap(context, ref, layout, l),
                     child: _chip(l.chipLabel, sel),
+                  );
+                }),
+                Container(
+                  width: 1,
+                  height: 22,
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  color: ScrapTheme.dividers,
+                ),
+                Opacity(
+                  opacity: lockedInfinite ? 0.55 : 1,
+                  child: GestureDetector(
+                    onTap: lockedInfinite
+                        ? null
+                        : () => _onInfiniteTap(context, ref, layout),
+                    child: _chip('INFINITE', lockedInfinite),
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
             if (lockedInfinite) ...[
               const SizedBox(height: 8),
               Text(
-                'Infinite is locked for this note — other page styles are disabled.',
+                'Infinite is locked for this note — you cannot return to a fixed page size.',
                 style: ScrapTextStyles.caption
                     .copyWith(color: ScrapTheme.mutedText),
               ),
@@ -1190,7 +1206,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             Text(
               lockedInfinite
                   ? 'Jump to your first stroke (home anchor).'
-                  : 'Available only in Infinite page style.',
+                  : 'Available only in Infinite mode.',
               style: ScrapTextStyles.caption
                   .copyWith(color: ScrapTheme.mutedText),
             ),

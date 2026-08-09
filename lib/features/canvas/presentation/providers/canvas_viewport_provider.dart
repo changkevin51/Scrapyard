@@ -28,7 +28,7 @@ class CanvasViewportNotifier extends StateNotifier<CanvasViewport> {
     _ref.listen<String>(activeNoteIdProvider, (prev, next) {
       if (prev != next) _loadForNote(next);
     });
-    _ref.listen<PageLayout>(pageLayoutProvider, (prev, next) {
+    _ref.listen<PageCanvasConfig>(pageLayoutProvider, (prev, next) {
       if (next.isInfinite && prev?.isInfinite != true) {
         _onEnteredInfinite();
       }

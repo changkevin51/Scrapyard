@@ -8,7 +8,7 @@ import '../domain/models/page_layout.dart';
 /// Persisted per-note canvas settings (page layout, home anchor, last view).
 class NoteCanvasSettings {
   final String noteId;
-  final PageLayout pageLayout;
+  final PageCanvasConfig pageConfig;
   final double? homeX;
   final double? homeY;
   final double? viewX;
@@ -17,7 +17,7 @@ class NoteCanvasSettings {
 
   const NoteCanvasSettings({
     required this.noteId,
-    required this.pageLayout,
+    required this.pageConfig,
     this.homeX,
     this.homeY,
     this.viewX,
@@ -25,10 +25,13 @@ class NoteCanvasSettings {
     this.viewScale,
   });
 
+  PageLayout get pageLayout => pageConfig.style;
+  bool get isInfinite => pageConfig.isInfinite;
+
   bool get hasHome => homeX != null && homeY != null;
 
   NoteCanvasSettings copyWith({
-    PageLayout? pageLayout,
+    PageCanvasConfig? pageConfig,
     double? homeX,
     double? homeY,
     double? viewX,
@@ -38,7 +41,7 @@ class NoteCanvasSettings {
   }) =>
       NoteCanvasSettings(
         noteId: noteId,
-        pageLayout: pageLayout ?? this.pageLayout,
+        pageConfig: pageConfig ?? this.pageConfig,
         homeX: clearHome ? null : (homeX ?? this.homeX),
         homeY: clearHome ? null : (homeY ?? this.homeY),
         viewX: viewX ?? this.viewX,
@@ -51,7 +54,14 @@ class NoteCanvasSettings {
 /// app-wide default page style in SharedPreferences.
 class CanvasSettingsRepository {
   static const prefsKeyDefaultPageStyle = 'canvas_default_page_style';
+  static const prefsKeyDefaultInfinite = 'canvas_default_infinite';
   static const PageLayout defaultPageLayout = PageLayout.grid;
+  static const PageCanvasConfig defaultPageConfig = PageCanvasConfig(
+    style: defaultPageLayout,
+  );
+
+  /// Shared DB schema version (must match [StrokeRepository]).
+  static const int dbVersion = 3;
 
   static Database? _database;
 
@@ -74,7 +84,7 @@ class CanvasSettingsRepository {
 
     return openDatabase(
       path,
-      version: 2,
+      version: dbVersion,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE strokes (
@@ -90,6 +100,9 @@ class CanvasSettingsRepository {
         if (oldVersion < 2) {
           await _createNoteSettings(db);
         }
+        if (oldVersion < 3) {
+          await _migrateToV3(db);
+        }
       },
     );
   }
@@ -99,6 +112,7 @@ class CanvasSettingsRepository {
       CREATE TABLE IF NOT EXISTS note_settings (
         note_id TEXT PRIMARY KEY,
         page_layout TEXT NOT NULL,
+        is_infinite INTEGER NOT NULL DEFAULT 0,
         home_x REAL,
         home_y REAL,
         view_x REAL,
@@ -108,15 +122,38 @@ class CanvasSettingsRepository {
     ''');
   }
 
-  Future<PageLayout> loadDefaultPageLayout() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(prefsKeyDefaultPageStyle);
-    return _parseLayout(raw) ?? defaultPageLayout;
+  /// Split legacy `page_layout = 'infinite'` into style + is_infinite flag.
+  static Future<void> _migrateToV3(Database db) async {
+    final cols = await db.rawQuery('PRAGMA table_info(note_settings)');
+    final hasInfinite =
+        cols.any((c) => (c['name'] as String?) == 'is_infinite');
+    if (!hasInfinite) {
+      await db.execute(
+        'ALTER TABLE note_settings ADD COLUMN is_infinite INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    await db.execute('''
+      UPDATE note_settings
+      SET is_infinite = 1, page_layout = 'grid'
+      WHERE page_layout = 'infinite'
+    ''');
   }
 
-  Future<void> saveDefaultPageLayout(PageLayout layout) async {
+  Future<PageCanvasConfig> loadDefaultPageConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(prefsKeyDefaultPageStyle, layout.name);
+    final raw = prefs.getString(prefsKeyDefaultPageStyle);
+    final style = _parseStyle(raw) ?? defaultPageLayout;
+    // Legacy: style key stored as "infinite" meant infinite + grid.
+    final legacyInfinite = raw == 'infinite';
+    final infinite =
+        prefs.getBool(prefsKeyDefaultInfinite) ?? legacyInfinite;
+    return PageCanvasConfig(style: style, isInfinite: infinite);
+  }
+
+  Future<void> saveDefaultPageConfig(PageCanvasConfig config) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(prefsKeyDefaultPageStyle, config.style.name);
+    await prefs.setBool(prefsKeyDefaultInfinite, config.isInfinite);
   }
 
   Future<NoteCanvasSettings?> loadNoteSettings(String noteId) async {
@@ -129,11 +166,15 @@ class CanvasSettingsRepository {
     );
     if (rows.isEmpty) return null;
     final row = rows.first;
-    final layout =
-        _parseLayout(row['page_layout'] as String?) ?? defaultPageLayout;
+    final rawLayout = row['page_layout'] as String?;
+    final style = _parseStyle(rawLayout) ?? defaultPageLayout;
+    final infiniteCol = row['is_infinite'];
+    final isInfinite = infiniteCol is int
+        ? infiniteCol != 0
+        : rawLayout == 'infinite';
     return NoteCanvasSettings(
       noteId: noteId,
-      pageLayout: layout,
+      pageConfig: PageCanvasConfig(style: style, isInfinite: isInfinite),
       homeX: (row['home_x'] as num?)?.toDouble(),
       homeY: (row['home_y'] as num?)?.toDouble(),
       viewX: (row['view_x'] as num?)?.toDouble(),
@@ -148,7 +189,8 @@ class CanvasSettingsRepository {
       'note_settings',
       {
         'note_id': settings.noteId,
-        'page_layout': settings.pageLayout.name,
+        'page_layout': settings.pageConfig.style.name,
+        'is_infinite': settings.pageConfig.isInfinite ? 1 : 0,
         'home_x': settings.homeX,
         'home_y': settings.homeY,
         'view_x': settings.viewX,
@@ -159,21 +201,22 @@ class CanvasSettingsRepository {
     );
   }
 
-  Future<void> upsertPageLayout(String noteId, PageLayout layout) async {
+  Future<void> upsertPageConfig(String noteId, PageCanvasConfig config) async {
     final existing = await loadNoteSettings(noteId);
     await saveNoteSettings(
-      (existing ?? NoteCanvasSettings(noteId: noteId, pageLayout: layout))
-          .copyWith(pageLayout: layout),
+      (existing ?? NoteCanvasSettings(noteId: noteId, pageConfig: config))
+          .copyWith(pageConfig: config),
     );
   }
 
   Future<void> upsertHome(String noteId, double x, double y) async {
     final existing = await loadNoteSettings(noteId);
-    final layout = existing?.pageLayout ?? PageLayout.infinite;
+    final config = existing?.pageConfig ??
+        const PageCanvasConfig(style: PageLayout.grid, isInfinite: true);
     await saveNoteSettings(
       NoteCanvasSettings(
         noteId: noteId,
-        pageLayout: layout,
+        pageConfig: config,
         homeX: x,
         homeY: y,
         viewX: existing?.viewX,
@@ -190,11 +233,12 @@ class CanvasSettingsRepository {
     required double scale,
   }) async {
     final existing = await loadNoteSettings(noteId);
-    final layout = existing?.pageLayout ?? PageLayout.infinite;
+    final config = existing?.pageConfig ??
+        const PageCanvasConfig(style: PageLayout.grid, isInfinite: true);
     await saveNoteSettings(
       NoteCanvasSettings(
         noteId: noteId,
-        pageLayout: layout,
+        pageConfig: config,
         homeX: existing?.homeX,
         homeY: existing?.homeY,
         viewX: x,
@@ -204,8 +248,10 @@ class CanvasSettingsRepository {
     );
   }
 
-  static PageLayout? _parseLayout(String? raw) {
+  static PageLayout? _parseStyle(String? raw) {
     if (raw == null) return null;
+    // Legacy infinite-as-layout → grid background.
+    if (raw == 'infinite') return PageLayout.grid;
     for (final v in PageLayout.values) {
       if (v.name == raw) return v;
     }

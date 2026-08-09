@@ -122,35 +122,35 @@ final canvasSettingsRepositoryProvider =
 
 /// App-wide default for new notes. Loaded from SharedPreferences (ships as Grid).
 final defaultPageLayoutProvider =
-    StateNotifierProvider<DefaultPageLayoutNotifier, PageLayout>((ref) {
+    StateNotifierProvider<DefaultPageLayoutNotifier, PageCanvasConfig>((ref) {
   return DefaultPageLayoutNotifier(ref.watch(canvasSettingsRepositoryProvider));
 });
 
-class DefaultPageLayoutNotifier extends StateNotifier<PageLayout> {
+class DefaultPageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
   DefaultPageLayoutNotifier(this._repo)
-      : super(CanvasSettingsRepository.defaultPageLayout) {
+      : super(CanvasSettingsRepository.defaultPageConfig) {
     _load();
   }
 
   final CanvasSettingsRepository _repo;
 
   Future<void> _load() async {
-    state = await _repo.loadDefaultPageLayout();
+    state = await _repo.loadDefaultPageConfig();
   }
 
-  Future<void> set(PageLayout layout) async {
-    state = layout;
-    await _repo.saveDefaultPageLayout(layout);
+  Future<void> set(PageCanvasConfig config) async {
+    state = config;
+    await _repo.saveDefaultPageConfig(config);
   }
 }
 
-/// Active note's page layout. Persisted per note; falls back to the app default.
+/// Active note's page config. Persisted per note; falls back to the app default.
 final pageLayoutProvider =
-    StateNotifierProvider<PageLayoutNotifier, PageLayout>((ref) {
+    StateNotifierProvider<PageLayoutNotifier, PageCanvasConfig>((ref) {
   return PageLayoutNotifier(ref);
 });
 
-class PageLayoutNotifier extends StateNotifier<PageLayout> {
+class PageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
   PageLayoutNotifier(this._ref)
       : super(_ref.read(defaultPageLayoutProvider)) {
     _loadForActiveNote();
@@ -167,7 +167,7 @@ class PageLayoutNotifier extends StateNotifier<PageLayout> {
     final saved = await repo.loadNoteSettings(noteId);
     if (_loadedNoteId != noteId) return;
     if (saved != null) {
-      state = saved.pageLayout;
+      state = saved.pageConfig;
     } else {
       final fallback = _ref.read(defaultPageLayoutProvider);
       state = fallback;
@@ -175,38 +175,33 @@ class PageLayoutNotifier extends StateNotifier<PageLayout> {
       final ephemeral =
           _ref.read(ephemeralNoteIdsProvider).contains(noteId);
       if (!ephemeral) {
-        await repo.upsertPageLayout(noteId, fallback);
+        await repo.upsertPageConfig(noteId, fallback);
       }
     }
   }
 
-  /// Switch to a finite style. No-ops if already locked to infinite.
-  Future<void> setFinite(PageLayout layout) async {
-    if (!layout.isFinite) return;
-    if (state.isInfinite) return;
-    state = layout;
+  Future<void> _persist(PageCanvasConfig config) async {
+    state = config;
     final noteId = _ref.read(activeNoteIdProvider);
     final ephemeral =
         _ref.read(ephemeralNoteIdsProvider).contains(noteId);
     if (!ephemeral) {
       await _ref
           .read(canvasSettingsRepositoryProvider)
-          .upsertPageLayout(noteId, layout);
+          .upsertPageConfig(noteId, config);
     }
   }
 
-  /// One-way conversion to infinite canvas. Persists immediately.
+  /// Change background pattern only (keeps infinite / fixed dimension).
+  Future<void> setStyle(PageLayout style) async {
+    if (state.style == style) return;
+    await _persist(state.copyWith(style: style));
+  }
+
+  /// One-way conversion to infinite canvas. Keeps the current background style.
   Future<void> convertToInfinite() async {
     if (state.isInfinite) return;
-    state = PageLayout.infinite;
-    final noteId = _ref.read(activeNoteIdProvider);
-    final ephemeral =
-        _ref.read(ephemeralNoteIdsProvider).contains(noteId);
-    if (!ephemeral) {
-      await _ref
-          .read(canvasSettingsRepositoryProvider)
-          .upsertPageLayout(noteId, PageLayout.infinite);
-    }
+    await _persist(state.copyWith(isInfinite: true));
   }
 }
 

@@ -97,9 +97,7 @@ class CanvasToolbar extends ConsumerWidget {
     final palette      = ref.watch(inkPaletteProvider);
     final isHorizontal = position == ToolbarPosition.top || position == ToolbarPosition.bottom;
 
-    final children = <Widget>[
-      // ── Draw / Scroll mode toggle ──────────────────────
-      _ModeToggle(isPenMode: isPenMode),
+    final centeredChildren = <Widget>[
       _sep(isHorizontal),
 
       // ── All drawing tools – always exposed ─────────────
@@ -177,12 +175,54 @@ class CanvasToolbar extends ConsumerWidget {
                 left: position == ToolbarPosition.right ? dividerEdge : BorderSide.none,
               ),
             ),
-      child: SingleChildScrollView(
-        scrollDirection: isHorizontal ? Axis.horizontal : Axis.vertical,
-        child: isHorizontal
-            ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: children)
-            : Column(crossAxisAlignment: CrossAxisAlignment.center, children: children),
-      ),
+      child: isHorizontal
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _ModeToggle(isPenMode: isPenMode),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(minWidth: constraints.maxWidth),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: centeredChildren,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _ModeToggle(isPenMode: isPenMode),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(minHeight: constraints.maxHeight),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: centeredChildren,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 

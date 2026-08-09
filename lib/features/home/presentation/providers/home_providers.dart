@@ -52,6 +52,12 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
      return node;
   }
 
+  Future<HomeNode> insertNote(HomeNode node) async {
+    await _repository.insertNode(node);
+    await _loadNodes();
+    return node;
+  }
+
   Future<void> importDocument() async {
      FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -87,6 +93,18 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
     if (trimmed.isEmpty || trimmed == node.title) return;
     final updated = node.copyWith(title: trimmed, updatedAt: DateTime.now());
     await _repository.updateNode(updated);
+    await _loadNodes();
+  }
+
+  Future<void> refresh() => _loadNodes();
+
+  /// Persist last-edited times for notes whose canvas content changed.
+  Future<void> touchNotes(Iterable<String> ids) async {
+    final unique = ids.toSet();
+    if (unique.isEmpty) return;
+    for (final id in unique) {
+      await _repository.touchUpdatedAt(id);
+    }
     await _loadNodes();
   }
 }

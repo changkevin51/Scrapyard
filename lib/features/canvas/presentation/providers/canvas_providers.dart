@@ -232,13 +232,23 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   final StrokeRepository _repository;
   final String _noteId;
   final bool _ephemeral;
+  final void Function(String noteId)? _onContentChanged;
   final List<List<Stroke>> _undoStack = [];
   final List<List<Stroke>> _redoStack = [];
 
-  StrokesNotifier(this._repository, this._noteId, {bool ephemeral = false})
-      : _ephemeral = ephemeral,
+  StrokesNotifier(
+    this._repository,
+    this._noteId, {
+    bool ephemeral = false,
+    void Function(String noteId)? onContentChanged,
+  })  : _ephemeral = ephemeral,
+        _onContentChanged = onContentChanged,
         super([]) {
     if (!_ephemeral) _loadStrokes();
+  }
+
+  void _markContentChanged() {
+    if (!_ephemeral) _onContentChanged?.call(_noteId);
   }
 
   Future<void> _loadStrokes() async {
@@ -258,6 +268,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     // Loose scraps stay in memory only — never filed to disk.
     if (!_ephemeral) {
       _repository.saveStrokes(_noteId, [stroke]);
+      _markContentChanged();
     }
   }
 
@@ -296,6 +307,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     }).toList();
     if (!_ephemeral && updated.isNotEmpty) {
       _repository.updateStrokes(_noteId, updated);
+      _markContentChanged();
     }
   }
 
@@ -313,6 +325,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
 
     if (!_ephemeral) {
       _repository.updateStrokes(_noteId, updatedStrokes);
+      _markContentChanged();
     }
   }
 
@@ -326,6 +339,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     state = state.where((stroke) => !ids.contains(stroke.id)).toList();
     if (!_ephemeral) {
       _repository.deleteStrokes(ids);
+      _markContentChanged();
     }
   }
 
@@ -384,6 +398,11 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
       if (deleteIds.isNotEmpty) {
         _repository.deleteStrokes(deleteIds);
       }
+      if (persistedUpdates.isNotEmpty ||
+          additions.isNotEmpty ||
+          deleteIds.isNotEmpty) {
+        _markContentChanged();
+      }
     }
   }
 }
@@ -393,6 +412,10 @@ final activeNoteIdProvider = StateProvider<String>((ref) => 'mock-note-id');
 /// Note ids that exist only in memory — discarded when the editor closes.
 final ephemeralNoteIdsProvider = StateProvider<Set<String>>((ref) => {});
 
+/// Filed notes whose canvas content changed during this editor session.
+/// Home bumps [HomeNode.updatedAt] from this set when returning from the editor.
+final dirtyNoteIdsProvider = StateProvider<Set<String>>((ref) => {});
+
 final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
@@ -400,7 +423,14 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
   // Callers must register the id in [ephemeralNoteIdsProvider] before flipping
   // [activeNoteIdProvider].
   final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
-  return StrokesNotifier(repo, noteId, ephemeral: ephemeral);
+  return StrokesNotifier(
+    repo,
+    noteId,
+    ephemeral: ephemeral,
+    onContentChanged: (id) {
+      ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
+    },
+  );
 });
 
 final isPenModeActiveProvider = StateProvider<bool>((ref) => true);

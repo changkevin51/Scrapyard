@@ -25,6 +25,7 @@ import '../widgets/canvas_toolbar.dart';
 import '../widgets/canvas_smart_widgets.dart';
 import '../widgets/canvas_text_sticker.dart';
 import '../widgets/document_tab_bar.dart';
+import '../widgets/pending_scrap_flow.dart';
 import '../widgets/sticker_library.dart';
 import '../../domain/models/stroke.dart';
 import '../../data/canvas_ocr_service.dart';
@@ -1616,6 +1617,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     final strokes = ref.watch(strokesProvider);
 
+    final activeNoteId = ref.watch(activeNoteIdProvider);
+    final isLooseScrap = ref
+        .watch(ephemeralNoteIdsProvider)
+        .contains(activeNoteId) &&
+        !ref.watch(pendingNewScrapsProvider).containsKey(activeNoteId);
+
     final worldAnnotations = <Widget>[
       if (strokes.isEmpty && !isInfinite)
         Positioned(
@@ -1623,9 +1630,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           left: 0,
           right: 0,
           child: _FreshScrapHint(
-            ephemeral: ref
-                .watch(ephemeralNoteIdsProvider)
-                .contains(ref.watch(activeNoteIdProvider)),
+            ephemeral: isLooseScrap,
           ),
         ),
       ...ref.watch(canvasTextNodesProvider).map(
@@ -2011,9 +2016,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
               right: 0,
               child: IgnorePointer(
                 child: _FreshScrapHint(
-                  ephemeral: ref
-                      .watch(ephemeralNoteIdsProvider)
-                      .contains(ref.watch(activeNoteIdProvider)),
+                  ephemeral: isLooseScrap,
                 ),
               ),
             ),
@@ -2087,7 +2090,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         break;
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final canLeave =
+            await resolvePendingScrapsBeforeLeaving(context, ref);
+        if (canLeave && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
       backgroundColor: ScrapTheme.background,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2103,6 +2116,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           const AiChatPanel(),
         ],
       ),
+    ),
     );
   }
 }

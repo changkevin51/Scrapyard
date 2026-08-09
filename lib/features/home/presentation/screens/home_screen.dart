@@ -22,6 +22,7 @@ import '../providers/home_providers.dart' show
     scrapThumbnailPreloaderProvider;
 import '../widgets/scrap_thumbnail.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
+import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
 import '../../../splash/presentation/providers/splash_providers.dart';
@@ -101,16 +102,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _createAndOpenScrap() async {
-    final node = await ref
-        .read(currentHomeNodesProvider.notifier)
-        .createNote('Untitled Scrap');
+    final folderId = ref.read(currentFolderIdProvider);
+    final node = HomeNode.create(
+      title: 'New scrap',
+      type: NodeType.note,
+      parentId: folderId,
+    );
     if (!mounted) return;
+    ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m, node.id: node});
     ref.read(activeNoteIdProvider.notifier).state = node.id;
-    openNoteTab(ref, node.id, node.title);
-    context.push('/note_editor').then((_) {
-      invalidateNoteThumbnail(ref, node.id);
-      discardAllEphemeralNotes(ref);
-    });
+    openNoteTab(ref, node.id, node.title, ephemeral: true);
+    context.push('/note_editor').then((_) => _onNoteEditorClosed(node.id));
   }
 
   void _openLooseScrap() {
@@ -120,10 +122,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     context.push('/note_editor').then((_) {
       final hadLoose = ref.read(ephemeralNoteIdsProvider).isNotEmpty;
       discardAllEphemeralNotes(ref);
+      ref.read(dirtyNoteIdsProvider.notifier).state = {};
       if (hadLoose && mounted) {
         showPaperToast(context, 'Loose scrap drifted off');
       }
     });
+  }
+
+  /// Refresh home timestamps/thumbnails after canvas edits.
+  Future<void> _onNoteEditorClosed(String noteId) async {
+    final dirty = ref.read(dirtyNoteIdsProvider);
+    final ephemeral = ref.read(ephemeralNoteIdsProvider);
+    final toTouch = dirty.where((id) => !ephemeral.contains(id)).toSet();
+
+    if (toTouch.isNotEmpty) {
+      await ref.read(currentHomeNodesProvider.notifier).touchNotes(toTouch);
+      for (final id in toTouch) {
+        invalidateNoteThumbnail(ref, id);
+      }
+    } else {
+      invalidateNoteThumbnail(ref, noteId);
+    }
+
+    ref.read(dirtyNoteIdsProvider.notifier).state = {};
+    ref.read(pendingNewScrapsProvider.notifier).state = {};
+    discardAllEphemeralNotes(ref);
   }
 
   @override
@@ -517,10 +540,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // loads this specific note's strokes.
           ref.read(activeNoteIdProvider.notifier).state = node.id;
           openNoteTab(ref, node.id, node.title);
-          context.push('/note_editor').then((_) {
-            invalidateNoteThumbnail(ref, node.id);
-            discardAllEphemeralNotes(ref);
-          });
+          context.push('/note_editor').then((_) => _onNoteEditorClosed(node.id));
         }
       },
       child: node.type == NodeType.folder

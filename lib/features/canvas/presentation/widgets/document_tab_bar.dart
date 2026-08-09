@@ -4,6 +4,7 @@ import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../providers/canvas_providers.dart';
+import 'pending_scrap_flow.dart';
 
 // ─────────────────────────────────────────────────────────────────
 // Document Tab Bar
@@ -22,6 +23,7 @@ class DocumentTabBar extends ConsumerWidget {
     final activeId = ref.watch(activeTabIdProvider);
     final groups   = ref.watch(tabGroupsProvider);
     final ephemeralIds = ref.watch(ephemeralNoteIdsProvider);
+    final pendingIds = ref.watch(pendingNewScrapsProvider).keys.toSet();
 
     if (tabs.isEmpty) return const SizedBox.shrink();
 
@@ -33,7 +35,8 @@ class DocumentTabBar extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          // Back button - navigate to home
+          // Back button - navigate to home (PopScope on NoteEditorScreen
+          // prompts to name or discard pending new scraps before leaving).
           _BackHomeButton(
             onTap: () => Navigator.of(context).pop(),
           ),
@@ -46,17 +49,29 @@ class DocumentTabBar extends ConsumerWidget {
                 final tab      = tabs[i];
                 final isActive = tab.id == activeId;
                 final isEphemeral = ephemeralIds.contains(tab.id);
+                final isPending = pendingIds.contains(tab.id);
                 final group    = groups.firstWhereOrNull((g) => g.id == tab.groupId);
                 return _TabChip(
                   tab: tab,
                   isActive: isActive,
                   isEphemeral: isEphemeral,
+                  isPending: isPending,
                   groupName: group?.name,
                   onTap: () {
                     ref.read(activeTabIdProvider.notifier).state = tab.id;
                     ref.read(activeNoteIdProvider.notifier).state = tab.id;
                   },
-                  onClose: () {
+                  onClose: () async {
+                    if (isPending) {
+                      if (activeId != tab.id) {
+                        ref.read(activeTabIdProvider.notifier).state = tab.id;
+                        ref.read(activeNoteIdProvider.notifier).state = tab.id;
+                      }
+                      final resolved =
+                          await resolvePendingScrapForTab(ctx, ref, tab.id);
+                      if (!resolved) return;
+                      return;
+                    }
                     if (isEphemeral) {
                       discardEphemeralNote(ref, tab.id);
                       return;
@@ -118,15 +133,17 @@ class _TabChip extends StatelessWidget {
   final OpenedTab tab;
   final bool isActive;
   final bool isEphemeral;
+  final bool isPending;
   final String? groupName;
   final VoidCallback onTap;
-  final VoidCallback onClose;
+  final Future<void> Function() onClose;
   final VoidCallback onLongPress;
 
   const _TabChip({
     required this.tab,
     required this.isActive,
     required this.isEphemeral,
+    required this.isPending,
     required this.onTap,
     required this.onClose,
     required this.onLongPress,
@@ -135,7 +152,8 @@ class _TabChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderStyle = isEphemeral
+    final isLooseScrap = isEphemeral && !isPending;
+    final borderStyle = isLooseScrap
         ? Border(
             top: BorderSide(
               color: isActive
@@ -181,11 +199,11 @@ class _TabChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
         decoration: BoxDecoration(
           color: isActive
-              ? (isEphemeral
+              ? (isLooseScrap
                   ? ScrapTheme.codeSurface
                   : ScrapTheme.cardSurface)
               : ScrapTheme.codeSurface.withValues(
-                  alpha: isEphemeral ? 0.65 : 1,
+                  alpha: isLooseScrap ? 0.65 : 1,
                 ),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
           border: borderStyle,
@@ -193,7 +211,7 @@ class _TabChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isEphemeral) ...[
+            if (isLooseScrap) ...[
               Text(
                 '~',
                 style: ScrapTextStyles.stamp.copyWith(
@@ -210,18 +228,18 @@ class _TabChip extends StatelessWidget {
                 style: isActive
                     ? ScrapTextStyles.body.copyWith(
                         fontSize: 12,
-                        color: isEphemeral
+                        color: isLooseScrap
                             ? ScrapTheme.secondaryText
                             : ScrapTheme.primaryText,
                         fontWeight: FontWeight.w600,
-                        fontStyle: isEphemeral
+                        fontStyle: isLooseScrap
                             ? FontStyle.italic
                             : FontStyle.normal,
                       )
                     : ScrapTextStyles.stamp.copyWith(
                         fontSize: 10,
                         color: ScrapTheme.secondaryText,
-                        fontStyle: isEphemeral
+                        fontStyle: isLooseScrap
                             ? FontStyle.italic
                             : FontStyle.normal,
                       ),
@@ -238,7 +256,7 @@ class _TabChip extends StatelessWidget {
             ],
             const SizedBox(width: 6),
             GestureDetector(
-              onTap: onClose,
+              onTap: () => onClose(),
               child: Icon(
                 Icons.close,
                 size: 12,
@@ -268,6 +286,8 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
   Widget build(BuildContext context) {
     final isEphemeral =
         ref.watch(ephemeralNoteIdsProvider).contains(widget.tab.id);
+    final isPending = isPendingNewScrap(ref, widget.tab.id);
+    final isLooseScrap = isEphemeral && !isPending;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 20, 28, 36),
@@ -299,7 +319,16 @@ class _TabMenuSheetState extends ConsumerState<_TabMenuSheet> {
             Navigator.pop(context);
             _groupDialog(context);
           }),
-          if (isEphemeral)
+          if (isPending)
+            _MenuItem(
+              icon: Icons.drive_file_rename_outline,
+              label: 'Name & file scrap',
+              onTap: () async {
+                Navigator.pop(context);
+                await resolvePendingScrapForTab(context, ref, widget.tab.id);
+              },
+            )
+          else if (isLooseScrap)
             _MenuItem(
               icon: Icons.delete_outline,
               label: 'Crush loose scrap',

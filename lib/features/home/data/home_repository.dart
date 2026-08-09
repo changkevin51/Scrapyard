@@ -87,6 +87,17 @@ class HomeRepository {
     );
   }
 
+  /// Bump [updated_at] without loading the full row (e.g. after canvas edits).
+  Future<void> touchUpdatedAt(String id) async {
+    final db = await database;
+    await db.update(
+      _tableName,
+      {'updated_at': DateTime.now().toIso8601String()},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<void> deleteNode(String id) async {
     final db = await database;
     

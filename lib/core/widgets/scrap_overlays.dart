@@ -41,10 +41,36 @@ Future<T?> showScrapDialog<T>({
       );
       final viewInsets = MediaQuery.viewInsetsOf(context);
       final safePadding = MediaQuery.paddingOf(context);
-      final maxHeight = MediaQuery.sizeOf(context).height -
+      final screenHeight = MediaQuery.sizeOf(context).height;
+      final keyboardOpen = viewInsets.bottom > 0;
+      final maxHeight = screenHeight -
           viewInsets.bottom -
           safePadding.top -
           48;
+
+      final dialog = ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: maxHeight,
+          maxWidth: 560,
+        ),
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.02),
+            end: Offset.zero,
+          ).animate(curved),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+            child: AnimatedBuilder(
+              animation: settle,
+              builder: (context, child) => Transform.rotate(
+                angle: settle.value,
+                child: child,
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      );
 
       return Stack(
         children: [
@@ -54,39 +80,21 @@ Future<T?> showScrapDialog<T>({
               child: ColoredBox(color: scrim),
             ),
           ),
-          Center(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                24,
-                24,
-                24,
-                24 + viewInsets.bottom,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: maxHeight,
-                  maxWidth: 560,
-                ),
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, -0.02),
-                    end: Offset.zero,
-                  ).animate(curved),
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-                    child: AnimatedBuilder(
-                      animation: settle,
-                      builder: (context, child) => Transform.rotate(
-                        angle: settle.value,
-                        child: child,
-                      ),
-                      child: child,
-                    ),
-                  ),
-                ),
+          if (keyboardOpen)
+            // Anchor above the keyboard so the dialog doesn't jump when typing.
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: viewInsets.bottom + 16,
+              child: dialog,
+            )
+          else
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: dialog,
               ),
             ),
-          ),
         ],
       );
     },

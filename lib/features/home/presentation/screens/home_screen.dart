@@ -11,6 +11,7 @@ import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_tilt.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
+import '../../../../core/widgets/scrap_crush.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/home_node.dart';
@@ -37,6 +38,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _bannerDismissed = false;
   String? _lastWarmedFolderKey;
+  final Map<String, GlobalKey> _crushKeys = {};
 
   @override
   void initState() {
@@ -492,6 +494,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   stagger:
                                       const Duration(milliseconds: 28),
                                   child: RepaintBoundary(
+                                    key: _crushKeys.putIfAbsent(
+                                        node.id, GlobalKey.new),
                                     child: ScrapTilt(
                                       key: ValueKey(node.id),
                                       seed: node.id.hashCode,
@@ -801,6 +805,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Snapshot the card and play the crush overlay; the node is deleted as
+  /// soon as the snapshot is captured so the grid reflows under the animation.
+  void _crushNode(BuildContext context, WidgetRef ref, HomeNode node) {
+    ScrapFeedback.warn();
+    final key = _crushKeys.remove(node.id);
+    ScrapCrush.crush(
+      context,
+      key,
+      onCrushed: () =>
+          ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id),
+    );
+  }
+
   Future<void> _renameNode(
     BuildContext context,
     WidgetRef ref,
@@ -875,7 +892,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (val == 'rename') {
               _renameNode(context, ref, node);
             } else if (val == 'delete') {
-              ref.read(currentHomeNodesProvider.notifier).deleteNode(node.id);
+              _crushNode(context, ref, node);
             }
           },
           itemBuilder: (context) => [

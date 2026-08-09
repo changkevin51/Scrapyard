@@ -149,6 +149,21 @@ Future<bool> resolvePendingScrapsBeforeLeaving(
   return resolvePendingScrapForTab(context, ref, activeId);
 }
 
+/// Leave the note editor after resolving pending scraps.
+///
+/// Discarding the last tab empties [openedTabsProvider], and
+/// [NoteEditorScreen] already pops via that listener — popping again here
+/// would remove home and leave a blank navigator stack.
+Future<void> leaveNoteEditorIfAllowed(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final canLeave = await resolvePendingScrapsBeforeLeaving(context, ref);
+  if (!canLeave || !context.mounted) return;
+  if (ref.read(openedTabsProvider).isEmpty) return;
+  Navigator.of(context).pop();
+}
+
 // ── Dialog ──────────────────────────────────────────────────────
 
 class NameNewScrapDialogResult {

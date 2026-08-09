@@ -1866,8 +1866,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     ref.listen<List<OpenedTab>>(openedTabsProvider, (previous, next) {
-      if (next.isEmpty && context.mounted) {
-        Navigator.of(context).pop();
+      if (next.isEmpty && (previous == null || previous.isNotEmpty)) {
+        // Defer: discard can run while a dialog route is still unlocking.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          final nav = Navigator.of(context);
+          if (nav.canPop()) nav.pop();
+        });
       }
     });
 
@@ -2365,11 +2370,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        final canLeave =
-            await resolvePendingScrapsBeforeLeaving(context, ref);
-        if (canLeave && context.mounted) {
-          Navigator.of(context).pop();
-        }
+        await leaveNoteEditorIfAllowed(context, ref);
       },
       child: Scaffold(
       backgroundColor: ScrapTheme.background,

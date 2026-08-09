@@ -40,13 +40,7 @@ class DocumentTabBar extends ConsumerWidget {
         children: [
           // Back button - prompt to name/discard pending scraps, then leave.
           _BackHomeButton(
-            onTap: () async {
-              final canLeave =
-                  await resolvePendingScrapsBeforeLeaving(context, ref);
-              if (canLeave && context.mounted) {
-                Navigator.of(context).pop();
-              }
-            },
+            onTap: () => leaveNoteEditorIfAllowed(context, ref),
           ),
           Expanded(
             child: ListView.builder(

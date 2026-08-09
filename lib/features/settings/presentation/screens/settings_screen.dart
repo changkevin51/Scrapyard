@@ -113,7 +113,23 @@ class SettingsScreen extends ConsumerWidget {
             ),
             onTap: () {
               ScrapFeedback.tap();
-              showChatHistorySheet(context);
+              showChatHistorySheet(
+                context,
+                onOpen: (c) {
+                  ref
+                      .read(activeChatProvider.notifier)
+                      .openConversation(c.id);
+                  final noteId = c.noteId;
+                  if (noteId == null || noteId.isEmpty) return;
+                  openNoteTab(
+                    ref,
+                    noteId,
+                    c.noteTitle ?? c.title,
+                  );
+                  ref.read(chatPanelOpenProvider.notifier).state = true;
+                  context.push('/note_editor');
+                },
+              );
             },
           ),
           const Divider(color: ScrapTheme.dividers),
@@ -197,7 +213,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             title: Text('Gestures', style: ScrapTextStyles.body),
             subtitle: Text(
-              'Configure shortcut edge motions',
+              'Canvas undo, redo, and S Pen',
               style: ScrapTextStyles.caption.copyWith(
                 color: ScrapTheme.mutedText,
               ),
@@ -222,8 +238,10 @@ class SettingsScreen extends ConsumerWidget {
     WidgetRef ref,
   ) async {
     final current = ref.read(defaultPageLayoutProvider);
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.85;
     await showScrapSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: ScrapTheme.cardSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -231,106 +249,98 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: ScrapTheme.kraft,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text('Default Page Style',
-                  style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
-              const SizedBox(height: 8),
-              Text(
-                'Used for new notes. Background style and Infinite are independent — '
-                'Infinite cannot be undone once a note is created that way.',
-                style: ScrapTextStyles.caption
-                    .copyWith(color: ScrapTheme.mutedText),
-              ),
-              const SizedBox(height: 16),
-              ...PageLayout.values.map((style) {
-                final selected = style == current.style;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(style.displayName, style: ScrapTextStyles.body),
-                  trailing: selected
-                      ? const Icon(Icons.check, color: ScrapTheme.accent)
-                      : null,
-                  onTap: () async {
-                    await ref.read(defaultPageLayoutProvider.notifier).set(
-                          current.copyWith(style: style),
-                        );
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                );
-              }),
-              const Divider(color: ScrapTheme.dividers, height: 24),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Infinite', style: ScrapTextStyles.body),
-                subtitle: Text(
-                  'New notes open as unbounded canvases',
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Default Page Style',
+                    style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
+                const SizedBox(height: 8),
+                Text(
+                  'Used for new notes. Background style and Infinite are independent — '
+                  'Infinite cannot be undone once a note is created that way.',
                   style: ScrapTextStyles.caption
                       .copyWith(color: ScrapTheme.mutedText),
                 ),
-                trailing: current.isInfinite
-                    ? const Icon(Icons.check, color: ScrapTheme.accent)
-                    : null,
-                onTap: () async {
-                  if (current.isInfinite) {
-                    // Turning off infinite default is fine for future notes.
+                const SizedBox(height: 16),
+                ...PageLayout.values.map((style) {
+                  final selected = style == current.style;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(style.displayName, style: ScrapTextStyles.body),
+                    trailing: selected
+                        ? const Icon(Icons.check, color: ScrapTheme.accent)
+                        : null,
+                    onTap: () async {
+                      await ref.read(defaultPageLayoutProvider.notifier).set(
+                            current.copyWith(style: style),
+                          );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                  );
+                }),
+                const Divider(color: ScrapTheme.dividers, height: 24),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Infinite', style: ScrapTextStyles.body),
+                  subtitle: Text(
+                    'New notes open as unbounded canvases',
+                    style: ScrapTextStyles.caption
+                        .copyWith(color: ScrapTheme.mutedText),
+                  ),
+                  trailing: current.isInfinite
+                      ? const Icon(Icons.check, color: ScrapTheme.accent)
+                      : null,
+                  onTap: () async {
+                    if (current.isInfinite) {
+                      // Turning off infinite default is fine for future notes.
+                      await ref.read(defaultPageLayoutProvider.notifier).set(
+                            current.copyWith(isInfinite: false),
+                          );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      return;
+                    }
+                    final confirmed = await showScrapDialog<bool>(
+                      context: ctx,
+                      builder: (dialogCtx) => AlertDialog(
+                        backgroundColor: ScrapTheme.cardSurface,
+                        title: Text('Default to Infinite?',
+                            style: ScrapTextStyles.heading),
+                        content: Text(
+                          'New notes will open as Infinite canvases. Once a note '
+                          'is Infinite, it cannot be converted back to a fixed '
+                          'page size. Background style can still be changed.',
+                          style: ScrapTextStyles.body,
+                        ),
+                        actions: [
+                          PaperButton(
+                            label: 'Cancel',
+                            variant: PaperButtonVariant.ghost,
+                            compact: true,
+                            onPressed: () => Navigator.pop(dialogCtx, false),
+                          ),
+                          PaperButton(
+                            label: 'Use Infinite',
+                            variant: PaperButtonVariant.primary,
+                            compact: true,
+                            onPressed: () => Navigator.pop(dialogCtx, true),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true) return;
                     await ref.read(defaultPageLayoutProvider.notifier).set(
-                          current.copyWith(isInfinite: false),
+                          current.copyWith(isInfinite: true),
                         );
                     if (ctx.mounted) Navigator.pop(ctx);
-                    return;
-                  }
-                  final confirmed = await showScrapDialog<bool>(
-                    context: ctx,
-                    builder: (dialogCtx) => AlertDialog(
-                      backgroundColor: ScrapTheme.cardSurface,
-                      title: Text('Default to Infinite?',
-                          style: ScrapTextStyles.heading),
-                      content: Text(
-                        'New notes will open as Infinite canvases. Once a note '
-                        'is Infinite, it cannot be converted back to a fixed '
-                        'page size. Background style can still be changed.',
-                        style: ScrapTextStyles.body,
-                      ),
-                      actions: [
-                        PaperButton(
-                          label: 'Cancel',
-                          variant: PaperButtonVariant.ghost,
-                          compact: true,
-                          onPressed: () => Navigator.pop(dialogCtx, false),
-                        ),
-                        PaperButton(
-                          label: 'Use Infinite',
-                          variant: PaperButtonVariant.primary,
-                          compact: true,
-                          onPressed: () => Navigator.pop(dialogCtx, true),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirmed != true) return;
-                  await ref.read(defaultPageLayoutProvider.notifier).set(
-                        current.copyWith(isInfinite: true),
-                      );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-              ),
-            ],
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },

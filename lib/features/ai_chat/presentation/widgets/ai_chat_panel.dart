@@ -285,6 +285,14 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                       ref
                           .read(activeChatProvider.notifier)
                           .openConversation(c.id);
+                      final noteId = c.noteId;
+                      if (noteId == null || noteId.isEmpty) return;
+                      if (ref.read(activeNoteIdProvider) == noteId) return;
+                      openNoteTab(
+                        ref,
+                        noteId,
+                        c.noteTitle ?? c.title,
+                      );
                     },
                   );
                 },

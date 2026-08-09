@@ -19,30 +19,6 @@ class GestureSettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         children: [
-           _buildSectionHeader('Screen Edges'),
-           _buildToggleRow('Edge Swipes', ref.watch(edgeSwipesEnabledProvider), (val) {
-             ref.read(edgeSwipesEnabledProvider.notifier).state = val;
-           }),
-           const SizedBox(height: 8),
-           Text('Left edge right: Document Navigator\nRight edge left: AI Agent Panel\nBottom edge up: Settings', style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
-           const Padding(
-             padding: EdgeInsets.symmetric(vertical: 24.0),
-             child: Divider(height: 1, color: ScrapTheme.dividers),
-           ),
-
-           _buildSectionHeader('Multi-Touch & Tap Holds'),
-           _buildToggleRow('Tap-Hold Expanding Scope', ref.watch(tapHoldExpandEnabledProvider), (val) {
-             ref.read(tapHoldExpandEnabledProvider.notifier).state = val;
-           }),
-           const SizedBox(height: 8),
-           _buildToggleRow('Multi-Finger Actions', ref.watch(multiFingerEnabledProvider), (val) {
-             ref.read(multiFingerEnabledProvider.notifier).state = val;
-           }),
-           const Padding(
-             padding: EdgeInsets.symmetric(vertical: 24.0),
-             child: Divider(height: 1, color: ScrapTheme.dividers),
-           ),
-
            _buildSectionHeader('Canvas'),
            _buildToggleRow('Two-Finger Tap to Undo', ref.watch(twoFingerTapUndoEnabledProvider), (val) {
              ref.read(twoFingerTapUndoEnabledProvider.notifier).state = val;

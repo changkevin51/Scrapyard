@@ -5,6 +5,7 @@ import 'package:perfect_freehand/perfect_freehand.dart' hide StrokePoint;
 
 import '../domain/models/stroke.dart';
 import 'pen_engine.dart';
+import 'stroke_sampler.dart';
 
 /// Industry-standard stroke renderer.
 ///
@@ -141,8 +142,10 @@ class InkRenderer {
       isComplete: isComplete,
     );
 
+    final fitted = catmullRomResample(pts, spacing: 2.0);
     final vectors = <PointVector>[
-      for (final p in pts) PointVector(p.x, p.y, p.pressure.clamp(0.0, 1.0)),
+      for (final p in fitted)
+        PointVector(p.x, p.y, p.pressure.clamp(0.0, 1.0)),
     ];
 
     // Duplicate single-point taps so perfect_freehand produces a visible dot.
@@ -157,10 +160,9 @@ class InkRenderer {
     final outline = getStroke(vectors, options: options);
     if (outline.isEmpty) return;
 
-    final path = Path()..addPolygon(
-      [for (final p in outline) Offset(p.dx, p.dy)],
-      true,
-    );
+    final path = _smoothClosedPolygon([
+      for (final p in outline) Offset(p.dx, p.dy),
+    ]);
 
     final paint = Paint()
       ..color = _colorForStyle(color, style)
@@ -275,10 +277,12 @@ class InkRenderer {
 
   static void _paintNib(
     Canvas canvas,
-    List<StrokePoint> pts,
+    List<StrokePoint> rawPts,
     Color color,
     double baseWidth,
   ) {
+    final pts = catmullRomResample(rawPts, spacing: 2.0);
+    if (pts.isEmpty) return;
     if (pts.length < 2) {
       // Single-point tap → small filled oval
       final p = pts.first;
@@ -324,15 +328,14 @@ class InkRenderer {
       right.add(p - nibOffset);
     }
 
-    // Build a single closed polygon: left edge forward, right edge reverse
+    // Smooth closed strip: quadratic through midpoints along each nib edge.
     final path = Path();
-    path.moveTo(left.first.dx, left.first.dy);
-    for (int i = 1; i < left.length; i++) {
-      path.lineTo(left[i].dx, left[i].dy);
-    }
-    for (int i = right.length - 1; i >= 0; i--) {
-      path.lineTo(right[i].dx, right[i].dy);
-    }
+    _addSmoothPolyline(path, left, moveToFirst: true);
+    _addSmoothPolyline(
+      path,
+      [for (var i = right.length - 1; i >= 0; i--) right[i]],
+      moveToFirst: false,
+    );
     path.close();
 
     canvas.drawPath(
@@ -404,6 +407,59 @@ class InkRenderer {
     );
     canvas.drawPath(path, stroke);
     canvas.restore();
+  }
+
+  /// Closed midpoint-quadratic path so outline polygons are round, not faceted.
+  static Path _smoothClosedPolygon(List<Offset> pts) {
+    if (pts.length < 3) {
+      return Path()..addPolygon(pts, true);
+    }
+    final n = pts.length;
+    final startMid = Offset(
+      (pts[n - 1].dx + pts[0].dx) / 2,
+      (pts[n - 1].dy + pts[0].dy) / 2,
+    );
+    final path = Path()..moveTo(startMid.dx, startMid.dy);
+    for (var i = 0; i < n; i++) {
+      final curr = pts[i];
+      final next = pts[(i + 1) % n];
+      final mid = Offset((curr.dx + next.dx) / 2, (curr.dy + next.dy) / 2);
+      path.quadraticBezierTo(curr.dx, curr.dy, mid.dx, mid.dy);
+    }
+    path.close();
+    return path;
+  }
+
+  /// Midpoint-quadratic polyline (same as highlighter / torn-edge paths).
+  static void _addSmoothPolyline(
+    Path path,
+    List<Offset> pts, {
+    required bool moveToFirst,
+  }) {
+    if (pts.isEmpty) return;
+    if (moveToFirst) {
+      path.moveTo(pts.first.dx, pts.first.dy);
+    } else {
+      path.lineTo(pts.first.dx, pts.first.dy);
+    }
+    if (pts.length == 1) return;
+    if (pts.length == 2) {
+      path.lineTo(pts[1].dx, pts[1].dy);
+      return;
+    }
+    final firstMid = Offset(
+      (pts[0].dx + pts[1].dx) / 2,
+      (pts[0].dy + pts[1].dy) / 2,
+    );
+    path.lineTo(firstMid.dx, firstMid.dy);
+    for (var i = 1; i < pts.length - 1; i++) {
+      final mid = Offset(
+        (pts[i].dx + pts[i + 1].dx) / 2,
+        (pts[i].dy + pts[i + 1].dy) / 2,
+      );
+      path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
   }
 
   /// Exponential moving-average smooth — mirrors freehand streamline feel.

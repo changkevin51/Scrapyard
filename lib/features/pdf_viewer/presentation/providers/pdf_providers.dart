@@ -38,6 +38,11 @@ class CurrentInkNotifier extends StateNotifier<List<StrokePoint>> {
     state = [...state, point];
   }
 
+  void addPoints(List<StrokePoint> points) {
+    if (points.isEmpty) return;
+    state = [...state, ...points];
+  }
+
   void setPoints(List<StrokePoint> points) {
     state = points;
   }

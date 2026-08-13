@@ -11,6 +11,7 @@ import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../canvas/data/ink_renderer.dart';
 import '../../../canvas/data/pen_engine.dart';
+import '../../../canvas/data/stroke_sampler.dart';
 import '../../../canvas/domain/models/stroke.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../canvas/presentation/widgets/eraser_preview.dart';
@@ -69,6 +70,22 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   PenStyle _livePenStyle = PenStyle.pen;
   bool _liveIsHighlighter = false;
 
+  final _livePoints = <StrokePoint>[];
+  final _liveTick = ValueNotifier<int>(0);
+
+  void _tickLiveInk() => _liveTick.value++;
+
+  void _clearLiveInk() {
+    _livePoints.clear();
+    _tickLiveInk();
+  }
+
+  @override
+  void dispose() {
+    _liveTick.dispose();
+    super.dispose();
+  }
+
   bool _isStylus(ui.PointerDeviceKind kind) =>
       kind == ui.PointerDeviceKind.stylus ||
       kind == ui.PointerDeviceKind.invertedStylus;
@@ -114,7 +131,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   }
 
   void _saveCurrentStroke(Size size) {
-    final inkPoints = ref.read(currentInkProvider);
+    final inkPoints = _livePoints;
     final activeTool = ref.read(activeToolProvider);
     if (inkPoints.isEmpty) return;
 
@@ -155,6 +172,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
       ref.invalidate(pageAnnotationsProvider(widget.pageNumber));
     });
 
+    _clearLiveInk();
     ref.read(currentInkProvider.notifier).clear();
     ref.read(currentInkPageProvider.notifier).state = null;
     _startPoint = null;
@@ -561,10 +579,11 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
 
     if (tool == AnnotationTool.pen || tool == AnnotationTool.highlighter) {
       _snapshotLiveStyle(tool);
+      _livePoints
+        ..clear()
+        ..add(_makePoint(event.localPosition, event));
       ref.read(currentInkProvider.notifier).clear();
-      ref
-          .read(currentInkProvider.notifier)
-          .addPoint(_makePoint(event.localPosition, event));
+      _tickLiveInk();
     }
   }
 
@@ -591,9 +610,11 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     }
 
     if (tool == AnnotationTool.pen || tool == AnnotationTool.highlighter) {
-      ref
-          .read(currentInkProvider.notifier)
-          .addPoint(_makePoint(event.localPosition, event));
+      appendInterpolated(
+        _livePoints,
+        [_makePoint(event.localPosition, event)],
+      );
+      _tickLiveInk();
     }
   }
 
@@ -633,6 +654,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   void _handleDrawCancel(PointerEvent event) {
     if (_activePointer != event.pointer) return;
     _activePointer = null;
+    _clearLiveInk();
     ref.read(currentInkProvider.notifier).clear();
     ref.read(currentInkPageProvider.notifier).state = null;
     ref.read(pdfSmeltRectProvider.notifier).state = null;
@@ -649,10 +671,6 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     final activeTool = ref.watch(activeToolProvider);
     final annotationsAsync =
         ref.watch(pageAnnotationsProvider(widget.pageNumber));
-    final inkPage = ref.watch(currentInkPageProvider);
-    final inkPoints = inkPage == widget.pageNumber
-        ? ref.watch(currentInkProvider)
-        : const <StrokePoint>[];
     final penSettings = ref.watch(penSettingsProvider);
     final widthMod = ref.watch(strokeWidthModifierProvider);
     final stylusOnly = ref.watch(stylusOnlyModeProvider);
@@ -677,19 +695,29 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
             CustomPaint(
               painter: AnnotationPainter(
                 annotations: annotationsAsync.value ?? [],
-                currentInk: inkPoints,
-                currentColor: _liveColor,
-                currentTool: activeTool,
-                strokeWidth: _liveWidth > 0
-                    ? _liveWidth
-                    : _strokeWidthFor(activeTool, mod: widthMod),
-                penStyle: _livePenStyle,
-                isLiveHighlighter: _liveIsHighlighter,
                 streamline: penSettings.streamline,
                 sensitivity: penSettings.sensitivityFor(_livePenStyle),
                 smeltRect: smeltRect ?? _smeltDraft,
               ),
               size: size,
+            ),
+            RepaintBoundary(
+              child: CustomPaint(
+                painter: _PdfLiveInkPainter(
+                  points: _livePoints,
+                  color: _liveColor,
+                  width: _liveWidth > 0
+                      ? _liveWidth
+                      : _strokeWidthFor(activeTool, mod: widthMod),
+                  penStyle: _livePenStyle,
+                  isHighlighter: _liveIsHighlighter,
+                  streamline: penSettings.streamline,
+                  sensitivity: penSettings.sensitivityFor(_livePenStyle),
+                  tool: activeTool,
+                  repaint: _liveTick,
+                ),
+                size: size,
+              ),
             ),
             if (showEraserPreview)
               CustomPaint(
@@ -741,24 +769,12 @@ extension on Rect {
 
 class AnnotationPainter extends CustomPainter {
   final List<AnnotationRecord> annotations;
-  final List<StrokePoint> currentInk;
-  final Color currentColor;
-  final AnnotationTool currentTool;
-  final double strokeWidth;
-  final PenStyle penStyle;
-  final bool isLiveHighlighter;
   final double streamline;
   final double sensitivity;
   final Rect? smeltRect;
 
   AnnotationPainter({
     required this.annotations,
-    required this.currentInk,
-    required this.currentColor,
-    required this.currentTool,
-    required this.strokeWidth,
-    required this.penStyle,
-    required this.isLiveHighlighter,
     required this.streamline,
     required this.sensitivity,
     this.smeltRect,
@@ -782,25 +798,6 @@ class AnnotationPainter extends CustomPainter {
         continue;
       }
       _drawStroke(canvas, record, size);
-    }
-
-    if (currentInk.isNotEmpty &&
-        (currentTool == AnnotationTool.pen ||
-            currentTool == AnnotationTool.highlighter)) {
-      final isHL =
-          isLiveHighlighter || currentTool == AnnotationTool.highlighter;
-      InkRenderer.paint(
-        canvas: canvas,
-        pts: currentInk,
-        color: currentColor,
-        baseWidth: strokeWidth,
-        style: penStyle,
-        isHighlighter: isHL,
-        streamline: streamline,
-        sensitivity: sensitivity,
-        isComplete: false,
-        multiplyWithBackdrop: isHL,
-      );
     }
 
     final sel = smeltRect;
@@ -878,4 +875,51 @@ class AnnotationPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant AnnotationPainter oldDelegate) => true;
+}
+
+class _PdfLiveInkPainter extends CustomPainter {
+  final List<StrokePoint> points;
+  final Color color;
+  final double width;
+  final PenStyle penStyle;
+  final bool isHighlighter;
+  final double streamline;
+  final double sensitivity;
+  final AnnotationTool tool;
+
+  _PdfLiveInkPainter({
+    required this.points,
+    required this.color,
+    required this.width,
+    required this.penStyle,
+    required this.isHighlighter,
+    required this.streamline,
+    required this.sensitivity,
+    required this.tool,
+    required Listenable repaint,
+  }) : super(repaint: repaint);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+    if (tool != AnnotationTool.pen && tool != AnnotationTool.highlighter) {
+      return;
+    }
+    final isHL = isHighlighter || tool == AnnotationTool.highlighter;
+    InkRenderer.paint(
+      canvas: canvas,
+      pts: points,
+      color: color,
+      baseWidth: width,
+      style: penStyle,
+      isHighlighter: isHL,
+      streamline: streamline,
+      sensitivity: sensitivity,
+      isComplete: false,
+      multiplyWithBackdrop: isHL,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PdfLiveInkPainter old) => true;
 }

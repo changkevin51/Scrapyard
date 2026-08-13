@@ -12,6 +12,7 @@ import '../../../gestures/presentation/providers/gesture_providers.dart';
 import '../../data/ink_renderer.dart';
 import '../../data/pen_engine.dart';
 import '../../data/smart_shape_recognizer.dart';
+import '../../data/stroke_sampler.dart';
 import '../../domain/models/canvas_smart_models.dart';
 import '../../domain/models/canvas_viewport.dart';
 import '../../domain/models/stroke.dart';
@@ -203,8 +204,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
   // Hold-and-pause shape snap
   // Stylus devices keep emitting tiny move events while "held still";
-  // ignore movement below this screen-space threshold so the pause timer
-  // can fire and so a live snap preview is not immediately cleared.
+  // movement below this screen-space threshold does not reset the pause
+  // timer (so snap can fire). Drawing samples are still recorded.
   static const _shapeSnapPauseSlop = 6.0;
   final _pauseTimers = <int, Timer>{};
   final _pauseAnchorLocal = <int, Offset>{};
@@ -379,20 +380,25 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     final pt = _makePoint(e);
-    final anchor = _pauseAnchorLocal[e.pointer];
-    if (anchor != null &&
-        (e.localPosition - anchor).distance < _shapeSnapPauseSlop) {
-      // Micro-jitter while holding: refresh the tip sample, keep the pause.
-      points[points.length - 1] = pt;
-      _tick();
-      return;
+    final scale = widget.infiniteMode
+        ? ref.read(canvasViewportProvider).scale
+        : 1.0;
+    // Always keep drawing samples. The 6px pause slop is only for hold-to-snap
+    // — using it to replace the last point made slow curves look like the
+    // line tool (a rubber-band from the last vertex to the pen).
+    appendInterpolated(points, [pt], maxGap: strokeMaxGap(scale));
+
+    final beautify = ref.read(penSettingsProvider).beautify;
+    if (beautify) {
+      final anchor = _pauseAnchorLocal[e.pointer];
+      if (anchor == null ||
+          (e.localPosition - anchor).distance >= _shapeSnapPauseSlop) {
+        _pauseAnchorLocal[e.pointer] = e.localPosition;
+        _liveSnap.remove(e.pointer);
+        _armPauseTimer(e.pointer);
+      }
     }
 
-    // Clear any live snap preview when the user continues drawing.
-    _pauseAnchorLocal[e.pointer] = e.localPosition;
-    _liveSnap.remove(e.pointer);
-    points.add(pt);
-    _armPauseTimer(e.pointer);
     _tick();
   }
 

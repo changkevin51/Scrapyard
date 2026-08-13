@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
+import '../../../../core/gestures/pan_fling.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
@@ -24,8 +25,10 @@ class PdfViewerScreen extends ConsumerStatefulWidget {
   ConsumerState<PdfViewerScreen> createState() => _PdfViewerScreenState();
 }
 
-class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
+class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
+    with TickerProviderStateMixin {
   final PdfViewerController _pdfController = PdfViewerController();
+  late final PanFling _panFling;
   final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
   OverlayEntry? _smeltPopupEntry;
   OverlayEntry? _smeltMenuEntry;
@@ -35,7 +38,23 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
   Rect? _menuSelectionRect;
 
   @override
+  void initState() {
+    super.initState();
+    _panFling = PanFling(
+      vsync: this,
+      onPanDelta: (delta) {
+        if (!_pdfController.isReady) return;
+        final m = _pdfController.value.clone();
+        m.xZoomed += delta.dx;
+        m.yZoomed += delta.dy;
+        _pdfController.value = m;
+      },
+    );
+  }
+
+  @override
   void dispose() {
+    _panFling.dispose();
     _smeltPopupEntry?.remove();
     _smeltMenuEntry?.remove();
     _smeltPopupEntry = null;
@@ -234,6 +253,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
                   leftChild: _buildPdfViewer(pdfPath, documentId),
                   rightChild: const NoteEditorScreen(
                     showChatChrome: false,
+                    ownsRoute: false,
                   ),
                 ),
                 const AnnotationToolbar(),
@@ -277,6 +297,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen> {
                 documentId: docId,
                 page: page,
                 viewerController: _pdfController,
+                panFling: _panFling,
                 onSmeltSelection: _onSmeltSelection,
               ),
             ),

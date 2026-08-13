@@ -29,6 +29,11 @@ class HomeNode {
 
   bool get isDeleted => deletedAt != null;
 
+  bool get isPdf =>
+      type == NodeType.document &&
+      externalPath != null &&
+      externalPath!.toLowerCase().endsWith('.pdf');
+
   /// Whole days remaining before permanent purge; null if not deleted.
   int? get trashDaysRemaining {
     final deleted = deletedAt;

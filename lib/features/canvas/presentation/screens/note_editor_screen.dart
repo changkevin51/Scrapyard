@@ -37,7 +37,15 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
   /// [PdfViewerScreen] so chat can open without the scrap split).
   final bool showChatChrome;
 
-  const NoteEditorScreen({super.key, this.showChatChrome = true});
+  /// When false, this editor is a child of another route (PDF split) and must
+  /// not register [PopScope] — that would block the parent's back button.
+  final bool ownsRoute;
+
+  const NoteEditorScreen({
+    super.key,
+    this.showChatChrome = true,
+    this.ownsRoute = true,
+  });
 
   @override
   ConsumerState<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -1866,6 +1874,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     ref.listen<List<OpenedTab>>(openedTabsProvider, (previous, next) {
+      if (!widget.ownsRoute) return;
       if (next.isEmpty && (previous == null || previous.isNotEmpty)) {
         // Defer: discard can run while a dialog route is still unlocking.
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2366,13 +2375,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         break;
     }
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        await leaveNoteEditorIfAllowed(context, ref);
-      },
-      child: Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: ScrapTheme.background,
       // Keep full canvas height; we pan/scroll text above the keyboard ourselves.
       resizeToAvoidBottomInset: false,
@@ -2390,7 +2393,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           if (widget.showChatChrome) const AiChatPanel(),
         ],
       ),
-    ),
+    );
+
+    if (!widget.ownsRoute) return scaffold;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await leaveNoteEditorIfAllowed(context, ref);
+      },
+      child: scaffold,
     );
   }
 }

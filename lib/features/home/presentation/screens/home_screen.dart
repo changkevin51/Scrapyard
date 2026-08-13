@@ -21,6 +21,7 @@ import '../providers/home_providers.dart' show
     folderPathProvider,
     invalidateNoteThumbnail,
     scrapThumbnailPreloaderProvider;
+import '../widgets/pdf_thumbnail.dart';
 import '../widgets/scrap_thumbnail.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
@@ -669,6 +670,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Scrap / document card — single flat sheet.
   Widget _buildFlatCard(BuildContext context, WidgetRef ref, HomeNode node) {
     final isScrap = node.type == NodeType.note;
+    final hasPreview = isScrap || node.isPdf;
     final typeLabel = isScrap ? '⟨ Scrap ⟩' : '⟨ Document ⟩';
 
     final card = Container(
@@ -687,7 +689,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isScrap)
+          if (hasPreview)
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -704,7 +706,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: ScrapThumbnail(noteId: node.id),
+                          child: isScrap
+                              ? ScrapThumbnail(noteId: node.id)
+                              : PdfThumbnail(nodeId: node.id),
                         ),
                         const Positioned(
                           top: 0,
@@ -744,7 +748,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const Spacer(),
           ],
           Padding(
-            padding: EdgeInsets.fromLTRB(28, isScrap ? 16 : 0, 28, 28),
+            padding: EdgeInsets.fromLTRB(28, hasPreview ? 16 : 0, 28, 28),
             child: _cardMeta(node),
           ),
         ],

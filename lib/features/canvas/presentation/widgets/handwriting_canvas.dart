@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/gestures/pan_fling.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../gestures/presentation/providers/gesture_providers.dart';
 import '../../data/ink_renderer.dart';
@@ -152,7 +153,8 @@ class HandwritingCanvas extends ConsumerStatefulWidget {
   ConsumerState<HandwritingCanvas> createState() => _HandwritingCanvasState();
 }
 
-class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
+class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
+    with TickerProviderStateMixin {
   // Live stroke data — the painters hold a reference to this map directly.
   final _activeStrokes = <int, List<StrokePoint>>{};
 
@@ -184,6 +186,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
   // Touch tracking for palm-rejection scroll/zoom
   final _touchPointers = <int, Offset>{};
+  final _touchVelocity = <int, VelocityTracker>{};
+  late final PanFling _panFling;
+  bool _touchPinched = false;
   double? _pinchInitialDistance;
   double? _pinchInitialZoom;
   /// Canvas-local point under the pinch midpoint when the gesture began.
@@ -220,9 +225,16 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
   void _tick() => _repaintTick.value++;
 
+  @override
+  void initState() {
+    super.initState();
+    _panFling = PanFling(vsync: this, onPanDelta: _applyTouchPanDelta);
+  }
+
   // ── Input handlers ─────────────────────────────────────────────
   void _onPointerDown(PointerDownEvent e) {
     _updateSPenEraserFromEvent(e);
+    _panFling.stop();
 
     final isPenMode = ref.read(isPenModeActiveProvider);
     final stylusOnly = ref.read(stylusOnlyModeProvider);
@@ -244,7 +256,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       }
 
       if (!isPenMode || stylusOnly) {
+        if (_touchPointers.isEmpty) _touchPinched = false;
         _touchPointers[e.pointer] = e.position;
+        _touchVelocity[e.pointer] = VelocityTracker.withKind(e.kind)
+          ..addPosition(e.timeStamp, e.position);
         // Defer pinch while a multi-finger tap may still resolve.
         if (!multiTapEnabled || _multiTapDownPos.length < 2) {
           if (_touchPointers.length == 2) {
@@ -342,6 +357,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
 
     if (e.kind == PointerDeviceKind.touch &&
         _touchPointers.containsKey(e.pointer)) {
+      _touchVelocity[e.pointer]?.addPosition(e.timeStamp, e.position);
       _handleTouchMove(e);
       return;
     }
@@ -411,11 +427,13 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     if (_touchPointers.remove(e.pointer) != null) {
+      final tracker = _touchVelocity.remove(e.pointer);
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
         _pinchInitialZoom = null;
         _pinchContentFocal = null;
       }
+      _maybeFlingTouchPan(tracker);
       return;
     }
 
@@ -532,6 +550,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     }
 
     if (_touchPointers.remove(e.pointer) != null) {
+      _touchVelocity.remove(e.pointer);
       if (_touchPointers.length < 2) {
         _pinchInitialDistance = null;
         _pinchInitialZoom = null;
@@ -806,6 +825,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
         _pinchInitialDistance != null &&
         _pinchInitialZoom != null &&
         _pinchContentFocal != null) {
+      _touchPinched = true;
       final positions = _touchPointers.values.toList();
       final currentDistance = (positions[0] - positions[1]).distance;
       if (currentDistance <= 5.0) return;
@@ -873,27 +893,38 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
       _scheduleScrollTo(newH, newV);
     } else if (previous != null && !widget.suppressTouchScroll) {
       if (!ref.read(isPenModeActiveProvider)) return;
-      final delta = e.position - previous;
-      if (widget.infiniteMode) {
-        ref
-            .read(canvasViewportProvider.notifier)
-            .panByScreenDelta(delta);
-        return;
-      }
-      final vScroll = widget.scrollController;
-      if (vScroll == null || !vScroll.hasClients) return;
-      vScroll.jumpTo(
-        (vScroll.offset - delta.dy)
-            .clamp(0.0, vScroll.position.maxScrollExtent),
-      );
-      final hScroll = widget.horizontalScrollController;
-      if (hScroll != null && hScroll.hasClients) {
-        hScroll.jumpTo(
-          (hScroll.offset - delta.dx)
-              .clamp(0.0, hScroll.position.maxScrollExtent),
-        );
-      }
+      _applyTouchPanDelta(e.position - previous);
     }
+  }
+
+  void _applyTouchPanDelta(Offset delta) {
+    if (widget.suppressTouchScroll) return;
+    if (widget.infiniteMode) {
+      ref.read(canvasViewportProvider.notifier).panByScreenDelta(delta);
+      return;
+    }
+    final vScroll = widget.scrollController;
+    if (vScroll == null || !vScroll.hasClients) return;
+    vScroll.jumpTo(
+      (vScroll.offset - delta.dy)
+          .clamp(0.0, vScroll.position.maxScrollExtent),
+    );
+    final hScroll = widget.horizontalScrollController;
+    if (hScroll != null && hScroll.hasClients) {
+      hScroll.jumpTo(
+        (hScroll.offset - delta.dx)
+            .clamp(0.0, hScroll.position.maxScrollExtent),
+      );
+    }
+  }
+
+  void _maybeFlingTouchPan(VelocityTracker? tracker) {
+    if (!mounted) return;
+    if (_touchPointers.isNotEmpty || _touchPinched) return;
+    if (widget.suppressTouchScroll) return;
+    if (!ref.read(isPenModeActiveProvider)) return;
+    final velocity = tracker?.getVelocity() ?? Velocity.zero;
+    _panFling.start(velocity.pixelsPerSecond);
   }
 
   /// Start pinch using the current finger span so zoom doesn't jump when a
@@ -1119,6 +1150,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas> {
     _sPenEraserActive = false;
     _toolBeforeSPenEraser = null;
     _repaintTick.dispose();
+    _panFling.dispose();
     super.dispose();
   }
 

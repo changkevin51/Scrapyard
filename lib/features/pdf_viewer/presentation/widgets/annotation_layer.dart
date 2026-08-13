@@ -2,11 +2,13 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../../core/gestures/pan_fling.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../canvas/data/ink_renderer.dart';
@@ -36,6 +38,9 @@ class AnnotationLayer extends ConsumerStatefulWidget {
   /// We drive pan/zoom through this controller when palm rejection is on.
   final PdfViewerController? viewerController;
 
+  /// Shared fling for finger pan; owned by the viewer so it survives page reuse.
+  final PanFling? panFling;
+
   const AnnotationLayer({
     super.key,
     required this.pageNumber,
@@ -43,6 +48,7 @@ class AnnotationLayer extends ConsumerStatefulWidget {
     this.page,
     this.onSmeltSelection,
     this.viewerController,
+    this.panFling,
   });
 
   @override
@@ -61,6 +67,8 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
 
   /// Finger/mouse pointers used for pan/pinch while a draw tool is active.
   final Map<int, Offset> _navPointers = {};
+  final Map<int, VelocityTracker> _navVelocity = {};
+  bool _navPinched = false;
   double? _pinchStartDistance;
   double? _pinchStartZoom;
   Offset? _pinchStartFocalDoc;
@@ -454,7 +462,11 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   }
 
   void _handleNavDown(PointerDownEvent event) {
+    widget.panFling?.stop();
+    if (_navPointers.isEmpty) _navPinched = false;
     _navPointers[event.pointer] = event.position;
+    _navVelocity[event.pointer] = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
     if (_navPointers.length >= 2) {
       _beginPinchIfReady();
     }
@@ -463,15 +475,13 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   void _handleNavMove(PointerMoveEvent event) {
     if (!_navPointers.containsKey(event.pointer)) return;
     _navPointers[event.pointer] = event.position;
+    _navVelocity[event.pointer]?.addPosition(event.timeStamp, event.position);
 
     final controller = widget.viewerController;
     if (controller == null || !controller.isReady) return;
 
     if (_navPointers.length == 1) {
-      final m = controller.value.clone();
-      m.xZoomed += event.delta.dx;
-      m.yZoomed += event.delta.dy;
-      controller.value = m;
+      _applyPdfPanDelta(event.delta);
       return;
     }
 
@@ -480,6 +490,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
         _pinchStartZoom != null &&
         _pinchStartFocalDoc != null &&
         _pinchStartDistance! > 5) {
+      _navPinched = true;
       final pts = _navPointers.values.toList();
       final dist = (pts[0] - pts[1]).distance;
       if (dist < 5) return;
@@ -504,7 +515,17 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     }
   }
 
-  void _handleNavEnd(int pointer) {
+  void _applyPdfPanDelta(Offset delta) {
+    final controller = widget.viewerController;
+    if (controller == null || !controller.isReady) return;
+    final m = controller.value.clone();
+    m.xZoomed += delta.dx;
+    m.yZoomed += delta.dy;
+    controller.value = m;
+  }
+
+  void _handleNavEnd(int pointer, {bool allowFling = true}) {
+    final tracker = _navVelocity.remove(pointer);
     _navPointers.remove(pointer);
     if (_navPointers.length < 2) {
       _clearPinch();
@@ -512,13 +533,15 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     if (_navPointers.length == 2) {
       _beginPinchIfReady();
     }
+    if (allowFling && _navPointers.isEmpty && !_navPinched) {
+      final velocity = tracker?.getVelocity() ?? Velocity.zero;
+      widget.panFling?.start(velocity.pixelsPerSecond);
+    }
   }
 
   void _onPointerDown(PointerDownEvent event) {
     final tool = ref.read(activeToolProvider);
-    if (tool == AnnotationTool.pan) return;
-
-    if (_shouldNavigate(event.kind)) {
+    if (tool == AnnotationTool.pan || _shouldNavigate(event.kind)) {
       _handleNavDown(event);
       return;
     }
@@ -544,7 +567,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
 
   void _onPointerCancel(PointerCancelEvent event) {
     if (_navPointers.containsKey(event.pointer)) {
-      _handleNavEnd(event.pointer);
+      _handleNavEnd(event.pointer, allowFling: false);
       return;
     }
     _handleDrawCancel(event);
@@ -553,6 +576,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   void _handleDrawDown(PointerDownEvent event) {
     final tool = ref.read(activeToolProvider);
     if (tool == AnnotationTool.pan) return;
+    widget.panFling?.stop();
 
     _activePointer = event.pointer;
     _startPoint = event.localPosition;
@@ -674,7 +698,6 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     final penSettings = ref.watch(penSettingsProvider);
     final widthMod = ref.watch(strokeWidthModifierProvider);
     final stylusOnly = ref.watch(stylusOnlyModeProvider);
-    final isPanning = activeTool == AnnotationTool.pan;
     final smeltRect = ref.watch(pdfSmeltRectProvider);
     final eraserRadius = eraserScreenRadius(widthMod);
     final showEraserPreview = activeTool == AnnotationTool.eraser;
@@ -731,12 +754,6 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
           ],
         );
 
-        if (isPanning) {
-          return IgnorePointer(child: paintLayer);
-        }
-
-        // Page overlays sit above pdfrx InteractiveViewer (siblings), so they
-        // must own both drawing and finger pan/zoom when a draw tool is active.
         return Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: _onPointerDown,

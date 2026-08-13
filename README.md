@@ -58,7 +58,10 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 ## Recently added
 
 - **True splitscreen for study chat** allows users to keep writing on the canvas while the chat panel is open
-- **Smelt popup can be pinned** and be dragged so that it doesn't disappear from writing.
+- **Smelt results can be pinned** and dragged so they stay while you write, or **taped onto the scrap** so they remain after you leave.
+- **Tear out** exports a scrap to share or save outside the app.
+- **Step-by-step onboarding** walks through Smelt and the AI features on a first scrap.
+- **Paper-like motion** on transitions, crushing files, and other desk interactions.
 - **Redesigned highlighter, eraser, and lasso icons** with clearer custom glyphs in the toolbar.
 - **Improved automatic bounding box detection** that uses a sophisticated algorithm taking into account timing, proximity, outliers, and patterns. 
 - **Infinite canvas** page style with unbounded pan and zoom.

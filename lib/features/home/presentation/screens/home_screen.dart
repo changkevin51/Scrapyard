@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -29,6 +30,8 @@ import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
+import '../../../onboarding/presentation/smelt_guide_keys.dart';
 import '../../../splash/presentation/providers/splash_providers.dart';
 import '../../../pdf_viewer/presentation/providers/pdf_providers.dart';
 
@@ -96,6 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final saved = await showApiKeyDialog(context, allowSkip: true);
       if (saved == true && mounted) {
         showPaperToast(context, 'API key saved');
+        await ref.read(smeltGuideProvider.notifier).startFromHome();
       }
     }
   }
@@ -104,7 +108,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final saved = await showApiKeyDialog(context, allowSkip: true);
     if (saved == true && mounted) {
       showPaperToast(context, 'API key saved');
+      await ref.read(smeltGuideProvider.notifier).startFromHome();
     }
+  }
+
+  void _notifyGuideOpenedScrap() {
+    ref.read(smeltGuideProvider.notifier).notifyOpenedScrap();
   }
 
   Future<void> _createAndOpenScrap() async {
@@ -119,6 +128,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m, node.id: node});
     ref.read(activeNoteIdProvider.notifier).state = node.id;
     openNoteTab(ref, node.id, node.title, ephemeral: true);
+    _notifyGuideOpenedScrap();
     context.push('/note_editor').then((_) => _onNoteEditorClosed(node.id));
   }
 
@@ -126,6 +136,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ScrapFeedback.action();
     final id = 'loose-${DateTime.now().microsecondsSinceEpoch}';
     openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
+    _notifyGuideOpenedScrap();
     context.push('/note_editor').then((_) {
       if (ref.read(ephemeralNoteIdsProvider).isNotEmpty) {
         discardAllEphemeralNotes(ref);
@@ -160,6 +171,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : pending.keys.first;
         final title = pending[id]?.title ?? 'New scrap';
         openNoteTab(ref, id, title, ephemeral: true);
+        _notifyGuideOpenedScrap();
         context.push('/note_editor').then((_) => _onNoteEditorClosed(id));
         return;
       }
@@ -261,6 +273,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       style: ScrapTextStyles.label.copyWith(
                         color: ScrapTheme.accent,
                         letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                if (kDebugMode)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 32, top: 10),
+                    child: ScrapPressable(
+                      onTap: () {
+                        ScrapFeedback.tap();
+                        ref
+                            .read(smeltGuideProvider.notifier)
+                            .startFromHome(force: true);
+                      },
+                      child: Text(
+                        '⟨ Replay guide ⟩',
+                        style: ScrapTextStyles.label.copyWith(
+                          color: ScrapTheme.mutedText,
+                          letterSpacing: 0.8,
+                        ),
                       ),
                     ),
                   ),
@@ -389,9 +420,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     ],
                     if (currentFolder != trashFolderId) ...[
                       SliverToBoxAdapter(
-                        child: _NewScrapButton(
-                          onTap: _createAndOpenScrap,
-                          onLooseTap: _openLooseScrap,
+                        child: KeyedSubtree(
+                          key: SmeltGuideKeys.newScrapButton,
+                          child: _NewScrapButton(
+                            onTap: _createAndOpenScrap,
+                            onLooseTap: _openLooseScrap,
+                          ),
                         ),
                       ),
                       const SliverToBoxAdapter(child: SizedBox(height: 40)),
@@ -639,6 +673,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (node.type == NodeType.note) {
             ref.read(activeNoteIdProvider.notifier).state = node.id;
             openNoteTab(ref, node.id, node.title);
+            _notifyGuideOpenedScrap();
             context
                 .push('/note_editor')
                 .then((_) => _onNoteEditorClosed(node.id));
@@ -665,6 +700,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // loads this specific note's strokes.
           ref.read(activeNoteIdProvider.notifier).state = node.id;
           openNoteTab(ref, node.id, node.title);
+          _notifyGuideOpenedScrap();
           context.push('/note_editor').then((_) => _onNoteEditorClosed(node.id));
         }
       },

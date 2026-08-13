@@ -21,6 +21,7 @@ import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../domain/models/chat_message.dart';
 import '../../domain/models/gemini_model.dart';
 import '../providers/chat_providers.dart';
+import '../../../onboarding/presentation/smelt_guide_keys.dart';
 import 'chat_history_sheet.dart';
 import 'chat_message_bubble.dart';
 import 'chat_suggestion_chips.dart';
@@ -464,6 +465,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 GestureDetector(
+                  key: SmeltGuideKeys.chatSelect,
                   onTap: isStreaming ? null : _requestCanvasCapture,
                   child: Tooltip(
                     message: 'Send this region to chat',

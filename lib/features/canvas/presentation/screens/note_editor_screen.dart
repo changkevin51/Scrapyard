@@ -21,6 +21,8 @@ import '../../../ai_engine/presentation/widgets/smelt_action_menu.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_chat/presentation/widgets/ai_chat_panel.dart';
+import '../../../onboarding/domain/smelt_guide_step.dart';
+import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
 import '../providers/smelt_detection_provider.dart';
@@ -129,7 +131,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     WidgetsBinding.instance.addObserver(this);
     // Warm up background cluster detection without watching (no rebuilds).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(detectedClustersProvider);
+      if (mounted) {
+        ref.read(detectedClustersProvider);
+        ref.read(smeltGuideProvider.notifier).resume();
+      }
     });
   }
 
@@ -145,6 +150,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
     _pinnedSmeltPopupEntry?.remove();
+    ref.read(smeltGuideProvider.notifier).pause();
     super.dispose();
   }
 
@@ -399,10 +405,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         _manualSelectMenuAnchor = null;
       });
 
-      if (hasCached) {
+      if (hasCached && !_guideHoldsSmeltMenu) {
         if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
           return;
         }
+        ref.read(smeltGuideProvider.notifier).onSmeltRequested();
         ref.read(smeltProvider.notifier).restoreCached(cacheKey);
         _showSmeltPopup(bounds);
         return;
@@ -456,12 +463,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       _manualSelectMenuAnchor = null;
     });
 
-    if (hasCached) {
+    if (hasCached && !_guideHoldsSmeltMenu) {
       // Already showing this result as the pinned popup — leave it alone.
       if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
         return;
       }
       // Reopen the saved popup for this expression — no API call / no action menu.
+      ref.read(smeltGuideProvider.notifier).onSmeltRequested();
       ref.read(smeltProvider.notifier).restoreCached(cacheKey);
       _showSmeltPopup(cluster.bounds);
       return;
@@ -492,8 +500,23 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   /// Action chips stay hidden while an active response popup is open or already cached.
-  bool get _smeltActionMenuAllowed =>
-      _smeltPopupEntry == null && !_selectionHasCachedSmelt();
+  /// During the guide's select step, chips wait until the user taps Next.
+  bool get _smeltActionMenuAllowed {
+    if (_smeltPopupEntry != null) return false;
+    final guide = ref.read(smeltGuideProvider);
+    if (guide.isActive && guide.step == SmeltGuideStep.selectExpression) {
+      return false;
+    }
+    if (guide.isActive && guide.step == SmeltGuideStep.chooseSmelt) {
+      return true;
+    }
+    return !_selectionHasCachedSmelt();
+  }
+
+  bool get _guideHoldsSmeltMenu {
+    final guide = ref.read(smeltGuideProvider);
+    return guide.isActive && guide.step == SmeltGuideStep.selectExpression;
+  }
 
   /// Show the smelt action menu, or reopen a cached response instead.
   void _revealSmeltSelectionOrCachedPopup() {
@@ -503,6 +526,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     final key =
         _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds);
     if (_pinnedCacheKey == key && _pinnedSmeltPopupEntry != null) {
+      return;
+    }
+    if (_guideHoldsSmeltMenu) {
+      setState(() => _showSelectionMenu = true);
       return;
     }
     final notifier = ref.read(smeltProvider.notifier);
@@ -1151,6 +1178,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     bool forceCodeExecution = false,
   }) async {
     if (!_hasSmeltableSelection) return;
+    ref.read(smeltGuideProvider.notifier).onSmeltRequested();
     _hideSelectionMenu();
 
     // Persist user-corrected boxes for the session so tapping the expression
@@ -1365,7 +1393,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onTap: _dismissSmeltPopup,
+                  onTap: () {
+                    if (ref.read(smeltGuideProvider).locksSmeltPopup) return;
+                    _dismissSmeltPopup();
+                  },
                   child: const SizedBox.expand(),
                 ),
               ),
@@ -1409,6 +1440,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   Future<void> _maybeShowSmeltHint() async {
+    if (ref.read(smeltGuideProvider).isActive) return;
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('smelt_tool_hint_seen') == true) return;
     await prefs.setBool('smelt_tool_hint_seen', true);
@@ -1950,9 +1982,24 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         .watch(ephemeralNoteIdsProvider)
         .contains(activeNoteId) &&
         !ref.watch(pendingNewScrapsProvider).containsKey(activeNoteId);
+    final guideActive = ref.watch(smeltGuideProvider).isActive &&
+        ref.watch(smeltGuideProvider).step.isEditorStep;
+    final hideFreshHint = guideActive;
+
+    final selectionReady = _showSelectionMenu && isSmeltMode;
+    final prevReady = ref.read(smeltGuideSelectionReadyProvider);
+    if (prevReady != selectionReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (ref.read(smeltGuideSelectionReadyProvider) != selectionReady) {
+          ref.read(smeltGuideSelectionReadyProvider.notifier).state =
+              selectionReady;
+        }
+      });
+    }
 
     final worldAnnotations = <Widget>[
-      if (strokes.isEmpty && !isInfinite)
+      if (strokes.isEmpty && !isInfinite && !hideFreshHint)
         Positioned(
           top: 80,
           left: 0,
@@ -2157,7 +2204,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         ),
       );
     }
-    if (_smeltHintVisible) {
+    if (_smeltHintVisible && !guideActive) {
       contentOverlays.add(
         Positioned(
           top: 24,
@@ -2371,7 +2418,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         children: [
           canvasBody,
           // Screen-anchored empty hint for infinite mode
-          if (isInfinite && strokes.isEmpty)
+          if (isInfinite && strokes.isEmpty && !hideFreshHint)
             Positioned(
               top: 80,
               left: 0,

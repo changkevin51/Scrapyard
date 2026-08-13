@@ -11,6 +11,8 @@ import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/chat_suggestion_chips.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
+import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
+import '../../../onboarding/presentation/smelt_guide_keys.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../providers/smelt_provider.dart';
@@ -187,6 +189,10 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   /// No-ops while pinned (shows a shake cue). Use [forceDismiss] to close anyway.
   Future<void> dismiss() async {
     if (_pinned) {
+      _shakeController.forward(from: 0);
+      return;
+    }
+    if (ref.read(smeltGuideProvider).locksSmeltPopup) {
       _shakeController.forward(from: 0);
       return;
     }
@@ -562,6 +568,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
               groupId: 'smelt-popups',
               onTapOutside: (_) {
                 if (_pinned) return;
+                if (ref.read(smeltGuideProvider).locksSmeltPopup) return;
                 // Secondary popup beside a pinned one stays open so the
                 // canvas remains usable for drawing / selecting.
                 if (!widget.allowPin) return;
@@ -623,13 +630,14 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
                     ? _togglePinned
                     : () => _shakeController.forward(from: 0),
               ),
-            PaperIconButton(
-              icon: Icons.close,
-              tooltip: 'Close',
-              size: 32,
-              iconSize: 18,
-              onPressed: forceDismiss,
-            ),
+            if (!ref.watch(smeltGuideProvider).locksSmeltPopup)
+              PaperIconButton(
+                icon: Icons.close,
+                tooltip: 'Close',
+                size: 32,
+                iconSize: 18,
+                onPressed: forceDismiss,
+              ),
           ],
         ),
       ),
@@ -767,6 +775,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
         if (hasAnswer) ...[
           if (response.isMath) ...[
             Container(
+              key: widget.frozenState == null ? SmeltGuideKeys.smeltAnswer : null,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: ScrapTheme.accentSurface,
@@ -775,26 +784,39 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
               child: _buildMathAnswer(response.answer),
             ),
           ] else ...[
-            SelectableText(
-              response.answer,
-              style: ScrapTextStyles.body.copyWith(fontSize: 15, height: 1.5),
+            KeyedSubtree(
+              key: widget.frozenState == null
+                  ? SmeltGuideKeys.smeltAnswer
+                  : const ValueKey('frozen-smelt-answer'),
+              child: SelectableText(
+                response.answer,
+                style: ScrapTextStyles.body.copyWith(fontSize: 15, height: 1.5),
+              ),
             ),
           ],
         ],
         if (hasSteps) ...[
           if (hasAnswer) ...[
             const SizedBox(height: 12),
-            _buildExpandToggle(
-              expanded: stepsExpanded,
-              expandedLabel: 'Hide steps',
-              collapsedLabel: 'Show steps',
-              onTap: () {
-                if (widget.frozenState != null) {
-                  setState(() => _localShowSteps = !_localShowSteps);
-                } else {
-                  ref.read(smeltProvider.notifier).toggleSteps();
-                }
-              },
+            KeyedSubtree(
+              key: widget.frozenState == null
+                  ? SmeltGuideKeys.showSteps
+                  : const ValueKey('frozen-show-steps'),
+              child: _buildExpandToggle(
+                expanded: stepsExpanded,
+                expandedLabel: 'Hide steps',
+                collapsedLabel: 'Show steps',
+                onTap: () {
+                  if (widget.frozenState == null) {
+                    ref.read(smeltGuideProvider.notifier).onShowStepsTapped();
+                  }
+                  if (widget.frozenState != null) {
+                    setState(() => _localShowSteps = !_localShowSteps);
+                  } else {
+                    ref.read(smeltProvider.notifier).toggleSteps();
+                  }
+                },
+              ),
             ),
           ],
           if (stepsExpanded) ...[
@@ -961,13 +983,19 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             style: ScrapTextStyles.stamp.copyWith(fontSize: 10),
           ),
           const SizedBox(height: 8),
-          ChatSuggestionChips(
-            suggestions: response.suggestions,
-            onSelected: (q) => _openChat(autoSend: q),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ChatSuggestionChips(
+              highlightKey:
+                  widget.frozenState == null ? SmeltGuideKeys.askNext : null,
+              suggestions: response.suggestions,
+              onSelected: (q) => _openChat(autoSend: q),
+            ),
           ),
           const SizedBox(height: 10),
         ],
         GestureDetector(
+          key: widget.frozenState == null ? SmeltGuideKeys.continueInChat : null,
           onTap: () => _openChat(),
           child: Row(
             mainAxisSize: MainAxisSize.min,

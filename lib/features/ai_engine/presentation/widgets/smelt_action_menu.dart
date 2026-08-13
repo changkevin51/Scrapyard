@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
+import '../../../onboarding/presentation/smelt_guide_keys.dart';
 
 /// Shared paper-chit shell for selection / smelt / paste menus.
 class PaperChit extends StatelessWidget {
@@ -293,9 +294,12 @@ class SmeltActionMenu extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SmeltPillButton(onTap: onSmelt),
+          SmeltPillButton(key: SmeltGuideKeys.smeltPill, onTap: onSmelt),
           const SizedBox(width: 8),
-          SmeltCodePillButton(onTap: onSmeltWithCode),
+          SmeltCodePillButton(
+            key: SmeltGuideKeys.smeltCodePill,
+            onTap: onSmeltWithCode,
+          ),
           if (onAddToChat != null) ...[
             const SizedBox(width: 8),
             AddToChatButton(onTap: onAddToChat!),

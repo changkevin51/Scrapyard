@@ -8,20 +8,25 @@ class ChatSuggestionChips extends StatelessWidget {
   final List<String> suggestions;
   final ValueChanged<String> onSelected;
   final bool wrap;
+  /// Optional key on the first chip — used by the Smelt guide spotlight.
+  final Key? highlightKey;
 
   const ChatSuggestionChips({
     super.key,
     required this.suggestions,
     required this.onSelected,
     this.wrap = true,
+    this.highlightKey,
   });
 
   @override
   Widget build(BuildContext context) {
     if (suggestions.isEmpty) return const SizedBox.shrink();
 
-    final chips = suggestions.map((s) {
-      return ScrapPressable(
+    final chips = <Widget>[];
+    for (var i = 0; i < suggestions.length; i++) {
+      final s = suggestions[i];
+      Widget chip = ScrapPressable(
         scale: 0.95,
         onTap: () {
           ScrapFeedback.tap();
@@ -44,7 +49,11 @@ class ChatSuggestionChips extends StatelessWidget {
           ),
         ),
       );
-    }).toList();
+      if (i == 0 && highlightKey != null) {
+        chip = KeyedSubtree(key: highlightKey, child: chip);
+      }
+      chips.add(chip);
+    }
 
     if (wrap) {
       return Wrap(

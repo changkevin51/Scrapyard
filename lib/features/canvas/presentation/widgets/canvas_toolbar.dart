@@ -15,6 +15,7 @@ import 'ink_color_controls.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
 import 'sticker_library.dart';
+import '../../../onboarding/presentation/smelt_guide_keys.dart';
 
 // ─────────────────────────────────────────────────────────
 // Tool definition — each tool has an icon, short label & tip
@@ -102,7 +103,10 @@ class CanvasToolbar extends ConsumerWidget {
 
       // ── All drawing tools – always exposed ─────────────
       for (final t in _tools)
-        _ToolButton(def: t),
+        _ToolButton(
+          key: t.tool == CanvasTool.smelt ? SmeltGuideKeys.smeltTool : null,
+          def: t,
+        ),
       const PenSettingsButton(),
       // Sticker library button
       const _StickerButton(),
@@ -287,7 +291,7 @@ class _ModeToggle extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────────────
 class _ToolButton extends ConsumerWidget {
   final _ToolDef def;
-  const _ToolButton({required this.def});
+  const _ToolButton({super.key, required this.def});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

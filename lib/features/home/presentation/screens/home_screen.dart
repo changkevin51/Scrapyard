@@ -1449,6 +1449,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
               _pressed = false;
             }),
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _pressed = true),
               onTapUp: (_) => setState(() => _pressed = false),
               onTapCancel: () => setState(() => _pressed = false),
@@ -1583,6 +1584,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
               _loosePressed = false;
             }),
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _loosePressed = true),
               onTapUp: (_) => setState(() => _loosePressed = false),
               onTapCancel: () => setState(() => _loosePressed = false),

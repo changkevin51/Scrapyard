@@ -23,6 +23,7 @@ bool isUnnamedScrapTitle(String title) =>
 
 /// Open a pending new scrap in a new editor tab (name & file later).
 void openNewScrapInTab(WidgetRef ref, {String parentId = 'root'}) {
+  stashActiveEphemeralCanvas(ref);
   final node = HomeNode.create(
     title: defaultNewScrapTitle,
     type: NodeType.note,
@@ -36,6 +37,7 @@ void openNewScrapInTab(WidgetRef ref, {String parentId = 'root'}) {
 
 /// Open an ephemeral loose scrap in a new editor tab (never saved to disk).
 void openLooseScrapInTab(WidgetRef ref) {
+  stashActiveEphemeralCanvas(ref);
   ScrapFeedback.action();
   final id = 'loose-${DateTime.now().microsecondsSinceEpoch}';
   openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
@@ -64,10 +66,36 @@ Future<void> filePendingNewScrap(
     if (textNodes.isNotEmpty) {
       await ref.read(canvasRepositoryProvider).saveTextNodes(id, textNodes);
     }
+    final tables = ref.read(canvasTablesProvider);
+    if (tables.isNotEmpty) {
+      await ref.read(canvasRepositoryProvider).saveTables(id, tables);
+    }
+    final stickers = ref.read(canvasStickersProvider);
+    if (stickers.isNotEmpty) {
+      await ref.read(canvasRepositoryProvider).saveStickers(id, stickers);
+    }
     final pageConfig = ref.read(pageLayoutProvider);
     await ref
         .read(canvasSettingsRepositoryProvider)
         .upsertPageConfig(id, pageConfig);
+  } else {
+    final cached = ref.read(ephemeralCanvasCacheProvider)[id];
+    if (cached != null) {
+      if (cached.strokes.isNotEmpty) {
+        await ref.read(canvasRepositoryProvider).saveStrokes(id, cached.strokes);
+      }
+      if (cached.texts.isNotEmpty) {
+        await ref.read(canvasRepositoryProvider).saveTextNodes(id, cached.texts);
+      }
+      if (cached.tables.isNotEmpty) {
+        await ref.read(canvasRepositoryProvider).saveTables(id, cached.tables);
+      }
+      if (cached.stickers.isNotEmpty) {
+        await ref
+            .read(canvasRepositoryProvider)
+            .saveStickers(id, cached.stickers);
+      }
+    }
   }
 
   await ref.read(homeRepositoryProvider).insertNode(node);
@@ -77,6 +105,7 @@ Future<void> filePendingNewScrap(
 
   ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m}..remove(id));
   ref.read(ephemeralNoteIdsProvider.notifier).update((s) => {...s}..remove(id));
+  ref.read(ephemeralCanvasCacheProvider.notifier).update((m) => {...m}..remove(id));
   ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
 
   final tabs = ref.read(openedTabsProvider);
@@ -132,21 +161,37 @@ Future<bool> resolvePendingScrapsBeforeLeaving(
   BuildContext context,
   WidgetRef ref,
 ) async {
-  final pending = ref.read(pendingNewScrapsProvider);
-  if (pending.isEmpty) return true;
+  stashActiveEphemeralCanvas(ref);
 
-  final activeId = ref.read(activeNoteIdProvider);
-
-  // Non-active pending scraps are dropped when leaving the desk.
-  for (final id in pending.keys) {
-    if (id != activeId) {
-      discardPendingNewScrap(ref, id);
+  final looseIds = ref
+      .read(ephemeralNoteIdsProvider)
+      .where((id) => !ref.read(pendingNewScrapsProvider).containsKey(id))
+      .toList();
+  for (final id in looseIds) {
+    if (!scrapIdHasInk(ref, id)) {
+      discardEphemeralNote(ref, id);
+      continue;
     }
+    if (!context.mounted) return false;
+    final drift = await showLetSheetDriftDialog(context);
+    if (drift == null) return false;
+    if (!drift) return false;
+    discardEphemeralNote(ref, id);
   }
 
-  if (!pending.containsKey(activeId)) return true;
+  final pending = Map<String, HomeNode>.from(ref.read(pendingNewScrapsProvider));
+  if (pending.isEmpty) return true;
 
-  return resolvePendingScrapForTab(context, ref, activeId);
+  for (final id in pending.keys) {
+    if (!scrapIdHasInk(ref, id)) {
+      discardPendingNewScrap(ref, id);
+      continue;
+    }
+    if (!context.mounted) return false;
+    final resolved = await resolvePendingScrapForTab(context, ref, id);
+    if (!resolved) return false;
+  }
+  return true;
 }
 
 /// Leave the note editor after resolving pending scraps.
@@ -224,10 +269,8 @@ class _NameNewScrapDialogState extends State<_NameNewScrapDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return MediaQuery(
-      data: MediaQuery.of(context).copyWith(viewInsets: EdgeInsets.zero),
-      child: AlertDialog(
-      insetPadding: EdgeInsets.zero,
+    return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       backgroundColor: ScrapTheme.cardSurface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
@@ -304,7 +347,43 @@ class _NameNewScrapDialogState extends State<_NameNewScrapDialog> {
           ),
         ),
       ],
-    ),
     );
   }
+}
+
+Future<bool?> showLetSheetDriftDialog(BuildContext context) {
+  return showScrapDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: ScrapTheme.cardSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+      ),
+      title: Text(
+        'Let this sheet drift?',
+        style: ScrapTextStyles.heading.copyWith(fontSize: 18),
+      ),
+      content: Text(
+        'This loose scrap won\'t be filed. Drift it off the desk, or keep writing.',
+        style: ScrapTextStyles.body.copyWith(color: ScrapTheme.secondaryText),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(
+            'Keep writing',
+            style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(
+            'Let it drift',
+            style: ScrapTextStyles.body.copyWith(color: ScrapTheme.inkRed),
+          ),
+        ),
+      ],
+    ),
+  );
 }

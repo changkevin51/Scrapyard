@@ -22,15 +22,9 @@ class CanvasTableOverlay extends ConsumerWidget {
       top: table.position.dy,
       child: GestureDetector(
         onPanUpdate: (d) {
-          final tables = ref.read(canvasTablesProvider);
-          final idx = tables.indexWhere((t) => t.id == table.id);
-          if (idx == -1) return;
-          final updated = tables[idx].copyWithPosition(
-            tables[idx].position + d.delta,
-          );
-          final newList = List<CanvasTable>.from(tables);
-          newList[idx] = updated;
-          ref.read(canvasTablesProvider.notifier).state = newList;
+          ref.read(canvasTablesProvider.notifier).upsert(
+                table.copyWithPosition(table.position + d.delta),
+              );
         },
         child: Container(
           decoration: BoxDecoration(
@@ -61,9 +55,7 @@ class CanvasTableOverlay extends ConsumerWidget {
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
-                        final tables = ref.read(canvasTablesProvider);
-                        ref.read(canvasTablesProvider.notifier).state =
-                            tables.where((t) => t.id != table.id).toList();
+                        ref.read(canvasTablesProvider.notifier).remove(table.id);
                       },
                       child: const Icon(Icons.close,
                           size: 14, color: ScrapTheme.mutedText),
@@ -111,13 +103,9 @@ class _TableCell extends ConsumerWidget {
       child: TextField(
         controller: TextEditingController(text: table.cells[row][col]),
         onChanged: (val) {
-          final tables = ref.read(canvasTablesProvider);
-          final idx = tables.indexWhere((t) => t.id == table.id);
-          if (idx == -1) return;
-          final updated = tables[idx].copyWithCell(row, col, val);
-          final newList = List<CanvasTable>.from(tables);
-          newList[idx] = updated;
-          ref.read(canvasTablesProvider.notifier).state = newList;
+          ref.read(canvasTablesProvider.notifier).upsert(
+                table.copyWithCell(row, col, val),
+              );
         },
         style: ScrapTextStyles.body.copyWith(fontSize: 13),
         decoration: const InputDecoration(
@@ -237,9 +225,7 @@ class _InsertTableDialogState extends ConsumerState<InsertTableDialog> {
               rows: _rows,
               cols: _cols,
             );
-            ref
-                .read(canvasTablesProvider.notifier)
-                .update((s) => [...s, table]);
+            ref.read(canvasTablesProvider.notifier).add(table);
             Navigator.pop(context);
           },
           child: Container(

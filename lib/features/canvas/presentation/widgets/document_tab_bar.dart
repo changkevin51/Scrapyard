@@ -59,15 +59,11 @@ class DocumentTabBar extends ConsumerWidget {
                   isEphemeral: isEphemeral,
                   isPending: isPending,
                   groupName: group?.name,
-                  onTap: () {
-                    ref.read(activeTabIdProvider.notifier).state = tab.id;
-                    ref.read(activeNoteIdProvider.notifier).state = tab.id;
-                  },
+                  onTap: () => switchActiveNote(ref, tab.id),
                   onClose: () async {
                     if (isPending) {
                       if (activeId != tab.id) {
-                        ref.read(activeTabIdProvider.notifier).state = tab.id;
-                        ref.read(activeNoteIdProvider.notifier).state = tab.id;
+                        switchActiveNote(ref, tab.id);
                       }
                       final resolved =
                           await resolvePendingScrapForTab(ctx, ref, tab.id);
@@ -75,9 +71,15 @@ class DocumentTabBar extends ConsumerWidget {
                       return;
                     }
                     if (isEphemeral) {
+                      if (scrapIdHasInk(ref, tab.id)) {
+                        if (activeId != tab.id) switchActiveNote(ref, tab.id);
+                        final drift = await showLetSheetDriftDialog(ctx);
+                        if (drift != true) return;
+                      }
                       discardEphemeralNote(ref, tab.id);
                       return;
                     }
+                    stashActiveEphemeralCanvas(ref);
                     final updated = tabs.where((t) => t.id != tab.id).toList();
                     ref.read(openedTabsProvider.notifier).state = updated;
                     if (activeId == tab.id) {

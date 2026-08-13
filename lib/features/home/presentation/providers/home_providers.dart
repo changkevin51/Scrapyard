@@ -82,7 +82,7 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
   Future<void> importDocument() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt'],
+      allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
     );
 
     if (result != null && result.files.single.path != null) {
@@ -137,6 +137,12 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
     final updated = node.copyWith(title: trimmed, updatedAt: DateTime.now());
     await _repository.updateNode(updated);
     await _loadNodes();
+  }
+
+  Future<bool> moveNode(String id, String newParentId) async {
+    final ok = await _repository.moveNode(id, newParentId);
+    if (ok) await _loadNodes();
+    return ok;
   }
 
   Future<void> refresh() => _loadNodes();

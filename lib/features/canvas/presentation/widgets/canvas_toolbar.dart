@@ -466,8 +466,8 @@ class _ActionButton extends ConsumerWidget {
       message: tip,
       child: _ToolPressable(
         onTap: () {
-          if (action == CanvasTool.undo) ref.read(strokesProvider.notifier).undo();
-          if (action == CanvasTool.redo) ref.read(strokesProvider.notifier).redo();
+          if (action == CanvasTool.undo) undoCanvas(ref);
+          if (action == CanvasTool.redo) redoCanvas(ref);
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

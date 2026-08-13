@@ -6,13 +6,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/paper_grain.dart';
+import '../../../../core/widgets/paper_surfaces.dart' hide PaperChit;
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
+import '../../../ai_engine/domain/models/smelt_response.dart';
 import '../../../ai_engine/presentation/widgets/smelt_action_menu.dart';
 import '../../../ai_chat/presentation/providers/chat_providers.dart';
 import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
@@ -28,6 +32,7 @@ import '../widgets/canvas_text_sticker.dart';
 import '../widgets/document_tab_bar.dart';
 import '../widgets/pending_scrap_flow.dart';
 import '../widgets/sticker_library.dart';
+import '../widgets/taped_slip.dart';
 import '../../domain/models/stroke.dart';
 import '../../data/canvas_ocr_service.dart';
 
@@ -85,8 +90,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   bool _selectionFromDetection = false;
   bool _isSmelting = false;
   bool _manualHintVisible = false;
+  bool _smeltHintVisible = false;
   Offset? _manualSelectMenuAnchor;
   Timer? _manualHintTimer;
+  Timer? _smeltHintTimer;
   int? _selectionPointerId;
   Offset? _selectionDownPos;
   bool _selectionDragStarted = false;
@@ -131,6 +138,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     WidgetsBinding.instance.removeObserver(this);
     _ocrDebounce?.cancel();
     _manualHintTimer?.cancel();
+    _smeltHintTimer?.cancel();
     _selectionEdgeScrollTimer?.cancel();
     _ocrService.dispose();
     _scrollController.dispose();
@@ -1367,6 +1375,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               onDismiss: _removeSmeltPopup,
               onCollapse: _collapseSmeltPopup,
               onTryAnotherModel: _tryAnotherModelFromSmelt,
+              onTapeOntoScrap: _tapeSmeltOntoScrap,
               allowPin: !hasPinned,
               avoidRect: hasPinned ? _pinnedPopupBounds : null,
               onPinnedChanged: _onActivePopupPinnedChanged,
@@ -1379,6 +1388,36 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     Overlay.of(context).insert(_smeltPopupEntry!);
     // Rebuild canvas overlays so the action menu hides while popup is open.
     if (mounted) setState(() {});
+  }
+
+  void _tapeSmeltOntoScrap(SmeltResponse response) {
+    final sel = _selectionRect ??
+        _pinnedSelectionRect ??
+        const Rect.fromLTWH(72, 72, 80, 48);
+    ref.read(canvasTextNodesProvider.notifier).add(
+          CanvasTextItem(
+            id: const Uuid().v4(),
+            position: Offset(sel.right + 18, sel.top),
+            text: response.answer,
+            tapedSteps: response.steps,
+            taped: true,
+            fontSize: 14,
+          ),
+        );
+    ScrapFeedback.action();
+    if (mounted) showPaperToast(context, 'Taped onto scrap');
+  }
+
+  Future<void> _maybeShowSmeltHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('smelt_tool_hint_seen') == true) return;
+    await prefs.setBool('smelt_tool_hint_seen', true);
+    if (!mounted) return;
+    setState(() => _smeltHintVisible = true);
+    _smeltHintTimer?.cancel();
+    _smeltHintTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _smeltHintVisible = false);
+    });
   }
 
   bool _canFitSecondSmeltPopup() {
@@ -1452,6 +1491,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           onDismiss: () => _removePinnedSmeltPopup(),
           onCollapse: () => _removePinnedSmeltPopup(),
           onTryAnotherModel: () {},
+          onTapeOntoScrap: _tapeSmeltOntoScrap,
           onPinnedChanged: (stillPinned) {
             if (stillPinned) return;
             // Unpin → allow outside-tap dismiss via TapRegion inside the popup.
@@ -1806,6 +1846,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       if (previous == CanvasTool.text && next != CanvasTool.text) {
         ref.read(activeTextNodeIdProvider.notifier).state = null;
       }
+      if (next == CanvasTool.smelt && previous != CanvasTool.smelt) {
+        _maybeShowSmeltHint();
+      }
       if (previous != next && next != CanvasTool.lasso && next != CanvasTool.smelt) {
         _clearSelectionState();
         _hidePasteMenu();
@@ -1898,6 +1941,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         ? ref.watch(canvasViewportProvider).scale
         : ref.watch(canvasZoomProvider);
     final toolbarPosition = ref.watch(toolbarPositionProvider);
+    ref.watch(canvasHistoryCoordinatorProvider);
 
     final strokes = ref.watch(strokesProvider);
 
@@ -1918,8 +1962,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           ),
         ),
       ...ref.watch(canvasTextNodesProvider).map(
-            (node) =>
-                CanvasTextSticker(key: ValueKey(node.id), item: node),
+            (node) => node.taped
+                ? TapedSlipOverlay(key: ValueKey(node.id), item: node)
+                : CanvasTextSticker(key: ValueKey(node.id), item: node),
           ),
       ...ref.watch(canvasStickersProvider).map(
             (s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s),
@@ -2108,6 +2153,39 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   onCopy: _copySelection,
                 ),
             ],
+          ),
+        ),
+      );
+    }
+    if (_smeltHintVisible) {
+      contentOverlays.add(
+        Positioned(
+          top: 24,
+          left: 0,
+          right: 0,
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Transform.rotate(
+                angle: -0.6 * math.pi / 180,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.cardSurface,
+                    borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                    border: Border.all(color: ScrapTheme.dividers),
+                    boxShadow: ScrapTheme.subtleShadow,
+                  ),
+                  child: Text(
+                    'Lasso or tap a cluster',
+                    style: ScrapTextStyles.caption.copyWith(
+                      color: ScrapTheme.accent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       );

@@ -7,20 +7,33 @@ class CanvasTextItem {
   final Offset position;
   final String text;
   final double fontSize;
+  /// When true, render as a kraft slip taped onto the scrap (Smelt result).
+  final bool taped;
+  final String? tapedSteps;
 
   CanvasTextItem({
     required this.id,
     required this.position,
     this.text = '',
     this.fontSize = 18.0,
+    this.taped = false,
+    this.tapedSteps,
   });
 
-  CanvasTextItem copyWith({Offset? position, String? text, double? fontSize}) {
+  CanvasTextItem copyWith({
+    Offset? position,
+    String? text,
+    double? fontSize,
+    bool? taped,
+    String? tapedSteps,
+  }) {
     return CanvasTextItem(
       id: id,
       position: position ?? this.position,
       text: text ?? this.text,
       fontSize: fontSize ?? this.fontSize,
+      taped: taped ?? this.taped,
+      tapedSteps: tapedSteps ?? this.tapedSteps,
     );
   }
 
@@ -30,6 +43,8 @@ class CanvasTextItem {
         'y': position.dy,
         'text': text,
         'fontSize': fontSize,
+        'taped': taped,
+        'tapedSteps': tapedSteps,
       };
 
   factory CanvasTextItem.fromMap(Map<String, dynamic> map) => CanvasTextItem(
@@ -40,6 +55,8 @@ class CanvasTextItem {
         ),
         text: map['text'] as String? ?? '',
         fontSize: (map['fontSize'] as num?)?.toDouble() ?? 18.0,
+        taped: map['taped'] == true,
+        tapedSteps: map['tapedSteps'] as String?,
       );
 
   String toJson() => json.encode(toMap());

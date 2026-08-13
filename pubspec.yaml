@@ -34,6 +34,7 @@ dependencies:
   flutter_math_fork: ^0.7.3
   perfect_freehand: ^2.5.2+1
   flutter_colorpicker: ^1.1.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

@@ -39,18 +39,13 @@ Future<T?> showScrapDialog<T>({
       final settle = Tween<double>(begin: 1.5 * math.pi / 180, end: 0).animate(
         curved,
       );
-      final viewInsets = MediaQuery.viewInsetsOf(context);
-      final safePadding = MediaQuery.paddingOf(context);
-      final screenHeight = MediaQuery.sizeOf(context).height;
-      final keyboardOpen = viewInsets.bottom > 0;
-      final maxHeight = screenHeight -
-          viewInsets.bottom -
-          safePadding.top -
-          48;
+      final mq = MediaQuery.of(context);
+      final keyboard = mq.viewInsets.bottom;
+      final maxHeight = mq.size.height - mq.padding.top - keyboard - 48;
 
       final dialog = ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: maxHeight,
+          maxHeight: maxHeight.clamp(160, mq.size.height),
           maxWidth: 560,
         ),
         child: SlideTransition(
@@ -72,29 +67,28 @@ Future<T?> showScrapDialog<T>({
         ),
       );
 
+      // Pad for the keyboard once, and strip viewInsets so AlertDialog
+      // doesn't also shift itself off the top of the screen.
       return Stack(
         children: [
           Positioned.fill(
-            // Visual-only scrim; real barrier still handles dismiss taps.
             child: IgnorePointer(
               child: ColoredBox(color: scrim),
             ),
           ),
-          if (keyboardOpen)
-            // Anchor above the keyboard so the dialog doesn't jump when typing.
-            Positioned(
-              left: 24,
-              right: 24,
-              bottom: viewInsets.bottom + 16,
-              child: dialog,
-            )
-          else
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: dialog,
+          MediaQuery.removeViewInsets(
+            context: context,
+            removeBottom: true,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24 + mq.padding.top,
+                24,
+                24 + keyboard,
               ),
+              child: Center(child: dialog),
             ),
+          ),
         ],
       );
     },

@@ -597,9 +597,9 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     if (invalid) return;
 
     if (peak == 2 && ref.read(twoFingerTapUndoEnabledProvider)) {
-      ref.read(strokesProvider.notifier).undo();
+      undoCanvas(ref);
     } else if (peak == 3 && ref.read(threeFingerTapRedoEnabledProvider)) {
-      ref.read(strokesProvider.notifier).redo();
+      redoCanvas(ref);
     }
   }
 

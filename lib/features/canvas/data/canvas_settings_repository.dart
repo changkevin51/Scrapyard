@@ -61,7 +61,7 @@ class CanvasSettingsRepository {
   );
 
   /// Shared DB schema version (must match [StrokeRepository.dbVersion]).
-  static const int dbVersion = 4;
+  static const int dbVersion = 5;
 
   static Database? _database;
 
@@ -96,6 +96,7 @@ class CanvasSettingsRepository {
         ''');
         await _createNoteSettings(db);
         await _createTextNodes(db);
+        await _createCanvasLayers(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -107,6 +108,9 @@ class CanvasSettingsRepository {
         if (oldVersion < 4) {
           await _createTextNodes(db);
         }
+        if (oldVersion < 5) {
+          await _createCanvasLayers(db);
+        }
       },
     );
   }
@@ -114,6 +118,25 @@ class CanvasSettingsRepository {
   static Future<void> _createTextNodes(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS text_nodes (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _createCanvasLayers(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS canvas_tables (
+        id TEXT PRIMARY KEY,
+        note_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS canvas_stickers (
         id TEXT PRIMARY KEY,
         note_id TEXT NOT NULL,
         data TEXT NOT NULL,

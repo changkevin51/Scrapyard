@@ -15,10 +15,12 @@ import '../../../../core/widgets/scrap_crush.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../domain/models/home_node.dart';
+import '../../data/scrap_share.dart';
 import '../providers/home_providers.dart' show
     currentFolderIdProvider,
     currentHomeNodesProvider,
     folderPathProvider,
+    homeRepositoryProvider,
     invalidateNoteThumbnail,
     scrapThumbnailPreloaderProvider;
 import '../widgets/pdf_thumbnail.dart';
@@ -125,12 +127,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final id = 'loose-${DateTime.now().microsecondsSinceEpoch}';
     openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
     context.push('/note_editor').then((_) {
-      final hadLoose = ref.read(ephemeralNoteIdsProvider).isNotEmpty;
-      discardAllEphemeralNotes(ref);
-      ref.read(dirtyNoteIdsProvider.notifier).state = {};
-      if (hadLoose && mounted) {
-        showPaperToast(context, 'Loose scrap drifted off');
+      if (ref.read(ephemeralNoteIdsProvider).isNotEmpty) {
+        discardAllEphemeralNotes(ref);
       }
+      ref.read(dirtyNoteIdsProvider.notifier).state = {};
     });
   }
 
@@ -273,11 +273,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         ScrapPressable(
                           scale: 0.96,
-                          onTap: () {
+                          onTap: () async {
                             ScrapFeedback.tap();
-                            ref
+                            final title = await showScrapDialog<String>(
+                              context: context,
+                              builder: (ctx) => const _RenameNodeDialog(
+                                initialTitle: 'New Folder',
+                              ),
+                            );
+                            if (title == null || !mounted) return;
+                            await ref
                                 .read(currentHomeNodesProvider.notifier)
-                                .createFolder('New Folder');
+                                .createFolder(title);
                           },
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -1107,6 +1114,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _moveNode(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    final folders = await ref.read(homeRepositoryProvider).getAllFolders();
+    if (!context.mounted) return;
+    final dest = await showScrapDialog<String>(
+      context: context,
+      builder: (ctx) => _MoveToPileDialog(
+        node: node,
+        folders: folders,
+        currentParentId: node.parentId,
+      ),
+    );
+    if (dest == null || !mounted) return;
+    final ok = await ref.read(currentHomeNodesProvider.notifier).moveNode(
+          node.id,
+          dest,
+        );
+    if (!context.mounted) return;
+    if (ok) {
+      showPaperToast(
+        context,
+        dest == 'root' ? 'Moved to the desk' : 'Moved to pile',
+      );
+    } else {
+      showPaperToast(context, 'Couldn\'t move into that pile');
+    }
+  }
+
+  Future<void> _tearOutScrap(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    if (node.type != NodeType.note) return;
+    ScrapFeedback.action();
+    try {
+      await shareScrapPng(ref, node);
+    } catch (e) {
+      debugPrint('Tear out failed: $e');
+      if (!context.mounted) return;
+      showPaperToast(
+        context,
+        isSharePluginMissing(e)
+            ? 'Stop and restart the app to enable Tear out'
+            : 'Couldn\'t tear out this scrap',
+      );
+    }
+  }
+
   Widget _cardHeader(
     BuildContext context,
     WidgetRef ref,
@@ -1193,6 +1252,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onSelected: (val) {
                   if (val == 'rename') {
                     _renameNode(context, ref, node);
+                  } else if (val == 'move') {
+                    _moveNode(context, ref, node);
+                  } else if (val == 'tear') {
+                    _tearOutScrap(context, ref, node);
                   }
                 },
                 itemBuilder: (context) => [
@@ -1200,6 +1263,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     value: 'rename',
                     child: Text('Rename'),
                   ),
+                  const PopupMenuItem(
+                    value: 'move',
+                    child: Text('Move to pile…'),
+                  ),
+                  if (node.type == NodeType.note)
+                    const PopupMenuItem(
+                      value: 'tear',
+                      child: Text('Tear out'),
+                    ),
                 ],
               ),
             ],
@@ -1881,6 +1953,130 @@ class _SidebarItem extends StatelessWidget {
                 fontSize: 15,
               ),
               child: Text(title),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoveToPileDialog extends StatelessWidget {
+  final HomeNode node;
+  final List<HomeNode> folders;
+  final String currentParentId;
+
+  const _MoveToPileDialog({
+    required this.node,
+    required this.folders,
+    required this.currentParentId,
+  });
+
+  int _depth(HomeNode folder, Map<String, HomeNode> byId) {
+    var d = 0;
+    var walk = folder.parentId;
+    final seen = <String>{folder.id};
+    while (walk != 'root' && byId.containsKey(walk) && seen.add(walk)) {
+      d++;
+      walk = byId[walk]!.parentId;
+      if (d > 8) break;
+    }
+    return d;
+  }
+
+  bool _isSelfOrDescendant(HomeNode folder, Map<String, HomeNode> byId) {
+    if (node.type != NodeType.folder) return folder.id == node.id;
+    var walk = folder.id;
+    final seen = <String>{};
+    while (walk != 'root' && seen.add(walk)) {
+      if (walk == node.id) return true;
+      walk = byId[walk]?.parentId ?? 'root';
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final byId = {for (final f in folders) f.id: f};
+    final options = folders
+        .where((f) => !_isSelfOrDescendant(f, byId))
+        .toList()
+      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+
+    return AlertDialog(
+      backgroundColor: ScrapTheme.cardSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+      ),
+      title: Text(
+        'Move to pile',
+        style: ScrapTextStyles.heading.copyWith(fontSize: 18),
+      ),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _pileChoice(
+                context,
+                label: 'Desk',
+                selected: currentParentId == 'root',
+                indent: 0,
+                onTap: () => Navigator.pop(context, 'root'),
+              ),
+              for (final folder in options)
+                _pileChoice(
+                  context,
+                  label: folder.title,
+                  selected: currentParentId == folder.id,
+                  indent: _depth(folder, byId),
+                  onTap: () => Navigator.pop(context, folder.id),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: ScrapTextStyles.body.copyWith(color: ScrapTheme.mutedText),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pileChoice(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required int indent,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(8.0 + indent * 16, 10, 8, 10),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.check : Icons.folder_outlined,
+              size: 18,
+              color: selected ? ScrapTheme.accent : ScrapTheme.mutedText,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: ScrapTextStyles.body.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? ScrapTheme.accent : ScrapTheme.primaryText,
+                ),
+              ),
             ),
           ],
         ),

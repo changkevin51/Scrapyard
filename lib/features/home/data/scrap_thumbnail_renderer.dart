@@ -13,11 +13,11 @@ import '../../canvas/domain/models/stroke.dart';
 class ScrapThumbnailRenderer {
   static const Size thumbnailSize = Size(400, 360);
 
-  static ui.Picture render(List<Stroke> strokes) {
+  static ui.Picture render(List<Stroke> strokes, {Size size = thumbnailSize}) {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(
       recorder,
-      Rect.fromLTWH(0, 0, thumbnailSize.width, thumbnailSize.height),
+      Rect.fromLTWH(0, 0, size.width, size.height),
     );
     canvas.drawColor(ScrapTheme.background, BlendMode.src);
 
@@ -29,12 +29,12 @@ class ScrapThumbnailRenderer {
     const pad = 24.0;
     final content = bounds.inflate(pad);
     final scale = min(
-      thumbnailSize.width / content.width,
-      thumbnailSize.height / content.height,
+      size.width / content.width,
+      size.height / content.height,
     ).clamp(0.02, 1.0);
 
-    final dx = (thumbnailSize.width - content.width * scale) / 2;
-    final dy = (thumbnailSize.height - content.height * scale) / 2;
+    final dx = (size.width - content.width * scale) / 2;
+    final dy = (size.height - content.height * scale) / 2;
 
     canvas.save();
     canvas.translate(dx, dy);

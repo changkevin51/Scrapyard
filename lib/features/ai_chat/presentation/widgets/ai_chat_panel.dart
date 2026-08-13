@@ -465,7 +465,9 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
               children: [
                 GestureDetector(
                   onTap: isStreaming ? null : _requestCanvasCapture,
-                  child: AnimatedContainer(
+                  child: Tooltip(
+                    message: 'Send this region to chat',
+                    child: AnimatedContainer(
                     duration: ScrapMotion.fast,
                     width: 40,
                     height: 40,
@@ -481,6 +483,7 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                           : ScrapTheme.secondaryText,
                       size: 20,
                     ),
+                  ),
                   ),
                 ),
                 const SizedBox(width: 8),

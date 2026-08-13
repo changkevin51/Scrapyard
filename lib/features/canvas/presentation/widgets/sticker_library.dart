@@ -3,35 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../domain/models/canvas_smart_models.dart';
+import '../providers/canvas_providers.dart';
 
-// ─────────────────────────────────────────────────────────────────
-// Canvas Sticker model — an emoji/decorative sticker placed on canvas
-// ─────────────────────────────────────────────────────────────────
-class CanvasSticker {
-  final String id;
-  final Offset position;
-  final String content;  // emoji or glyph
-  final double size;
-  final double rotation; // radians
-
-  const CanvasSticker({
-    required this.id,
-    required this.position,
-    required this.content,
-    this.size = 48,
-    this.rotation = 0,
-  });
-
-  CanvasSticker copyWith({Offset? position, double? size, double? rotation}) =>
-      CanvasSticker(
-        id: id, content: content,
-        position: position  ?? this.position,
-        size:     size      ?? this.size,
-        rotation: rotation  ?? this.rotation,
-      );
-}
-
-final canvasStickersProvider = StateProvider<List<CanvasSticker>>((ref) => []);
+export '../../domain/models/canvas_smart_models.dart' show CanvasSticker;
 
 // ─────────────────────────────────────────────────────────────────
 // Sticker categories
@@ -101,7 +76,7 @@ class _StickerLibraryPanelState extends ConsumerState<StickerLibraryPanel>
       content: emoji,
       size: 48,
     );
-    ref.read(canvasStickersProvider.notifier).update((s) => [...s, sticker]);
+    ref.read(canvasStickersProvider.notifier).add(sticker);
     Navigator.pop(context);
   }
 
@@ -269,14 +244,11 @@ class _CanvasStickerOverlayState extends ConsumerState<CanvasStickerOverlay> {
       size:     size,
       rotation: rotation,
     );
-    final newList = List<CanvasSticker>.from(stickers);
-    newList[idx] = updated;
-    ref.read(canvasStickersProvider.notifier).state = newList;
+    ref.read(canvasStickersProvider.notifier).upsert(updated);
   }
 
   void _delete() {
-    ref.read(canvasStickersProvider.notifier)
-        .update((s) => s.where((x) => x.id != widget.sticker.id).toList());
+    ref.read(canvasStickersProvider.notifier).remove(widget.sticker.id);
   }
 
   @override

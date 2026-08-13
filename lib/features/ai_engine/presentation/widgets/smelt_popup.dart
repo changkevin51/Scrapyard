@@ -25,6 +25,7 @@ class SmeltPopup extends ConsumerStatefulWidget {
   final VoidCallback onDismiss;
   final VoidCallback onCollapse;
   final VoidCallback onTryAnotherModel;
+  final ValueChanged<SmeltResponse>? onTapeOntoScrap;
   final ValueChanged<bool>? onPinnedChanged;
   final Size screenSize;
   /// When false, the pin button is hidden (e.g. a second popup while one is pinned).
@@ -44,6 +45,7 @@ class SmeltPopup extends ConsumerStatefulWidget {
     required this.onDismiss,
     required this.onCollapse,
     required this.onTryAnotherModel,
+    this.onTapeOntoScrap,
     required this.screenSize,
     this.onPinnedChanged,
     this.allowPin = true,
@@ -982,6 +984,26 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             ],
           ),
         ),
+        if (widget.onTapeOntoScrap != null) ...[
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => widget.onTapeOntoScrap!(response),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Tape onto scrap',
+                  style: ScrapTextStyles.caption.copyWith(
+                    color: ScrapTheme.accent,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.content_paste, size: 14, color: ScrapTheme.accent),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }

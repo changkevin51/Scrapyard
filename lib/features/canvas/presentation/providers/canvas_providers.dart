@@ -8,9 +8,11 @@ import '../../data/stroke_repository.dart';
 import '../../data/canvas_settings_repository.dart';
 import '../../data/pen_engine.dart';
 import '../../data/canvas_ocr_service.dart';
+import 'canvas_history.dart';
 
 export '../../domain/models/page_layout.dart';
 export '../../domain/models/canvas_text_item.dart';
+export 'canvas_history.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
 
@@ -243,15 +245,19 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   final String _noteId;
   final bool _ephemeral;
   final void Function(String noteId)? _onContentChanged;
+  final CanvasHistoryNotifier? _history;
 
   TextNodesNotifier(
     this._repository,
     this._noteId, {
     bool ephemeral = false,
     void Function(String noteId)? onContentChanged,
+    CanvasHistoryNotifier? history,
+    List<CanvasTextItem>? initial,
   })  : _ephemeral = ephemeral,
         _onContentChanged = onContentChanged,
-        super([]) {
+        _history = history,
+        super(initial ?? []) {
     if (!_ephemeral) _load();
   }
 
@@ -260,13 +266,23 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   }
 
   Future<void> _load() async {
+    _history?.ignoreChanges = true;
     state = await _repository.loadTextNodes(_noteId);
+    _history?.ignoreChanges = false;
+  }
+
+  void restore(List<CanvasTextItem> items) {
+    state = List.from(items);
+    if (!_ephemeral) {
+      _repository.replaceTextNodes(_noteId, items);
+      _onContentChanged?.call(_noteId);
+    }
   }
 
   void add(CanvasTextItem item) {
     state = [...state, item];
     // Empty placeholders stay in memory only until the user types.
-    if (!_ephemeral && item.text.trim().isNotEmpty) {
+    if (!_ephemeral && (item.text.trim().isNotEmpty || item.taped)) {
       _repository.saveTextNodes(_noteId, [item]);
       _markContentChanged();
     }
@@ -278,11 +294,13 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
       add(item);
       return;
     }
+    _history?.ignoreChanges = true;
     final next = List<CanvasTextItem>.from(state);
     next[idx] = item;
     state = next;
+    _history?.ignoreChanges = false;
     if (!_ephemeral) {
-      if (item.text.trim().isEmpty) {
+      if (item.text.trim().isEmpty && !item.taped) {
         _repository.deleteTextNodes([item.id]);
       } else {
         _repository.saveTextNodes(_noteId, [item]);
@@ -296,8 +314,9 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
     final map = {for (final u in updates) u.id: u};
     state = [for (final n in state) map[n.id] ?? n];
     if (!_ephemeral) {
-      final persistable =
-          updates.where((u) => u.text.trim().isNotEmpty).toList();
+      final persistable = updates
+          .where((u) => u.text.trim().isNotEmpty || u.taped)
+          .toList();
       if (persistable.isNotEmpty) {
         _repository.saveTextNodes(_noteId, persistable);
         _markContentChanged();
@@ -329,10 +348,13 @@ final canvasTextNodesProvider =
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
   final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
   return TextNodesNotifier(
     repo,
     noteId,
     ephemeral: ephemeral,
+    initial: cached?.texts,
+    history: ref.read(canvasHistoryHolderProvider),
     onContentChanged: (id) {
       ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
     },
@@ -350,7 +372,188 @@ final consumeTextCanvasTapProvider = StateProvider<bool>((ref) => false);
 /// keep it above the keyboard.
 final activeTextGlobalRectProvider = StateProvider<Rect?>((ref) => null);
 
-final canvasTablesProvider = StateProvider<List<CanvasTable>>((ref) => []);
+final canvasTablesProvider =
+    StateNotifierProvider<CanvasTablesNotifier, List<CanvasTable>>((ref) {
+  final repo = ref.watch(canvasRepositoryProvider);
+  final noteId = ref.watch(activeNoteIdProvider);
+  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
+  return CanvasTablesNotifier(
+    repo,
+    noteId,
+    ephemeral: ephemeral,
+    initial: cached?.tables,
+    history: ref.read(canvasHistoryHolderProvider),
+    onContentChanged: (id) {
+      ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
+    },
+  );
+});
+
+class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
+  final StrokeRepository _repository;
+  final String _noteId;
+  final bool _ephemeral;
+  final void Function(String noteId)? _onContentChanged;
+  final CanvasHistoryNotifier? _history;
+
+  CanvasTablesNotifier(
+    this._repository,
+    this._noteId, {
+    bool ephemeral = false,
+    void Function(String noteId)? onContentChanged,
+    CanvasHistoryNotifier? history,
+    List<CanvasTable>? initial,
+  })  : _ephemeral = ephemeral,
+        _onContentChanged = onContentChanged,
+        _history = history,
+        super(initial ?? []) {
+    if (!_ephemeral) _load();
+  }
+
+  void _mark() {
+    if (!_ephemeral) _onContentChanged?.call(_noteId);
+  }
+
+  Future<void> _load() async {
+    _history?.ignoreChanges = true;
+    state = await _repository.loadTables(_noteId);
+    _history?.ignoreChanges = false;
+  }
+
+  void add(CanvasTable table) {
+    state = [...state, table];
+    if (!_ephemeral) {
+      _repository.saveTables(_noteId, [table]);
+      _mark();
+    }
+  }
+
+  void upsert(CanvasTable table, {bool checkpoint = false}) {
+    final idx = state.indexWhere((t) => t.id == table.id);
+    if (idx < 0) {
+      add(table);
+      return;
+    }
+    if (!checkpoint) _history?.ignoreChanges = true;
+    final next = List<CanvasTable>.from(state);
+    next[idx] = table;
+    state = next;
+    if (!checkpoint) _history?.ignoreChanges = false;
+    if (!_ephemeral) {
+      _repository.saveTables(_noteId, [table]);
+      _mark();
+    }
+  }
+
+  void remove(String id) {
+    state = state.where((t) => t.id != id).toList();
+    if (!_ephemeral) {
+      _repository.deleteTables([id]);
+      _mark();
+    }
+  }
+
+  void restore(List<CanvasTable> tables) {
+    state = List.from(tables);
+    if (!_ephemeral) {
+      _repository.replaceTables(_noteId, tables);
+      _mark();
+    }
+  }
+}
+
+final canvasStickersProvider =
+    StateNotifierProvider<CanvasStickersNotifier, List<CanvasSticker>>((ref) {
+  final repo = ref.watch(canvasRepositoryProvider);
+  final noteId = ref.watch(activeNoteIdProvider);
+  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
+  return CanvasStickersNotifier(
+    repo,
+    noteId,
+    ephemeral: ephemeral,
+    initial: cached?.stickers,
+    history: ref.read(canvasHistoryHolderProvider),
+    onContentChanged: (id) {
+      ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
+    },
+  );
+});
+
+class CanvasStickersNotifier extends StateNotifier<List<CanvasSticker>> {
+  final StrokeRepository _repository;
+  final String _noteId;
+  final bool _ephemeral;
+  final void Function(String noteId)? _onContentChanged;
+  final CanvasHistoryNotifier? _history;
+
+  CanvasStickersNotifier(
+    this._repository,
+    this._noteId, {
+    bool ephemeral = false,
+    void Function(String noteId)? onContentChanged,
+    CanvasHistoryNotifier? history,
+    List<CanvasSticker>? initial,
+  })  : _ephemeral = ephemeral,
+        _onContentChanged = onContentChanged,
+        _history = history,
+        super(initial ?? []) {
+    if (!_ephemeral) _load();
+  }
+
+  void _mark() {
+    if (!_ephemeral) _onContentChanged?.call(_noteId);
+  }
+
+  Future<void> _load() async {
+    _history?.ignoreChanges = true;
+    state = await _repository.loadStickers(_noteId);
+    _history?.ignoreChanges = false;
+  }
+
+  void add(CanvasSticker sticker) {
+    state = [...state, sticker];
+    if (!_ephemeral) {
+      _repository.saveStickers(_noteId, [sticker]);
+      _mark();
+    }
+  }
+
+  void upsert(CanvasSticker sticker, {bool checkpoint = false}) {
+    final idx = state.indexWhere((s) => s.id == sticker.id);
+    if (idx < 0) {
+      add(sticker);
+      return;
+    }
+    if (!checkpoint) _history?.ignoreChanges = true;
+    final next = List<CanvasSticker>.from(state);
+    next[idx] = sticker;
+    state = next;
+    if (!checkpoint) _history?.ignoreChanges = false;
+    if (!_ephemeral) {
+      _repository.saveStickers(_noteId, [sticker]);
+      _mark();
+    }
+  }
+
+  void remove(String id) {
+    state = state.where((s) => s.id != id).toList();
+    if (!_ephemeral) {
+      _repository.deleteStickers([id]);
+      _mark();
+    }
+  }
+
+  void restore(List<CanvasSticker> stickers) {
+    state = List.from(stickers);
+    if (!_ephemeral) {
+      _repository.replaceStickers(_noteId, stickers);
+      _mark();
+    }
+  }
+}
+
 final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 
 class StrokesNotifier extends StateNotifier<List<Stroke>> {
@@ -358,17 +561,19 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   final String _noteId;
   final bool _ephemeral;
   final void Function(String noteId)? _onContentChanged;
-  final List<List<Stroke>> _undoStack = [];
-  final List<List<Stroke>> _redoStack = [];
+  final CanvasHistoryNotifier? _history;
 
   StrokesNotifier(
     this._repository,
     this._noteId, {
     bool ephemeral = false,
     void Function(String noteId)? onContentChanged,
+    CanvasHistoryNotifier? history,
+    List<Stroke>? initial,
   })  : _ephemeral = ephemeral,
         _onContentChanged = onContentChanged,
-        super([]) {
+        _history = history,
+        super(initial ?? []) {
     if (!_ephemeral) _loadStrokes();
   }
 
@@ -376,18 +581,24 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     if (!_ephemeral) _onContentChanged?.call(_noteId);
   }
 
+  void _beginSilent() => _history?.ignoreChanges = true;
+  void _endSilent() => _history?.ignoreChanges = false;
+
   Future<void> _loadStrokes() async {
-    final loadedStrokes = await _repository.loadStrokes(_noteId);
-    state = loadedStrokes;
-    _undoStack.add(List.from(state));
+    _beginSilent();
+    state = await _repository.loadStrokes(_noteId);
+    _endSilent();
+  }
+
+  void restore(List<Stroke> strokes) {
+    state = List.from(strokes);
+    if (!_ephemeral) {
+      _repository.replaceStrokes(_noteId, strokes);
+      _markContentChanged();
+    }
   }
 
   void addStroke(Stroke stroke) {
-    _redoStack.clear(); // Any new action invalidates redo
-    if (_undoStack.isEmpty || _undoStack.last != state) {
-       _undoStack.add(List.from(state));
-    }
-
     state = [...state, stroke];
     
     // Loose scraps stay in memory only — never filed to disk.
@@ -398,30 +609,21 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   }
 
   void undo() {
-    if (_undoStack.isEmpty) return;
-    _redoStack.add(List.from(state));
-    state = _undoStack.removeLast();
+    // Use undoCanvas(ref) — kept as a no-op so older call sites compile
+    // until they are updated.
   }
 
-  void redo() {
-    if (_redoStack.isEmpty) return;
-    _undoStack.add(List.from(state));
-    state = _redoStack.removeLast();
-  }
+  void redo() {}
 
   /// Replace a stroke in-place (e.g. after shape snapping)
   void replaceStroke(Stroke updated) {
-    _undoStack.add(List.from(state));
     state = state.map((s) => s.id == updated.id ? updated : s).toList();
   }
 
   /// Hide strokes by id (e.g. after OCR → text node conversion)
   void hideStrokes(List<String> ids, {bool pushUndo = true}) {
     if (ids.isEmpty) return;
-    if (pushUndo) {
-      _undoStack.add(List.from(state));
-      _redoStack.clear();
-    }
+    if (!pushUndo) _beginSilent();
     final idSet = ids.toSet();
     final updated = <Stroke>[];
     state = state.map((s) {
@@ -434,15 +636,13 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
       _repository.updateStrokes(_noteId, updated);
       _markContentChanged();
     }
+    if (!pushUndo) _endSilent();
   }
 
   void updateStrokes(List<Stroke> updatedStrokes, {bool pushUndo = true}) {
     if (updatedStrokes.isEmpty) return;
 
-    if (pushUndo) {
-      _undoStack.add(List.from(state));
-      _redoStack.clear();
-    }
+    if (!pushUndo) _beginSilent();
     state = state.map((stroke) {
       final replacement = updatedStrokes.where((updated) => updated.id == stroke.id).toList();
       return replacement.isNotEmpty ? replacement.first : stroke;
@@ -452,20 +652,19 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
       _repository.updateStrokes(_noteId, updatedStrokes);
       _markContentChanged();
     }
+    if (!pushUndo) _endSilent();
   }
 
   void deleteStrokes(List<String> ids, {bool pushUndo = true}) {
     if (ids.isEmpty) return;
 
-    if (pushUndo) {
-      _undoStack.add(List.from(state));
-      _redoStack.clear();
-    }
+    if (!pushUndo) _beginSilent();
     state = state.where((stroke) => !ids.contains(stroke.id)).toList();
     if (!_ephemeral) {
       _repository.deleteStrokes(ids);
       _markContentChanged();
     }
+    if (!pushUndo) _endSilent();
   }
 
   /// Atomic eraser mutation: hide / update / delete / add fragments in one step.
@@ -483,11 +682,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
         additions.isEmpty) {
       return;
     }
-    if (pushUndo) {
-      _undoStack.add(List.from(state));
-      _redoStack.clear();
-    }
-
+    if (!pushUndo) _beginSilent();
     final hideSet = hideIds.toSet();
     final deleteSet = deleteIds.toSet();
     final updateMap = {for (final s in updates) s.id: s};
@@ -529,6 +724,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
         _markContentChanged();
       }
     }
+    if (!pushUndo) _endSilent();
   }
 }
 
@@ -548,10 +744,13 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
   // Callers must register the id in [ephemeralNoteIdsProvider] before flipping
   // [activeNoteIdProvider].
   final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
   return StrokesNotifier(
     repo,
     noteId,
     ephemeral: ephemeral,
+    initial: cached?.strokes,
+    history: ref.read(canvasHistoryHolderProvider),
     onContentChanged: (id) {
       ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
     },
@@ -630,11 +829,12 @@ void openNoteTab(
       OpenedTab(id: id, title: title, accent: color, isEphemeral: ephemeral),
     ];
   }
-  if (ephemeral) {
-    ref.read(ephemeralNoteIdsProvider.notifier).update((ids) => {...ids, id});
-  }
-  ref.read(activeTabIdProvider.notifier).state = id;
-  ref.read(activeNoteIdProvider.notifier).state = id;
+    if (ephemeral) {
+      ref.read(ephemeralNoteIdsProvider.notifier).update((ids) => {...ids, id});
+    }
+    stashActiveEphemeralCanvas(ref);
+    ref.read(activeTabIdProvider.notifier).state = id;
+    ref.read(activeNoteIdProvider.notifier).state = id;
 }
 
 /// Drop a single loose scrap from memory (tab + ephemeral set).
@@ -645,6 +845,7 @@ void discardEphemeralNote(WidgetRef ref, String id) {
     final next = {...ids}..remove(id);
     return next;
   });
+  ref.read(ephemeralCanvasCacheProvider.notifier).update((m) => {...m}..remove(id));
   final activeId = ref.read(activeTabIdProvider);
   if (activeId == id) {
     final next = tabs.isNotEmpty ? tabs.last.id : null;
@@ -667,6 +868,9 @@ void discardAllEphemeralNotes(WidgetRef ref) {
       .toList();
   ref.read(openedTabsProvider.notifier).state = tabs;
   ref.read(ephemeralNoteIdsProvider.notifier).state = {};
+  ref.read(ephemeralCanvasCacheProvider.notifier).update(
+        (m) => {...m}..removeWhere((k, _) => ephemeral.contains(k)),
+      );
   final activeId = ref.read(activeTabIdProvider);
   if (activeId != null && ephemeral.contains(activeId)) {
     final next = tabs.isNotEmpty ? tabs.last.id : null;
@@ -675,4 +879,149 @@ void discardAllEphemeralNotes(WidgetRef ref) {
       ref.read(activeNoteIdProvider.notifier).state = next;
     }
   }
+}
+
+class EphemeralCanvasBundle {
+  final List<Stroke> strokes;
+  final List<CanvasTextItem> texts;
+  final List<CanvasTable> tables;
+  final List<CanvasSticker> stickers;
+
+  const EphemeralCanvasBundle({
+    required this.strokes,
+    required this.texts,
+    required this.tables,
+    required this.stickers,
+  });
+
+  bool get hasInk =>
+      strokes.isNotEmpty ||
+      texts.any((t) => t.text.trim().isNotEmpty || t.taped) ||
+      tables.isNotEmpty ||
+      stickers.isNotEmpty;
+}
+
+final ephemeralCanvasCacheProvider =
+    StateProvider<Map<String, EphemeralCanvasBundle>>((ref) => {});
+
+final canvasHistoryHolderProvider = Provider<CanvasHistoryNotifier>((ref) {
+  ref.watch(activeNoteIdProvider);
+  return CanvasHistoryNotifier();
+});
+
+/// Records undo snapshots after layer changes. Watched by the note editor so
+/// listens stay alive. Must not be read from inside those layer providers.
+final canvasHistoryCoordinatorProvider = Provider<void>((ref) {
+  final hist = ref.watch(canvasHistoryHolderProvider);
+
+  ref.listen<List<Stroke>>(strokesProvider, (prev, next) {
+    if (prev == null || hist.suppressPush) return;
+    hist.push(
+      CanvasLayerSnapshot(
+        strokes: List.from(prev),
+        texts: List.from(ref.read(canvasTextNodesProvider)),
+        tables: List.from(ref.read(canvasTablesProvider)),
+        stickers: List.from(ref.read(canvasStickersProvider)),
+      ),
+    );
+  });
+  ref.listen<List<CanvasTextItem>>(canvasTextNodesProvider, (prev, next) {
+    if (prev == null || hist.suppressPush) return;
+    hist.push(
+      CanvasLayerSnapshot(
+        strokes: List.from(ref.read(strokesProvider)),
+        texts: List.from(prev),
+        tables: List.from(ref.read(canvasTablesProvider)),
+        stickers: List.from(ref.read(canvasStickersProvider)),
+      ),
+    );
+  });
+  ref.listen<List<CanvasTable>>(canvasTablesProvider, (prev, next) {
+    if (prev == null || hist.suppressPush) return;
+    hist.push(
+      CanvasLayerSnapshot(
+        strokes: List.from(ref.read(strokesProvider)),
+        texts: List.from(ref.read(canvasTextNodesProvider)),
+        tables: List.from(prev),
+        stickers: List.from(ref.read(canvasStickersProvider)),
+      ),
+    );
+  });
+  ref.listen<List<CanvasSticker>>(canvasStickersProvider, (prev, next) {
+    if (prev == null || hist.suppressPush) return;
+    hist.push(
+      CanvasLayerSnapshot(
+        strokes: List.from(ref.read(strokesProvider)),
+        texts: List.from(ref.read(canvasTextNodesProvider)),
+        tables: List.from(ref.read(canvasTablesProvider)),
+        stickers: List.from(prev),
+      ),
+    );
+  });
+});
+
+CanvasLayerSnapshot captureCanvasLayers(WidgetRef ref) => CanvasLayerSnapshot(
+      strokes: List.from(ref.read(strokesProvider)),
+      texts: List.from(ref.read(canvasTextNodesProvider)),
+      tables: List.from(ref.read(canvasTablesProvider)),
+      stickers: List.from(ref.read(canvasStickersProvider)),
+    );
+
+void _restoreCanvasSnapshot(WidgetRef ref, CanvasLayerSnapshot snap) {
+  final hist = ref.read(canvasHistoryHolderProvider);
+  hist.restoring = true;
+  ref.read(strokesProvider.notifier).restore(snap.strokes);
+  ref.read(canvasTextNodesProvider.notifier).restore(snap.texts);
+  ref.read(canvasTablesProvider.notifier).restore(snap.tables);
+  ref.read(canvasStickersProvider.notifier).restore(snap.stickers);
+  hist.restoring = false;
+}
+
+void undoCanvas(WidgetRef ref) {
+  final hist = ref.read(canvasHistoryHolderProvider);
+  final prev = hist.popUndo(captureCanvasLayers(ref));
+  if (prev == null) return;
+  _restoreCanvasSnapshot(ref, prev);
+}
+
+void redoCanvas(WidgetRef ref) {
+  final hist = ref.read(canvasHistoryHolderProvider);
+  final next = hist.popRedo(captureCanvasLayers(ref));
+  if (next == null) return;
+  _restoreCanvasSnapshot(ref, next);
+}
+
+void stashActiveEphemeralCanvas(WidgetRef ref) {
+  final id = ref.read(activeNoteIdProvider);
+  if (!ref.read(ephemeralNoteIdsProvider).contains(id)) return;
+  ref.read(ephemeralCanvasCacheProvider.notifier).update((m) => {
+        ...m,
+        id: EphemeralCanvasBundle(
+          strokes: List.from(ref.read(strokesProvider)),
+          texts: List.from(ref.read(canvasTextNodesProvider)),
+          tables: List.from(ref.read(canvasTablesProvider)),
+          stickers: List.from(ref.read(canvasStickersProvider)),
+        ),
+      });
+}
+
+bool activeScrapHasInk(WidgetRef ref) {
+  return ref.read(strokesProvider).isNotEmpty ||
+      ref
+          .read(canvasTextNodesProvider)
+          .any((t) => t.text.trim().isNotEmpty || t.taped) ||
+      ref.read(canvasTablesProvider).isNotEmpty ||
+      ref.read(canvasStickersProvider).isNotEmpty;
+}
+
+bool scrapIdHasInk(WidgetRef ref, String id) {
+  if (ref.read(activeNoteIdProvider) == id) return activeScrapHasInk(ref);
+  return ref.read(ephemeralCanvasCacheProvider)[id]?.hasInk ?? false;
+}
+
+void switchActiveNote(WidgetRef ref, String id) {
+  if (ref.read(activeNoteIdProvider) == id) return;
+  stashActiveEphemeralCanvas(ref);
+  ref.read(activeTabIdProvider.notifier).state = id;
+  ref.read(activeNoteIdProvider.notifier).state = id;
 }

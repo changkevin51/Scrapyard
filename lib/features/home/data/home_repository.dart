@@ -38,10 +38,6 @@ class HomeRepository {
           )
         ''');
 
-        final welcomeNote =
-            HomeNode.create(title: 'Welcome to Scrapyard', type: NodeType.note);
-        await db.insert(_tableName, welcomeNote.toMap());
-
         final ideasFolder =
             HomeNode.create(title: 'Loose Ideas', type: NodeType.folder);
         await db.insert(_tableName, ideasFolder.toMap());
@@ -267,5 +263,45 @@ class HomeRepository {
   /// Legacy hard delete — prefer [softDeleteNode] / [permanentlyDeleteNode].
   Future<void> deleteNode(String id) async {
     await permanentlyDeleteNode(id);
+  }
+
+  Future<List<HomeNode>> getAllFolders() async {
+    final db = await database;
+    final maps = await db.query(
+      _tableName,
+      where: 'type = ? AND deleted_at IS NULL',
+      whereArgs: [NodeType.folder.name],
+      orderBy: 'title COLLATE NOCASE ASC',
+    );
+    return maps.map(HomeNode.fromMap).toList();
+  }
+
+  Future<bool> moveNode(String id, String newParentId) async {
+    if (id == newParentId) return false;
+    final node = await getNodeById(id);
+    if (node == null || node.isDeleted) return false;
+    if (node.parentId == newParentId) return true;
+
+    if (node.type == NodeType.folder && newParentId != 'root') {
+      var walk = newParentId;
+      while (walk != 'root') {
+        if (walk == id) return false;
+        final parent = await getNodeById(walk);
+        if (parent == null) break;
+        walk = parent.parentId;
+      }
+    }
+
+    final db = await database;
+    await db.update(
+      _tableName,
+      {
+        'parent_id': newParentId,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return true;
   }
 }

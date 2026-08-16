@@ -13,6 +13,7 @@ import '../../../ai_chat/presentation/widgets/chat_suggestion_chips.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../../../onboarding/presentation/smelt_guide_keys.dart';
+import '../../smelt_timing.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../providers/smelt_provider.dart';
@@ -663,8 +664,10 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             onPressed: () async {
               final saved = await showApiKeyDialog(context, allowSkip: false);
               if (saved == true && mounted) {
+                SmeltTiming.begin(extra: {'source': 'retry_after_api_key'});
                 ref.read(smeltProvider.notifier).startLoading();
                 await ref.read(smeltProvider.notifier).retry();
+                SmeltTiming.step('retry_returned');
               }
             },
           ),

@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/gestures/pan_fling.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
+import '../../../ai_engine/smelt_timing.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../canvas/data/ink_renderer.dart';
 import '../../../canvas/data/pen_engine.dart';
@@ -349,11 +350,17 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
       bool forceRefresh = false,
       bool forceCodeExecution = false,
     }) async {
+      SmeltTiming.begin(extra: {
+        'source': 'pdf',
+        'forceRefresh': forceRefresh,
+        'forceCodeExecution': forceCodeExecution,
+      });
       final notifier = ref.read(smeltProvider.notifier);
       if (!forceRefresh &&
           !forceCodeExecution &&
           notifier.hasCached(cacheKey)) {
         notifier.restoreCached(cacheKey);
+        SmeltTiming.step('cache_hit');
         return;
       }
 
@@ -361,17 +368,27 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
         cacheKey: cacheKey,
         forceCodeExecution: forceCodeExecution,
       );
+      SmeltTiming.step('loading_state_set');
+      notifier.prefetchApiKey();
 
       Uint8List? imageBytes;
       try {
-        imageBytes = await _capturePageRegion(page, localRect, size);
-      } catch (_) {}
+        imageBytes = await _capturePageRegion(
+          page,
+          localRect,
+          size,
+          logTiming: true,
+        );
+      } catch (_) {
+        SmeltTiming.step('capture_failed');
+      }
 
       await notifier.smelt(
         imageBytes: imageBytes,
         cacheKey: cacheKey,
         forceCodeExecution: forceCodeExecution,
       );
+      SmeltTiming.step('notifier_smelt_returned');
     }
 
     handler(
@@ -384,8 +401,9 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   Future<Uint8List?> _capturePageRegion(
     PdfPage page,
     Rect localRect,
-    Size layerSize,
-  ) async {
+    Size layerSize, {
+    bool logTiming = false,
+  }) async {
     if (layerSize.width <= 0 || layerSize.height <= 0) return null;
 
     final fullWidth = layerSize.width * 2;
@@ -402,6 +420,12 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
     w = w.clamp(1, math.max(1, fullW - x));
     h = h.clamp(1, math.max(1, fullH - y));
 
+    if (logTiming) {
+      SmeltTiming.step('pdf_render_start', extra: {
+        'width': w,
+        'height': h,
+      });
+    }
     final pdfImage = await page.render(
       x: x,
       y: y,
@@ -411,13 +435,28 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
       fullHeight: fullHeight,
       backgroundColor: Colors.white,
     );
-    if (pdfImage == null) return null;
+    if (pdfImage == null) {
+      if (logTiming) SmeltTiming.step('pdf_render_null');
+      return null;
+    }
+    if (logTiming) SmeltTiming.step('pdf_render_done');
 
     try {
       final uiImage = await pdfImage.createImage();
+      if (logTiming) {
+        SmeltTiming.step('pdf_createImage_done', extra: {
+          'width': uiImage.width,
+          'height': uiImage.height,
+        });
+      }
       try {
         final bytes =
             await uiImage.toByteData(format: ui.ImageByteFormat.png);
+        if (logTiming) {
+          SmeltTiming.step('pdf_png_encode_done', extra: {
+            'bytes': bytes?.lengthInBytes ?? 0,
+          });
+        }
         return bytes?.buffer.asUint8List();
       } finally {
         uiImage.dispose();

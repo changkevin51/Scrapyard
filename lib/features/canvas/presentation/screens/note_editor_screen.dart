@@ -14,6 +14,7 @@ import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/paper_surfaces.dart' hide PaperChit;
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../../../ai_engine/smelt_timing.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/smelt_popup.dart';
 import '../../../ai_engine/domain/models/smelt_response.dart';
@@ -1204,8 +1205,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     bool forceCodeExecution = false,
   }) async {
     if (!_hasSmeltableSelection) return;
+    SmeltTiming.begin(extra: {
+      'source': 'canvas',
+      'forceRefresh': forceRefresh,
+      'forceCodeExecution': forceCodeExecution,
+    });
     ref.read(smeltGuideProvider.notifier).onSmeltRequested();
     _hideSelectionMenu();
+    SmeltTiming.step('hid_selection_menu');
 
     // Persist user-corrected boxes for the session so tapping the expression
     // reopens the cached Smelt popup after dismiss.
@@ -1221,11 +1228,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds);
     final notifier = ref.read(smeltProvider.notifier);
     final selectedText = _selectedTextPayload();
+    SmeltTiming.step('resolved_selection', extra: {
+      'strokes': _selectedStrokeIds.length,
+      'texts': _selectedTextIds.length,
+      'hasTypedText': selectedText != null && selectedText.isNotEmpty,
+    });
 
     // Reuse a session-cached response unless the user asked to retry / verify.
     if (!forceRefresh && !forceCodeExecution && notifier.hasCached(cacheKey)) {
       notifier.restoreCached(cacheKey);
       _showSmeltPopup(rect);
+      SmeltTiming.step('cache_hit_popup_shown');
       return;
     }
 
@@ -1234,18 +1247,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       cacheKey: cacheKey,
       forceCodeExecution: forceCodeExecution,
     );
+    SmeltTiming.step('loading_state_set');
 
     // Show the popup immediately so loading / retry happens in-place.
     if (_smeltPopupEntry == null) {
       _showSmeltPopup(rect);
+      SmeltTiming.step('popup_shown');
+    } else {
+      SmeltTiming.step('popup_already_open');
     }
+
+    // Secure-storage key read overlaps with the screenshot.
+    notifier.prefetchApiKey();
 
     // Capture the canvas region as an image
     Uint8List? imageBytes;
     try {
-      imageBytes = await _captureCanvasRegion(rect);
+      imageBytes = await _captureCanvasRegion(rect, logTiming: true);
     } catch (_) {
       // If capture fails, fall back to null (text-only mode)
+      SmeltTiming.step('capture_failed');
     }
 
     // Send to AI (stores into session cache on success)
@@ -1255,11 +1276,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       cacheKey: cacheKey,
       forceCodeExecution: forceCodeExecution,
     );
+    SmeltTiming.step('notifier_smelt_returned');
 
     if (mounted) {
       setState(() => _isSmelting = false);
       // Don't reopen if the user dismissed mid-request — cache still saves.
       _smeltPopupEntry?.markNeedsBuild();
+      SmeltTiming.step('ui_loading_cleared');
     }
   }
 
@@ -1302,10 +1325,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   Future<Uint8List?> _captureCanvasRegion(
     Rect region, {
     int? maxWidth,
+    bool logTiming = false,
   }) async {
     final boundary = _canvasRepaintKey.currentContext?.findRenderObject()
         as RenderRepaintBoundary?;
-    if (boundary == null) return null;
+    if (boundary == null) {
+      if (logTiming) SmeltTiming.step('capture_no_boundary');
+      return null;
+    }
 
     // Infinite mode: ink layer is screen-sized; convert world → screen first.
     final captureRegion = ref.read(pageLayoutProvider).isInfinite
@@ -1315,66 +1342,77 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           )
         : region;
 
-    const pixelRatio = 2.0;
-    final image = await boundary.toImage(pixelRatio: pixelRatio);
-
-    // Calculate crop rect in image pixel coordinates
-    final cropRect = Rect.fromLTWH(
-      captureRegion.left * pixelRatio,
-      captureRegion.top * pixelRatio,
-      captureRegion.width * pixelRatio,
-      captureRegion.height * pixelRatio,
+    final layerBounds = Offset.zero & boundary.size;
+    final clamped = Rect.fromLTRB(
+      captureRegion.left.clamp(layerBounds.left, layerBounds.right),
+      captureRegion.top.clamp(layerBounds.top, layerBounds.bottom),
+      captureRegion.right.clamp(layerBounds.left, layerBounds.right),
+      captureRegion.bottom.clamp(layerBounds.top, layerBounds.bottom),
     );
-
-    // Clamp crop rect to image bounds
-    final clampedCropRect = Rect.fromLTWH(
-      cropRect.left.clamp(0.0, image.width.toDouble()).toDouble(),
-      cropRect.top.clamp(0.0, image.height.toDouble()).toDouble(),
-      math.min(cropRect.width, image.width - cropRect.left).round().toDouble(),
-      math.min(cropRect.height, image.height - cropRect.top).round().toDouble(),
-    );
-
-    if (clampedCropRect.width <= 0 || clampedCropRect.height <= 0) {
-      image.dispose();
+    if (clamped.width < 1 || clamped.height < 1) {
+      if (logTiming) SmeltTiming.step('capture_empty_crop');
       return null;
     }
 
-    // Create cropped image using PictureRecorder
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
+    // 2x is cheap once we snapshot only the selection, not the 5000px sheet.
+    const pixelRatio = 2.0;
+    if (logTiming) {
+      SmeltTiming.step('capture_toImage_start', extra: {
+        'pixelRatio': pixelRatio,
+        'regionW': clamped.width.round(),
+        'regionH': clamped.height.round(),
+      });
+    }
 
-    // Draw only the cropped portion from source to destination
-    canvas.drawImageRect(
-      image,
-      clampedCropRect,
-      Rect.fromLTWH(0, 0, clampedCropRect.width, clampedCropRect.height),
-      ui.Paint(),
-    );
+    ui.Image image;
+    try {
+      final layer = boundary.layer;
+      if (layer is OffsetLayer) {
+        image = await layer.toImage(clamped, pixelRatio: pixelRatio);
+      } else {
+        image = await _snapshotThenCrop(boundary, clamped, pixelRatio);
+      }
+    } catch (_) {
+      try {
+        image = await _snapshotThenCrop(boundary, clamped, pixelRatio);
+        if (logTiming) SmeltTiming.step('capture_toImage_fallback');
+      } catch (_) {
+        if (logTiming) SmeltTiming.step('capture_toImage_failed');
+        return null;
+      }
+    }
+    if (logTiming) {
+      SmeltTiming.step('capture_toImage_done', extra: {
+        'width': image.width,
+        'height': image.height,
+      });
+    }
 
-    final picture = recorder.endRecording();
-    final croppedImage = await picture.toImage(
-      clampedCropRect.width.round(),
-      clampedCropRect.height.round(),
-    );
-
-    final byteData = await croppedImage.toByteData(format: ui.ImageByteFormat.png);
-
+    final imageWidth = image.width;
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (logTiming) {
+      SmeltTiming.step('capture_png_encode_done', extra: {
+        'bytes': byteData?.lengthInBytes ?? 0,
+      });
+    }
     image.dispose();
-    croppedImage.dispose();
-
     if (byteData == null) return null;
 
     Uint8List bytes = byteData.buffer.asUint8List();
 
     // Optionally downscale for chat attachments (keeps DB/base64 size sane).
-    final needsDownscale = maxWidth != null &&
-        clampedCropRect.width > maxWidth;
+    final needsDownscale = maxWidth != null && imageWidth > maxWidth;
     final needsCompress = bytes.length > 1024 * 1024;
 
     if (needsDownscale || needsCompress) {
-      final targetW = needsDownscale
-          ? maxWidth
-          : (clampedCropRect.width * 0.5).round();
+      if (logTiming) {
+        SmeltTiming.step('capture_local_compress_start', extra: {
+          'needsDownscale': needsDownscale,
+          'needsCompress': needsCompress,
+          'bytes': bytes.length,
+        });
+      }
+      final targetW = needsDownscale ? maxWidth : (imageWidth * 0.5).round();
       final codec = await ui.instantiateImageCodec(
         bytes,
         targetWidth: targetW,
@@ -1387,9 +1425,55 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       if (compressed != null) {
         bytes = compressed.buffer.asUint8List();
       }
+      if (logTiming) {
+        SmeltTiming.step('capture_local_compress_done', extra: {
+          'bytes': bytes.length,
+        });
+      }
     }
 
+    if (logTiming) {
+      SmeltTiming.step('capture_complete', extra: {'bytes': bytes.length});
+    }
     return bytes;
+  }
+
+  /// Fallback when [OffsetLayer] is not available: rasterize the full
+  /// boundary, then crop. Avoid this path — it is the 2800×10000 screenshot.
+  Future<ui.Image> _snapshotThenCrop(
+    RenderRepaintBoundary boundary,
+    Rect localRect,
+    double pixelRatio,
+  ) async {
+    final full = await boundary.toImage(pixelRatio: pixelRatio);
+    final crop = Rect.fromLTWH(
+      localRect.left * pixelRatio,
+      localRect.top * pixelRatio,
+      localRect.width * pixelRatio,
+      localRect.height * pixelRatio,
+    );
+    final clamped = Rect.fromLTWH(
+      crop.left.clamp(0.0, full.width.toDouble()),
+      crop.top.clamp(0.0, full.height.toDouble()),
+      math.min(crop.width, full.width - crop.left).roundToDouble(),
+      math.min(crop.height, full.height - crop.top).roundToDouble(),
+    );
+    try {
+      if (clamped.width < 1 || clamped.height < 1) {
+        throw StateError('empty crop');
+      }
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawImageRect(
+        full,
+        clamped,
+        Rect.fromLTWH(0, 0, clamped.width, clamped.height),
+        ui.Paint(),
+      );
+      final picture = recorder.endRecording();
+      return picture.toImage(clamped.width.round(), clamped.height.round());
+    } finally {
+      full.dispose();
+    }
   }
 
   void _showSmeltPopup(Rect selectionRect) {
@@ -1520,11 +1604,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           forceCodeExecution: selected.forceCodeExecution,
         );
     _showSmeltPopup(rect);
+    SmeltTiming.begin(extra: {
+      'source': 'canvas_retry',
+      'model': selected.modelId,
+      'forceCodeExecution': selected.forceCodeExecution,
+    });
     await ref.read(smeltProvider.notifier).retry(
           preferredModel: selected.modelId,
           singleModel: true,
           forceCodeExecution: selected.forceCodeExecution,
         );
+    SmeltTiming.step('retry_returned');
     if (mounted) {
       _smeltPopupEntry?.markNeedsBuild();
     }

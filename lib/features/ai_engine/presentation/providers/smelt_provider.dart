@@ -7,6 +7,7 @@ import '../../data/smelt_service.dart';
 import '../../data/api_key_service.dart';
 import '../../../ai_chat/domain/models/gemini_model.dart';
 import '../../_debug_log_helper.dart';
+import '../../smelt_timing.dart';
 
 final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
 
@@ -23,8 +24,10 @@ final apiKeySetupPromptedProvider = StateProvider<bool>((ref) => false);
 
 class ApiKeyNotifier extends StateNotifier<AsyncValue<String?>> {
   final ApiKeyService _service;
+  final SmeltService _smeltService;
 
-  ApiKeyNotifier(this._service) : super(const AsyncValue.loading()) {
+  ApiKeyNotifier(this._service, this._smeltService)
+      : super(const AsyncValue.loading()) {
     _load();
   }
 
@@ -40,11 +43,13 @@ class ApiKeyNotifier extends StateNotifier<AsyncValue<String?>> {
 
   Future<void> save(String key) async {
     await _service.save(key);
+    _smeltService.invalidateApiKeyCache();
     state = AsyncValue.data(await _service.read());
   }
 
   Future<void> clear() async {
     await _service.clear();
+    _smeltService.invalidateApiKeyCache();
     state = const AsyncValue.data(null);
   }
 
@@ -55,7 +60,10 @@ class ApiKeyNotifier extends StateNotifier<AsyncValue<String?>> {
 
 final apiKeyProvider =
     StateNotifierProvider<ApiKeyNotifier, AsyncValue<String?>>((ref) {
-  return ApiKeyNotifier(ref.watch(apiKeyServiceProvider));
+  return ApiKeyNotifier(
+    ref.watch(apiKeyServiceProvider),
+    ref.watch(smeltServiceProvider),
+  );
 });
 
 /// Cached Smelt result for one expression within the current app session.
@@ -142,6 +150,9 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
 
   bool hasCached(String key) => _sessionCache.containsKey(key);
 
+  /// Overlap secure-storage key read with canvas/PDF capture.
+  Future<void> prefetchApiKey() => _smeltService.prefetchApiKey();
+
   /// Restore a previously saved response into the popup state (no API call).
   bool restoreCached(String key) {
     final entry = _sessionCache[key];
@@ -209,6 +220,14 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
     bool forceCodeExecution = false,
   }) async {
     final key = cacheKey ?? state.cacheKey;
+    SmeltTiming.step('provider_smelt_start', extra: {
+      'hasImage': imageBytes != null,
+      'imageBytes': imageBytes?.length ?? 0,
+      'hasTypedText': selectedText != null && selectedText.trim().isNotEmpty,
+      'singleModel': singleModel,
+      'forceCodeExecution': forceCodeExecution,
+      'preferredModel': preferredModel ?? 'default',
+    });
     try {
       if (singleModel && key != null) {
         _sessionCache.remove(key);
@@ -220,6 +239,7 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         cacheKey: key,
         forceCodeExecution: forceCodeExecution,
       );
+      SmeltTiming.step('provider_loading_state_set');
 
       final result = await _smeltService.analyzeSelectionStream(
         imageBytes,
@@ -249,6 +269,11 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
           // #endregion
         },
       );
+      SmeltTiming.step('provider_api_returned', extra: {
+        'modelUsed': result.modelUsed,
+        'didFallback': result.didFallback,
+        'codeRuns': result.response.codeRuns.length,
+      });
 
       final fallbackNote = result.didFallback
           ? GeminiChatModel.fallbackMessage(
@@ -287,7 +312,13 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         forceCodeExecution: forceCodeExecution,
         showSteps: autoShowSteps,
       );
+      SmeltTiming.step('provider_result_state_set', extra: {
+        'autoShowSteps': autoShowSteps,
+        'answerChars': response.answer.length,
+        'stepsChars': response.steps.length,
+      });
     } catch (e) {
+      SmeltTiming.step('provider_error', extra: {'error': e.toString()});
       state = SmeltState(
         isLoading: false,
         error: e.toString(),

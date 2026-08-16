@@ -9,6 +9,7 @@ import '../../ai_chat/domain/models/gemini_model.dart';
 import '../domain/models/smelt_response.dart';
 import '../domain/latex_json_repair.dart';
 import '../_debug_log_helper.dart';
+import '../smelt_timing.dart';
 
 /// Callback for streaming progress updates
 typedef SmeltProgressCallback = void Function({
@@ -42,6 +43,13 @@ class SmeltStreamResult {
 /// Service for the Smelt AI feature using Gemini API with fallback chain
 class SmeltService {
   final FlutterSecureStorage _storage;
+  final http.Client _httpClient = http.Client();
+
+  String? _cachedApiKey;
+  bool _apiKeyLoaded = false;
+
+  static const int _compressThresholdBytes = 200 * 1024;
+  static const int _jsonIsolateMinChars = 8192;
 
   /// Shared storage key used by [ApiKeyService] and Smelt.
   static const String apiKeyStorageKey = 'gemini_api_key';
@@ -54,6 +62,37 @@ class SmeltService {
   static String get cheapestModel => GeminiChatModel.defaultModel.id;
 
   SmeltService(this._storage);
+
+  /// Warm the in-memory API-key cache (safe to call while capturing).
+  Future<void> prefetchApiKey() => _readApiKey();
+
+  void invalidateApiKeyCache() {
+    _apiKeyLoaded = false;
+    _cachedApiKey = null;
+  }
+
+  Future<String?> _readApiKey() async {
+    if (_apiKeyLoaded) return _cachedApiKey;
+    final stored = await _storage.read(key: apiKeyStorageKey);
+    final trimmed = stored?.trim();
+    _cachedApiKey = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+    _apiKeyLoaded = true;
+    return _cachedApiKey;
+  }
+
+  Future<Map<String, dynamic>> _parseJsonContent(String content) {
+    if (content.length < _jsonIsolateMinChars) {
+      return Future.value(_parseJsonWorker(content));
+    }
+    return compute(_parseJsonWorker, content);
+  }
+
+  Future<Map<String, dynamic>> _repairAndParseJsonContent(String content) {
+    if (content.length < _jsonIsolateMinChars) {
+      return Future.value(_fixAndParseJsonWorker(content));
+    }
+    return compute(_fixAndParseJsonWorker, content);
+  }
 
   /// Analyze the selected region image and return AI response
   Future<SmeltResponse> analyzeSelection(Uint8List? imageBytes) async {
@@ -74,16 +113,42 @@ class SmeltService {
     bool forceCodeExecution = false,
     SmeltProgressCallback? onProgress,
   }) async {
-    final storedKey = await _storage.read(key: apiKeyStorageKey);
-    final apiKey = storedKey?.trim();
+    SmeltTiming.step('service_start');
+    final fromCache = _apiKeyLoaded;
+    final apiKey = await _readApiKey();
+    SmeltTiming.step('api_key_read', extra: {
+      'hasKey': apiKey != null && apiKey.isNotEmpty,
+      'cached': fromCache,
+    });
     if (apiKey == null || apiKey.isEmpty) {
       throw Exception(missingApiKeyMessage);
     }
 
     String? base64Image;
     if (imageBytes != null) {
-      final compressedImage = await compute(_compressImageWorker, imageBytes);
+      SmeltTiming.step('compress_start', extra: {
+        'bytes': imageBytes.length,
+      });
+      final Uint8List compressedImage;
+      if (imageBytes.length <= _compressThresholdBytes) {
+        compressedImage = imageBytes;
+        SmeltTiming.step('compress_done', extra: {
+          'bytes': compressedImage.length,
+          'skipped': true,
+        });
+      } else {
+        compressedImage = await compute(_compressImageWorker, imageBytes);
+        SmeltTiming.step('compress_done', extra: {
+          'bytes': compressedImage.length,
+          'skipped': false,
+        });
+      }
       base64Image = base64Encode(compressedImage);
+      SmeltTiming.step('base64_encode_done', extra: {
+        'chars': base64Image.length,
+      });
+    } else {
+      SmeltTiming.step('no_image_skip_compress');
     }
 
     final requested = preferredModel ?? GeminiChatModel.defaultModel.id;
@@ -96,6 +161,11 @@ class SmeltService {
     for (var i = 0; i < models.length; i++) {
       final model = models[i];
       try {
+        SmeltTiming.step('gemini_attempt_start', extra: {
+          'model': model,
+          'attempt': i + 1,
+          'total': models.length,
+        });
         final response = await _callGemini(
           apiKey,
           model,
@@ -104,6 +174,7 @@ class SmeltService {
           forceCodeExecution: forceCodeExecution,
           selectedText: selectedText,
         );
+        SmeltTiming.step('gemini_attempt_ok', extra: {'model': model});
         return SmeltStreamResult(
           response: response.response,
           modelUsed: model,
@@ -111,6 +182,10 @@ class SmeltService {
           fallbackReason: i > 0 ? lastRetryReason : null,
         );
       } catch (e) {
+        SmeltTiming.step('gemini_attempt_failed', extra: {
+          'model': model,
+          'error': e.toString(),
+        });
         lastError = e;
         if (singleModel || i == models.length - 1) {
           throw Exception('Gemini model failed: $e');
@@ -248,6 +323,12 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
             'No image or typed text available. Please respond that the selection could not be captured.',
       });
     }
+    SmeltTiming.step('request_body_built', extra: {
+      'model': model,
+      'hasImage': base64Image != null,
+      'hasTyped': hasTyped,
+      'forceCodeExecution': forceCodeExecution,
+    });
     final requestBody = {
       'contents': [
         {
@@ -269,20 +350,44 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
     final request = http.Request('POST', Uri.parse(url))
       ..headers['Content-Type'] = 'application/json'
       ..body = jsonEncode(requestBody);
+    SmeltTiming.step('http_request_encoded', extra: {
+      'model': model,
+      'bodyBytes': request.bodyBytes.length,
+    });
 
-    final stream = request.send().timeout(const Duration(seconds: 60));
-    final response = await stream;
+    SmeltTiming.step('http_send_started', extra: {'model': model});
+    final response = await _httpClient
+        .send(request)
+        .timeout(const Duration(seconds: 60));
+    SmeltTiming.step('http_headers_received', extra: {
+      'model': model,
+      'status': response.statusCode,
+    });
 
     if (response.statusCode == 200) {
       // Accumulate the response body as chunks arrive
       final accumulated = StringBuffer();
+      var chunkCount = 0;
       await for (final chunk in response.stream) {
+        chunkCount++;
+        if (chunkCount == 1) {
+          SmeltTiming.step('http_first_chunk', extra: {
+            'model': model,
+            'chunkBytes': chunk.length,
+          });
+        }
         accumulated.write(String.fromCharCodes(chunk));
       }
+      SmeltTiming.step('http_body_complete', extra: {
+        'model': model,
+        'chunks': chunkCount,
+        'chars': accumulated.length,
+      });
 
       // Parse the complete response
       final responseBody = accumulated.toString();
       final data = jsonDecode(responseBody);
+      SmeltTiming.step('http_json_decoded', extra: {'model': model});
       final candidates = data['candidates'] as List?;
       if (candidates == null || candidates.isEmpty) {
         throw Exception('No response from Gemini');
@@ -293,6 +398,11 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
         throw Exception('No text response from Gemini');
       }
       final codeRuns = _extractCodeRunsFromCandidate(candidates[0]);
+      SmeltTiming.step('response_extracted', extra: {
+        'model': model,
+        'textChars': content.length,
+        'codeRuns': codeRuns.length,
+      });
 
       // #region agent log
       dlog('H1_H4_raw_content', 'raw content from gemini before any parsing',
@@ -300,7 +410,8 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
       // #endregion
 
       try {
-        final jsonResponse = await compute(_parseJsonWorker, content);
+        final jsonResponse = await _parseJsonContent(content);
+        SmeltTiming.step('json_parse_direct_ok', extra: {'model': model});
 
         // #region agent log
         dlog(
@@ -318,6 +429,7 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
           partialSuggestions: _parseSuggestions(jsonResponse['suggestions']),
           isComplete: true,
         );
+        SmeltTiming.step('onProgress_complete', extra: {'model': model});
 
         final responseModel = SmeltResponse.fromJson(
           jsonResponse,
@@ -336,8 +448,8 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
         print('=== END GEMINI RESPONSE ===');
 
         try {
-          final fixedAndParsed = await compute(_fixAndParseJsonWorker, content);
-          final jsonResponse = fixedAndParsed;
+          final jsonResponse = await _repairAndParseJsonContent(content);
+          SmeltTiming.step('json_parse_repaired_ok', extra: {'model': model});
 
           // #region agent log
           dlog(
@@ -355,6 +467,9 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
             partialSuggestions: _parseSuggestions(jsonResponse['suggestions']),
             isComplete: true,
           );
+          SmeltTiming.step('onProgress_complete_repaired', extra: {
+            'model': model,
+          });
 
           final responseModel = SmeltResponse.fromJson(
             jsonResponse,

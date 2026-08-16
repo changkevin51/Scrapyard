@@ -466,97 +466,6 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
   }
 }
 
-final canvasStickersProvider =
-    StateNotifierProvider<CanvasStickersNotifier, List<CanvasSticker>>((ref) {
-  final repo = ref.watch(canvasRepositoryProvider);
-  final noteId = ref.watch(activeNoteIdProvider);
-  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
-  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
-  return CanvasStickersNotifier(
-    repo,
-    noteId,
-    ephemeral: ephemeral,
-    initial: cached?.stickers,
-    history: ref.read(canvasHistoryHolderProvider),
-    onContentChanged: (id) {
-      ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
-    },
-  );
-});
-
-class CanvasStickersNotifier extends StateNotifier<List<CanvasSticker>> {
-  final StrokeRepository _repository;
-  final String _noteId;
-  final bool _ephemeral;
-  final void Function(String noteId)? _onContentChanged;
-  final CanvasHistoryNotifier? _history;
-
-  CanvasStickersNotifier(
-    this._repository,
-    this._noteId, {
-    bool ephemeral = false,
-    void Function(String noteId)? onContentChanged,
-    CanvasHistoryNotifier? history,
-    List<CanvasSticker>? initial,
-  })  : _ephemeral = ephemeral,
-        _onContentChanged = onContentChanged,
-        _history = history,
-        super(initial ?? []) {
-    if (!_ephemeral) _load();
-  }
-
-  void _mark() {
-    if (!_ephemeral) _onContentChanged?.call(_noteId);
-  }
-
-  Future<void> _load() async {
-    _history?.ignoreChanges = true;
-    state = await _repository.loadStickers(_noteId);
-    _history?.ignoreChanges = false;
-  }
-
-  void add(CanvasSticker sticker) {
-    state = [...state, sticker];
-    if (!_ephemeral) {
-      _repository.saveStickers(_noteId, [sticker]);
-      _mark();
-    }
-  }
-
-  void upsert(CanvasSticker sticker, {bool checkpoint = false}) {
-    final idx = state.indexWhere((s) => s.id == sticker.id);
-    if (idx < 0) {
-      add(sticker);
-      return;
-    }
-    if (!checkpoint) _history?.ignoreChanges = true;
-    final next = List<CanvasSticker>.from(state);
-    next[idx] = sticker;
-    state = next;
-    if (!checkpoint) _history?.ignoreChanges = false;
-    if (!_ephemeral) {
-      _repository.saveStickers(_noteId, [sticker]);
-      _mark();
-    }
-  }
-
-  void remove(String id) {
-    state = state.where((s) => s.id != id).toList();
-    if (!_ephemeral) {
-      _repository.deleteStickers([id]);
-      _mark();
-    }
-  }
-
-  void restore(List<CanvasSticker> stickers) {
-    state = List.from(stickers);
-    if (!_ephemeral) {
-      _repository.replaceStickers(_noteId, stickers);
-      _mark();
-    }
-  }
-}
-
 final ocrResultsProvider = StateProvider<List<CanvasOcrResult>>((ref) => []);
 
 class StrokesNotifier extends StateNotifier<List<Stroke>> {
@@ -888,20 +797,17 @@ class EphemeralCanvasBundle {
   final List<Stroke> strokes;
   final List<CanvasTextItem> texts;
   final List<CanvasTable> tables;
-  final List<CanvasSticker> stickers;
 
   const EphemeralCanvasBundle({
     required this.strokes,
     required this.texts,
     required this.tables,
-    required this.stickers,
   });
 
   bool get hasInk =>
       strokes.isNotEmpty ||
       texts.any((t) => t.text.trim().isNotEmpty || t.taped) ||
-      tables.isNotEmpty ||
-      stickers.isNotEmpty;
+      tables.isNotEmpty;
 }
 
 final ephemeralCanvasCacheProvider =
@@ -924,7 +830,6 @@ final canvasHistoryCoordinatorProvider = Provider<void>((ref) {
         strokes: List.from(prev),
         texts: List.from(ref.read(canvasTextNodesProvider)),
         tables: List.from(ref.read(canvasTablesProvider)),
-        stickers: List.from(ref.read(canvasStickersProvider)),
       ),
     );
   });
@@ -935,7 +840,6 @@ final canvasHistoryCoordinatorProvider = Provider<void>((ref) {
         strokes: List.from(ref.read(strokesProvider)),
         texts: List.from(prev),
         tables: List.from(ref.read(canvasTablesProvider)),
-        stickers: List.from(ref.read(canvasStickersProvider)),
       ),
     );
   });
@@ -946,18 +850,6 @@ final canvasHistoryCoordinatorProvider = Provider<void>((ref) {
         strokes: List.from(ref.read(strokesProvider)),
         texts: List.from(ref.read(canvasTextNodesProvider)),
         tables: List.from(prev),
-        stickers: List.from(ref.read(canvasStickersProvider)),
-      ),
-    );
-  });
-  ref.listen<List<CanvasSticker>>(canvasStickersProvider, (prev, next) {
-    if (prev == null || hist.suppressPush) return;
-    hist.push(
-      CanvasLayerSnapshot(
-        strokes: List.from(ref.read(strokesProvider)),
-        texts: List.from(ref.read(canvasTextNodesProvider)),
-        tables: List.from(ref.read(canvasTablesProvider)),
-        stickers: List.from(prev),
       ),
     );
   });
@@ -967,7 +859,6 @@ CanvasLayerSnapshot captureCanvasLayers(WidgetRef ref) => CanvasLayerSnapshot(
       strokes: List.from(ref.read(strokesProvider)),
       texts: List.from(ref.read(canvasTextNodesProvider)),
       tables: List.from(ref.read(canvasTablesProvider)),
-      stickers: List.from(ref.read(canvasStickersProvider)),
     );
 
 void _restoreCanvasSnapshot(WidgetRef ref, CanvasLayerSnapshot snap) {
@@ -976,7 +867,6 @@ void _restoreCanvasSnapshot(WidgetRef ref, CanvasLayerSnapshot snap) {
   ref.read(strokesProvider.notifier).restore(snap.strokes);
   ref.read(canvasTextNodesProvider.notifier).restore(snap.texts);
   ref.read(canvasTablesProvider.notifier).restore(snap.tables);
-  ref.read(canvasStickersProvider.notifier).restore(snap.stickers);
   hist.restoring = false;
 }
 
@@ -1003,7 +893,6 @@ void stashActiveEphemeralCanvas(WidgetRef ref) {
           strokes: List.from(ref.read(strokesProvider)),
           texts: List.from(ref.read(canvasTextNodesProvider)),
           tables: List.from(ref.read(canvasTablesProvider)),
-          stickers: List.from(ref.read(canvasStickersProvider)),
         ),
       });
 }
@@ -1013,8 +902,7 @@ bool activeScrapHasInk(WidgetRef ref) {
       ref
           .read(canvasTextNodesProvider)
           .any((t) => t.text.trim().isNotEmpty || t.taped) ||
-      ref.read(canvasTablesProvider).isNotEmpty ||
-      ref.read(canvasStickersProvider).isNotEmpty;
+      ref.read(canvasTablesProvider).isNotEmpty;
 }
 
 bool scrapIdHasInk(WidgetRef ref, String id) {

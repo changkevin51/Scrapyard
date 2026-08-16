@@ -6,13 +6,11 @@ class CanvasLayerSnapshot {
   final List<Stroke> strokes;
   final List<CanvasTextItem> texts;
   final List<CanvasTable> tables;
-  final List<CanvasSticker> stickers;
 
   const CanvasLayerSnapshot({
     required this.strokes,
     required this.texts,
     required this.tables,
-    required this.stickers,
   });
 }
 

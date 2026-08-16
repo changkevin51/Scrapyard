@@ -61,7 +61,7 @@ class CanvasSettingsRepository {
   );
 
   /// Shared DB schema version (must match [StrokeRepository.dbVersion]).
-  static const int dbVersion = 5;
+  static const int dbVersion = 6;
 
   static Database? _database;
 
@@ -111,6 +111,9 @@ class CanvasSettingsRepository {
         if (oldVersion < 5) {
           await _createCanvasLayers(db);
         }
+        if (oldVersion < 6) {
+          await db.execute('DROP TABLE IF EXISTS canvas_stickers');
+        }
       },
     );
   }
@@ -129,14 +132,6 @@ class CanvasSettingsRepository {
   static Future<void> _createCanvasLayers(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS canvas_tables (
-        id TEXT PRIMARY KEY,
-        note_id TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    ''');
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS canvas_stickers (
         id TEXT PRIMARY KEY,
         note_id TEXT NOT NULL,
         data TEXT NOT NULL,

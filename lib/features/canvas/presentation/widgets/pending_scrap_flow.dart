@@ -70,10 +70,6 @@ Future<void> filePendingNewScrap(
     if (tables.isNotEmpty) {
       await ref.read(canvasRepositoryProvider).saveTables(id, tables);
     }
-    final stickers = ref.read(canvasStickersProvider);
-    if (stickers.isNotEmpty) {
-      await ref.read(canvasRepositoryProvider).saveStickers(id, stickers);
-    }
     final pageConfig = ref.read(pageLayoutProvider);
     await ref
         .read(canvasSettingsRepositoryProvider)
@@ -89,11 +85,6 @@ Future<void> filePendingNewScrap(
       }
       if (cached.tables.isNotEmpty) {
         await ref.read(canvasRepositoryProvider).saveTables(id, cached.tables);
-      }
-      if (cached.stickers.isNotEmpty) {
-        await ref
-            .read(canvasRepositoryProvider)
-            .saveStickers(id, cached.stickers);
       }
     }
   }

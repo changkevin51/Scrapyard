@@ -33,7 +33,6 @@ import '../widgets/canvas_smart_widgets.dart';
 import '../widgets/canvas_text_sticker.dart';
 import '../widgets/document_tab_bar.dart';
 import '../widgets/pending_scrap_flow.dart';
-import '../widgets/sticker_library.dart';
 import '../widgets/taped_slip.dart';
 import '../../domain/models/stroke.dart';
 import '../../data/canvas_ocr_service.dart';
@@ -1915,9 +1914,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             (node) => node.taped
                 ? TapedSlipOverlay(key: ValueKey(node.id), item: node)
                 : CanvasTextSticker(key: ValueKey(node.id), item: node),
-          ),
-      ...ref.watch(canvasStickersProvider).map(
-            (s) => CanvasStickerOverlay(key: ValueKey(s.id), sticker: s),
           ),
       ...ref
           .watch(canvasTablesProvider)

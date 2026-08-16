@@ -14,7 +14,6 @@ import 'canvas_smart_widgets.dart';
 import 'ink_color_controls.dart';
 import 'pen_settings_panel.dart';
 import 'shape_library_panel.dart';
-import 'sticker_library.dart';
 import '../../../onboarding/presentation/smelt_guide_keys.dart';
 
 // ─────────────────────────────────────────────────────────
@@ -107,8 +106,6 @@ class CanvasToolbar extends ConsumerWidget {
           def: t,
         ),
       const PenSettingsButton(),
-      // Sticker library button
-      const _StickerButton(),
       _sep(isHorizontal),
 
       // ── Undo / Redo ────────────────────────────────────
@@ -809,26 +806,4 @@ class _CanvasSettingsSheet extends ConsumerWidget {
           ),
         ),
       );
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Sticker library toolbar button
-// ─────────────────────────────────────────────────────────────────
-class _StickerButton extends StatelessWidget {
-  const _StickerButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Sticker library',
-      child: _ToolPressable(
-        onTap: () => showStickerLibrary(context),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Icon(Icons.emoji_emotions_outlined, size: 20,
-              color: ScrapTheme.mutedText),
-        ),
-      ),
-    );
-  }
 }

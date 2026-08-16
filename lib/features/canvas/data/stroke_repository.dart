@@ -9,7 +9,7 @@ class StrokeRepository {
   static Database? _database;
 
   /// Shared schema version — keep in sync with [CanvasSettingsRepository.dbVersion].
-  static const int dbVersion = 5;
+  static const int dbVersion = 6;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -46,7 +46,6 @@ class StrokeRepository {
     await _createNoteSettings(db);
     await _createTextNodes(db);
     await _createCanvasTables(db);
-    await _createCanvasStickers(db);
   }
 
   Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
@@ -61,7 +60,9 @@ class StrokeRepository {
     }
     if (oldVersion < 5) {
       await _createCanvasTables(db);
-      await _createCanvasStickers(db);
+    }
+    if (oldVersion < 6) {
+      await db.execute('DROP TABLE IF EXISTS canvas_stickers');
     }
   }
 
@@ -94,17 +95,6 @@ class StrokeRepository {
   Future<void> _createCanvasTables(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS canvas_tables (
-        id TEXT PRIMARY KEY,
-        note_id TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    ''');
-  }
-
-  Future<void> _createCanvasStickers(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS canvas_stickers (
         id TEXT PRIMARY KEY,
         note_id TEXT NOT NULL,
         data TEXT NOT NULL,
@@ -290,61 +280,5 @@ class StrokeRepository {
     final db = await database;
     await db.delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
     if (tables.isNotEmpty) await saveTables(noteId, tables);
-  }
-
-  Future<void> saveStickers(String noteId, List<CanvasSticker> stickers) async {
-    if (stickers.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
-    for (final sticker in stickers) {
-      batch.insert(
-        'canvas_stickers',
-        {
-          'id': sticker.id,
-          'note_id': noteId,
-          'data': sticker.toJson(),
-          'created_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
-  }
-
-  Future<List<CanvasSticker>> loadStickers(String noteId) async {
-    final db = await database;
-    final maps = await db.query(
-      'canvas_stickers',
-      where: 'note_id = ?',
-      whereArgs: [noteId],
-      orderBy: 'created_at ASC',
-    );
-    return List.generate(maps.length, (i) {
-      return CanvasSticker.fromJson(maps[i]['data'] as String);
-    });
-  }
-
-  Future<void> deleteStickers(List<String> ids) async {
-    if (ids.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final id in ids) {
-      batch.delete('canvas_stickers', where: 'id = ?', whereArgs: [id]);
-    }
-    await batch.commit(noResult: true);
-  }
-
-  Future<void> replaceStickers(
-    String noteId,
-    List<CanvasSticker> stickers,
-  ) async {
-    final db = await database;
-    await db.delete(
-      'canvas_stickers',
-      where: 'note_id = ?',
-      whereArgs: [noteId],
-    );
-    if (stickers.isNotEmpty) await saveStickers(noteId, stickers);
   }
 }

@@ -14,7 +14,7 @@ import 'handwriting_canvas.dart';
 /// [screenOverlays] are drawn in screen space (selection UI after converting
 /// world rects, FABs, etc.).
 class InfiniteCanvasSurface extends ConsumerWidget {
-  /// World-coordinate overlays (text, stickers, tables).
+  /// World-coordinate overlays (text, tables).
   final List<Widget> worldOverlays;
 
   /// Screen-coordinate overlays (selection UI, hints).
@@ -103,7 +103,7 @@ class InfiniteCanvasSurface extends ConsumerWidget {
                         ),
                       ),
                     ),
-                  // World-space widget overlays (stickers/text/tables).
+                  // World-space widget overlays (text/tables).
                   Transform(
                     transform: viewport.matrix,
                     alignment: Alignment.topLeft,

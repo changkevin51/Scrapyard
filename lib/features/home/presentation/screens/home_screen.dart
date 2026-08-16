@@ -46,6 +46,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _bannerDismissed = false;
   String? _lastWarmedFolderKey;
   final Map<String, GlobalKey> _crushKeys = {};
+  String? _draggingId;
 
   @override
   void initState() {
@@ -118,7 +119,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _createAndOpenScrap() async {
     final folderId = ref.read(currentFolderIdProvider);
-    final parentId = folderId == trashFolderId ? 'root' : folderId;
+    final parentId =
+        (folderId == trashFolderId || folderId == savedFolderId) ? 'root' : folderId;
     final node = HomeNode.create(
       title: 'New scrap',
       type: NodeType.note,
@@ -248,6 +250,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   isSelected: currentFolder == 'root',
                   onTap: () {
                     ref.read(currentFolderIdProvider.notifier).state = 'root';
+                    ref.read(folderPathProvider.notifier).state = [];
+                  },
+                ),
+                _SidebarItem(
+                  title: 'Saved',
+                  isSelected: currentFolder == savedFolderId,
+                  onTap: () {
+                    ref.read(currentFolderIdProvider.notifier).state =
+                        savedFolderId;
                     ref.read(folderPathProvider.notifier).state = [];
                   },
                 ),
@@ -418,7 +429,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       const SliverToBoxAdapter(child: SizedBox(height: 24)),
                     ],
-                    if (currentFolder != trashFolderId) ...[
+                    if (currentFolder != trashFolderId &&
+                        currentFolder != savedFolderId) ...[
                       SliverToBoxAdapter(
                         child: KeyedSubtree(
                           key: SmeltGuideKeys.newScrapButton,
@@ -442,19 +454,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               duration: ScrapMotion.panel,
                               curve: ScrapMotion.panelCurve,
                               offset: currentFolder == 'root' ||
-                                      currentFolder == trashFolderId
+                                      currentFolder == trashFolderId ||
+                                      currentFolder == savedFolderId
                                   ? const Offset(-0.35, 0)
                                   : Offset.zero,
                               child: AnimatedOpacity(
                                 duration: ScrapMotion.panel,
                                 curve: ScrapMotion.panelCurve,
                                 opacity: currentFolder == 'root' ||
-                                        currentFolder == trashFolderId
+                                        currentFolder == trashFolderId ||
+                                        currentFolder == savedFolderId
                                     ? 0.0
                                     : 1.0,
                                 child: IgnorePointer(
                                   ignoring: currentFolder == 'root' ||
-                                      currentFolder == trashFolderId,
+                                      currentFolder == trashFolderId ||
+                                      currentFolder == savedFolderId,
                                   child: IconButton(
                                     padding: EdgeInsets.zero,
                                     icon: const Icon(
@@ -523,9 +538,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               child: Text(
                                 currentFolder == trashFolderId
                                     ? 'Recently Deleted'
-                                    : currentFolder == 'root'
-                                        ? 'All Files'
-                                        : folderPath.last.title,
+                                    : currentFolder == savedFolderId
+                                        ? 'Saved'
+                                        : currentFolder == 'root'
+                                            ? 'All Files'
+                                            : folderPath.last.title,
                                 key: ValueKey(currentFolder),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -555,6 +572,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           padding: const EdgeInsets.only(left: 56, top: 8),
                           child: Text(
                             'Items stay here for ${trashRetention.inDays} days, then they\'re permanently crushed.',
+                            style: ScrapTextStyles.caption.copyWith(
+                              color: ScrapTheme.mutedText,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (currentFolder == savedFolderId)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 56, top: 8),
+                          child: Text(
+                            'Starred scraps and PDFs live here. They can still be accessed from their original location.',
                             style: ScrapTextStyles.caption.copyWith(
                               color: ScrapTheme.mutedText,
                               height: 1.4,
@@ -594,7 +624,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   child: Text(
                                     currentFolder == trashFolderId
                                         ? 'Nothing crushed yet. Soft landings only.'
-                                        : 'Empty folder. Grab a scrap above, or import a doc.',
+                                        : currentFolder == savedFolderId
+                                            ? 'Nothing pinned yet. Star a scrap or PDF to keep it here.'
+                                            : 'Empty folder. Grab a scrap above, or import a doc.',
                                     style: ScrapTextStyles.caption.copyWith(
                                       color: ScrapTheme.mutedText,
                                     ),
@@ -605,38 +637,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ];
                         }
 
+                        final files = homeFileNodes(nodes);
+                        final folders = homeFolderNodes(nodes);
                         return [
-                          SliverGrid(
-                            key: ValueKey(currentFolder),
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3,
-                              crossAxisSpacing: 32,
-                              mainAxisSpacing: 32,
-                              childAspectRatio: 1.1,
+                          if (folders.isNotEmpty)
+                            _buildNodeGrid(
+                              context,
+                              ref,
+                              folders,
+                              gridKey: '$currentFolder-piles',
+                              pileLayout: true,
                             ),
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final node = nodes[index];
-                                return ScrapCardEntrance(
-                                  index: index,
-                                  stagger:
-                                      const Duration(milliseconds: 28),
-                                  child: RepaintBoundary(
-                                    key: _crushKeys.putIfAbsent(
-                                        node.id, GlobalKey.new),
-                                    child: ScrapTilt(
-                                      key: ValueKey(node.id),
-                                      seed: node.id.hashCode,
-                                      child: _buildNodeCard(
-                                          context, ref, node),
-                                    ),
-                                  ),
-                                );
-                              },
-                              childCount: nodes.length,
+                          if (files.isNotEmpty && folders.isNotEmpty)
+                            const SliverToBoxAdapter(
+                              child: _PilesSectionDivider(),
                             ),
-                          ),
+                          if (files.isNotEmpty)
+                            _buildNodeGrid(
+                              context,
+                              ref,
+                              files,
+                              gridKey: '$currentFolder-files',
+                            ),
                         ];
                       },
                     ),
@@ -651,9 +673,105 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildNodeGrid(
+    BuildContext context,
+    WidgetRef ref,
+    List<HomeNode> nodes, {
+    required String gridKey,
+    bool pileLayout = false,
+  }) {
+    return SliverGrid(
+      key: ValueKey(gridKey),
+      gridDelegate: pileLayout
+          ? const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 32,
+              mainAxisSpacing: 16,
+              mainAxisExtent: 104,
+            )
+          : const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 32,
+              mainAxisSpacing: 32,
+              childAspectRatio: 1.1,
+            ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final node = nodes[index];
+          return ScrapCardEntrance(
+            index: index,
+            stagger: const Duration(milliseconds: 28),
+            child: RepaintBoundary(
+              key: _crushKeys.putIfAbsent(node.id, GlobalKey.new),
+              child: ScrapTilt(
+                key: ValueKey(node.id),
+                seed: node.id.hashCode,
+                maxDegrees: pileLayout ? 0.6 : 1.2,
+                child: _buildNodeCard(context, ref, node),
+              ),
+            ),
+          );
+        },
+        childCount: nodes.length,
+      ),
+    );
+  }
+
+  Future<void> _onDropOntoFolder(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode incoming,
+    HomeNode folder,
+  ) async {
+    ScrapFeedback.action();
+    final ok = await ref
+        .read(currentHomeNodesProvider.notifier)
+        .moveNode(incoming.id, folder.id);
+    if (!context.mounted) return;
+    if (ok) {
+      showPaperToast(context, 'Tucked into "${folder.title}"');
+    } else {
+      showPaperToast(context, 'Couldn\'t move into that pile');
+    }
+  }
+
+  Widget _wrapDeskDrag({
+    required HomeNode node,
+    required bool enabled,
+    required Widget child,
+  }) {
+    if (!enabled) return child;
+    return LongPressDraggable<HomeNode>(
+      data: node,
+      delay: ScrapMotion.dragHold,
+      hapticFeedbackOnStart: false,
+      maxSimultaneousDrags: 1,
+      dragAnchorStrategy: (draggable, context, position) =>
+          node.type == NodeType.folder
+              ? const Offset(100, 32)
+              : const Offset(84, 76),
+      onDragStarted: () {
+        ScrapFeedback.action();
+        setState(() => _draggingId = node.id);
+      },
+      onDragEnd: (_) {
+        if (mounted) setState(() => _draggingId = null);
+      },
+      onDraggableCanceled: (_, __) {
+        if (mounted) setState(() => _draggingId = null);
+      },
+      feedback: _MinimizedDragFeedback(node: node),
+      childWhenDragging: const _DeskSlotGhost(),
+      child: child,
+    );
+  }
+
   Widget _buildNodeCard(BuildContext context, WidgetRef ref, HomeNode node) {
-    final inTrash = ref.read(currentFolderIdProvider) == trashFolderId;
-    return ScrapPressable(
+    final folderId = ref.read(currentFolderIdProvider);
+    final inTrash = folderId == trashFolderId;
+    final enableDrag = !inTrash && folderId != savedFolderId;
+
+    Widget card = ScrapPressable(
       onTap: () {
         if (inTrash) {
           if (node.type == NodeType.folder) {
@@ -705,8 +823,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       },
       child: node.type == NodeType.folder
-          ? _buildPileCard(context, ref, node)
+          ? DragTarget<HomeNode>(
+              onWillAcceptWithDetails: (details) =>
+                  canDropOntoFolder(details.data, node),
+              onAcceptWithDetails: (details) => _onDropOntoFolder(
+                context,
+                ref,
+                details.data,
+                node,
+              ),
+              builder: (context, candidate, rejected) {
+                final awaiting = _draggingId != null &&
+                    _draggingId != node.id &&
+                    candidate.isEmpty;
+                return _buildPileCard(
+                  context,
+                  ref,
+                  node,
+                  receiving: candidate.isNotEmpty,
+                  awaiting: awaiting,
+                );
+              },
+            )
           : _buildFlatCard(context, ref, node),
+    );
+
+    return _wrapDeskDrag(
+      node: node,
+      enabled: enableDrag,
+      child: card,
     );
   }
 
@@ -809,18 +954,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// Pile card — stacked sheets with a warm folder tab.
-  Widget _buildPileCard(BuildContext context, WidgetRef ref, HomeNode node) {
+  /// Pile card — stacked sheets with a warm folder tab, sized as a short
+  /// strip so piles sit above the file grid without competing for height.
+  Widget _buildPileCard(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node, {
+    bool receiving = false,
+    bool awaiting = false,
+  }) {
     final seed = node.id.hashCode;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
+    final spread = receiving ? 8.0 : (awaiting ? 5.5 : 4.0);
+    final accentAlpha = receiving ? 0.42 : (awaiting ? 0.28 : 0.18);
+
+    return AnimatedPadding(
+      duration: ScrapMotion.press,
+      curve: ScrapMotion.panelCurve,
+      padding: EdgeInsets.only(top: receiving ? 2 : 4),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // Back sheet — slightly rotated
           Positioned(
-            top: 10,
-            left: 10,
+            top: spread + 2,
+            left: spread + 2,
             right: 0,
             bottom: 0,
             child: Transform.rotate(
@@ -834,12 +990,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
-          // Middle sheet
           Positioned(
-            top: 5,
-            left: 5,
-            right: 4,
-            bottom: 4,
+            top: spread / 2,
+            left: spread / 2,
+            right: 2,
+            bottom: 2,
             child: Transform.rotate(
               angle: (((seed ~/ 11) % 7) - 3) * 0.01,
               child: DecoratedBox(
@@ -851,62 +1006,78 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
-          // Front sheet
           Positioned.fill(
-            child: Container(
+            child: AnimatedContainer(
+              duration: ScrapMotion.press,
+              curve: ScrapMotion.panelCurve,
               decoration: BoxDecoration(
                 color: ScrapTheme.accentSurface,
                 borderRadius:
                     BorderRadius.circular(ScrapTheme.borderRadiusDefault),
                 border: Border.all(
-                  color: ScrapTheme.accent.withValues(alpha: 0.18),
-                  width: 1,
+                  color: ScrapTheme.accent.withValues(alpha: accentAlpha),
+                  width: receiving ? 1.5 : 1,
                 ),
-                boxShadow: const [
+                // Keep blur identical across states — easeOutBack-style
+                // overshoot on a 12→0 lerp made Shadow.blurRadius negative.
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x08000000),
-                    offset: Offset(0, 4),
+                    color: Color(receiving ? 0x14000000 : 0x08000000),
+                    offset: Offset(0, receiving ? 2 : 4),
                     blurRadius: 12,
                   ),
                 ],
               ),
               clipBehavior: Clip.antiAlias,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  // Folder tab strip
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 24),
-                      width: 52,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: ScrapTheme.accent.withValues(alpha: 0.45),
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(2),
-                          bottomRight: Radius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 12, 12, 0),
-                    child: _cardHeader(context, ref, node, '⟨ Pile ⟩'),
+                    padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: ScrapTheme.accent.withValues(alpha: 0.45),
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(2),
+                              bottomRight: Radius.circular(2),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const _PileStackGraphic(compact: true),
+                      ],
+                    ),
                   ),
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _PileStackGraphic(),
+                      padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ScrapStampLabel(
+                            text: receiving ? '⟨ tuck in ⟩' : '⟨ Pile ⟩',
+                            color: ScrapTheme.accent,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            node.title,
+                            style: ScrapTextStyles.heading.copyWith(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    child: _cardMeta(node),
-                  ),
+                  _cardHeaderActions(context, ref, node),
                 ],
               ),
             ),
@@ -1202,14 +1373,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  Future<void> _toggleStar(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) async {
+    if (!node.isFile) return;
+    ScrapFeedback.tap();
+    await ref.read(currentHomeNodesProvider.notifier).toggleStarred(node);
+    if (!context.mounted) return;
+    showPaperToast(
+      context,
+      node.starred ? 'Removed from Saved' : 'Pinned to Saved',
+    );
+  }
+
   Widget _cardHeader(
     BuildContext context,
     WidgetRef ref,
     HomeNode node,
     String typeLabel,
   ) {
-    final inTrash = ref.read(currentFolderIdProvider) == trashFolderId;
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1220,98 +1404,126 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ? ScrapTheme.accent
               : ScrapTheme.mutedText,
         ),
-        if (inTrash)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Tooltip(
-                message: 'Restore',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _restoreNode(context, ref, node),
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(
-                      Icons.restore_outlined,
-                      color: ScrapTheme.mutedText,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-              Tooltip(
-                message: 'Crush forever',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _permanentlyCrushNode(context, ref, node),
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(
-                      Icons.delete_forever_outlined,
-                      color: ScrapTheme.inkRed,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          )
-        else
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Own the tap so ScrapPressable doesn't open the card instead.
-              Tooltip(
-                message: 'Crush',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _crushNode(context, ref, node),
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(
-                      Icons.delete_outline,
-                      color: ScrapTheme.mutedText,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(
-                  Icons.more_horiz,
+        _cardHeaderActions(context, ref, node),
+      ],
+    );
+  }
+
+  Widget _cardHeaderActions(
+    BuildContext context,
+    WidgetRef ref,
+    HomeNode node,
+  ) {
+    final inTrash = ref.read(currentFolderIdProvider) == trashFolderId;
+
+    if (inTrash) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: 'Restore',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _restoreNode(context, ref, node),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.restore_outlined,
                   color: ScrapTheme.mutedText,
                   size: 20,
                 ),
-                tooltip: 'Options',
-                elevation: 1,
-                color: ScrapTheme.cardSurface,
-                onSelected: (val) {
-                  if (val == 'rename') {
-                    _renameNode(context, ref, node);
-                  } else if (val == 'move') {
-                    _moveNode(context, ref, node);
-                  } else if (val == 'tear') {
-                    _tearOutScrap(context, ref, node);
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'rename',
-                    child: Text('Rename'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'move',
-                    child: Text('Move to pile…'),
-                  ),
-                  if (node.type == NodeType.note)
-                    const PopupMenuItem(
-                      value: 'tear',
-                      child: Text('Tear out'),
-                    ),
-                ],
               ),
-            ],
+            ),
           ),
+          Tooltip(
+            message: 'Crush forever',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _permanentlyCrushNode(context, ref, node),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.delete_forever_outlined,
+                  color: ScrapTheme.inkRed,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (node.isFile)
+          Tooltip(
+            message: node.starred ? 'Remove from Saved' : 'Save',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _toggleStar(context, ref, node),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  node.starred ? Icons.star_rounded : Icons.star_outline_rounded,
+                  color: node.starred
+                      ? ScrapTheme.accent
+                      : ScrapTheme.mutedText,
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        Tooltip(
+          message: 'Crush',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _crushNode(context, ref, node),
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(
+                Icons.delete_outline,
+                color: ScrapTheme.mutedText,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+        PopupMenuButton<String>(
+          icon: const Icon(
+            Icons.more_horiz,
+            color: ScrapTheme.mutedText,
+            size: 20,
+          ),
+          tooltip: 'Options',
+          elevation: 1,
+          color: ScrapTheme.cardSurface,
+          onSelected: (val) {
+            if (val == 'rename') {
+              _renameNode(context, ref, node);
+            } else if (val == 'move') {
+              _moveNode(context, ref, node);
+            } else if (val == 'tear') {
+              _tearOutScrap(context, ref, node);
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'rename',
+              child: Text('Rename'),
+            ),
+            const PopupMenuItem(
+              value: 'move',
+              child: Text('Move to pile…'),
+            ),
+            if (node.type == NodeType.note)
+              const PopupMenuItem(
+                value: 'tear',
+                child: Text('Tear out'),
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -1418,39 +1630,50 @@ class _RenameNodeDialogState extends State<_RenameNodeDialog> {
 
 /// Minimal stacked-sheet glyph for pile cards.
 class _PileStackGraphic extends StatelessWidget {
+  final bool compact;
+
+  const _PileStackGraphic({this.compact = false});
+
   @override
   Widget build(BuildContext context) {
+    final w = compact ? 40.0 : 72.0;
+    final h = compact ? 32.0 : 56.0;
+    final sheetW = compact ? 30.0 : 52.0;
+    final sheetH = compact ? 22.0 : 40.0;
     return SizedBox(
-      width: 72,
-      height: 56,
+      width: w,
+      height: h,
       child: Stack(
         children: [
           Positioned(
-            left: 10,
+            left: compact ? 6 : 10,
             top: 0,
             child: _sheet(
               color: ScrapTheme.kraft,
-              width: 52,
-              height: 40,
+              width: sheetW,
+              height: sheetH,
+              compact: compact,
             ),
           ),
           Positioned(
-            left: 5,
-            top: 6,
+            left: compact ? 3 : 5,
+            top: compact ? 4 : 6,
             child: _sheet(
               color: ScrapTheme.tape,
-              width: 52,
-              height: 40,
+              width: sheetW,
+              height: sheetH,
+              compact: compact,
             ),
           ),
           Positioned(
             left: 0,
-            top: 12,
+            top: compact ? 8 : 12,
             child: _sheet(
               color: ScrapTheme.cardSurface,
-              width: 52,
-              height: 40,
+              width: sheetW,
+              height: sheetH,
               border: true,
+              compact: compact,
             ),
           ),
         ],
@@ -1463,6 +1686,7 @@ class _PileStackGraphic extends StatelessWidget {
     required double width,
     required double height,
     bool border = false,
+    bool compact = false,
   }) {
     return Container(
       width: width,
@@ -1474,25 +1698,259 @@ class _PileStackGraphic extends StatelessWidget {
             ? Border.all(color: ScrapTheme.dividers, width: 1)
             : null,
       ),
-      padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(5, 5, 5, 4)
+          : const EdgeInsets.fromLTRB(8, 10, 8, 8),
       child: border
           ? Column(
               children: [
-                Container(height: 2, color: ScrapTheme.notebookLines),
-                const SizedBox(height: 5),
-                Container(height: 2, color: ScrapTheme.notebookLines),
-                const SizedBox(height: 5),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    width: 22,
-                    height: 2,
-                    color: ScrapTheme.notebookLines,
+                Container(height: compact ? 1.5 : 2, color: ScrapTheme.notebookLines),
+                SizedBox(height: compact ? 3 : 5),
+                Container(height: compact ? 1.5 : 2, color: ScrapTheme.notebookLines),
+                if (!compact) ...[
+                  const SizedBox(height: 5),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 22,
+                      height: 2,
+                      color: ScrapTheme.notebookLines,
+                    ),
                   ),
-                ),
+                ],
               ],
             )
           : null,
+    );
+  }
+}
+
+/// Perforated kraft rule between the piles strip and the files grid.
+class _PilesSectionDivider extends StatelessWidget {
+  const _PilesSectionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 20, 0, 24),
+      child: Row(
+        children: [
+          const Expanded(child: _PerforationDivider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              '⟨ Scraps ⟩',
+              style: ScrapTextStyles.label.copyWith(
+                color: ScrapTheme.accent,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+          const Expanded(child: _PerforationDivider()),
+        ],
+      ),
+    );
+  }
+}
+
+/// Empty paper slot left on the desk while a scrap is lifted.
+class _DeskSlotGhost extends StatelessWidget {
+  const _DeskSlotGhost();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: ScrapTheme.kraft.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        border: Border.all(color: ScrapTheme.dividers, width: 1),
+      ),
+    );
+  }
+}
+
+/// Proportionally scaled-down replica of a desk card, following the pointer.
+class _MinimizedDragFeedback extends StatelessWidget {
+  final HomeNode node;
+
+  const _MinimizedDragFeedback({required this.node});
+
+  static const double _fileWidth = 168;
+  static const double _fileHeight = 152;
+  static const double _pileWidth = 200;
+  static const double _pileHeight = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final isFolder = node.type == NodeType.folder;
+    return Material(
+      color: Colors.transparent,
+      elevation: 0,
+      child: IgnorePointer(
+        child: isFolder ? _miniPile() : _miniFile(),
+      ),
+    );
+  }
+
+  Widget _miniFile() {
+    final isScrap = node.type == NodeType.note;
+    final hasPreview = isScrap || node.isPdf;
+    final typeLabel = isScrap ? '⟨ Scrap ⟩' : '⟨ Document ⟩';
+
+    return Container(
+      width: _fileWidth,
+      height: _fileHeight,
+      decoration: BoxDecoration(
+        color: ScrapTheme.cardSurface,
+        borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+        boxShadow: ScrapTheme.deskShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (hasPreview)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: ScrapTheme.background,
+                    borderRadius:
+                        BorderRadius.circular(ScrapTheme.borderRadiusSmall),
+                    boxShadow: ScrapTheme.subtleShadow,
+                  ),
+                  child: ClipRRect(
+                    borderRadius:
+                        BorderRadius.circular(ScrapTheme.borderRadiusSmall),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: isScrap
+                              ? ScrapThumbnail(noteId: node.id)
+                              : PdfThumbnail(nodeId: node.id),
+                        ),
+                        Positioned(
+                          top: 6,
+                          left: 8,
+                          child: ScrapStampLabel(
+                            text: typeLabel,
+                            color: ScrapTheme.mutedText,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: ScrapStampLabel(
+                text: typeLabel,
+                color: ScrapTheme.mutedText,
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            child: Text(
+              node.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ScrapTextStyles.heading.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniPile() {
+    final seed = node.id.hashCode;
+    return SizedBox(
+      width: _pileWidth,
+      height: _pileHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 5,
+            left: 5,
+            right: 0,
+            bottom: 0,
+            child: Transform.rotate(
+              angle: ((seed % 7) - 3) * 0.012,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ScrapTheme.kraft,
+                  borderRadius:
+                      BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 2,
+            left: 2,
+            right: 2,
+            bottom: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: ScrapTheme.tape,
+                borderRadius:
+                    BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: ScrapTheme.accentSurface,
+                borderRadius:
+                    BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+                border: Border.all(
+                  color: ScrapTheme.accent.withValues(alpha: 0.18),
+                  width: 1,
+                ),
+                boxShadow: ScrapTheme.deskShadow,
+              ),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Row(
+                children: [
+                  const _PileStackGraphic(compact: true),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const ScrapStampLabel(
+                          text: '⟨ Pile ⟩',
+                          color: ScrapTheme.accent,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          node.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ScrapTextStyles.heading.copyWith(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

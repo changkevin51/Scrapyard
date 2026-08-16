@@ -24,7 +24,7 @@ class HomeRepository {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_tableName (
@@ -34,7 +34,8 @@ class HomeRepository {
             type TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             external_path TEXT,
-            deleted_at TEXT
+            deleted_at TEXT,
+            starred INTEGER NOT NULL DEFAULT 0
           )
         ''');
 
@@ -73,21 +74,51 @@ class HomeRepository {
             'ALTER TABLE $_tableName ADD COLUMN deleted_at TEXT',
           );
         }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE $_tableName ADD COLUMN starred INTEGER NOT NULL DEFAULT 0',
+          );
+        }
       },
     );
   }
 
   /// Active (non-deleted) children of [parentId].
+  ///
+  /// Ordered by recency only so scraps and PDFs interleave; the home
+  /// screen splits piles into their own section above files.
   Future<List<HomeNode>> getNodes(String parentId) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       _tableName,
       where: 'parent_id = ? AND deleted_at IS NULL',
       whereArgs: [parentId],
-      orderBy: 'type ASC, updated_at DESC',
+      orderBy: 'updated_at DESC',
     );
 
     return maps.map(HomeNode.fromMap).toList();
+  }
+
+  /// Starred scraps and documents (not piles), newest first.
+  Future<List<HomeNode>> getStarredNodes() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      _tableName,
+      where: 'starred = 1 AND deleted_at IS NULL AND type != ?',
+      whereArgs: [NodeType.folder.name],
+      orderBy: 'updated_at DESC',
+    );
+    return maps.map(HomeNode.fromMap).toList();
+  }
+
+  Future<void> setStarred(String id, bool starred) async {
+    final db = await database;
+    await db.update(
+      _tableName,
+      {'starred': starred ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   /// Children of [parentId] including soft-deleted ones.

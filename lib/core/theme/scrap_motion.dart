@@ -10,6 +10,8 @@ class ScrapMotion {
   static const Duration overlay = Duration(milliseconds: 200);
   static const Duration cardEnter = Duration(milliseconds: 320);
   static const Duration route = Duration(milliseconds: 280);
+  /// Long-press before a desk card lifts — long enough to keep scrolling.
+  static const Duration dragHold = Duration(milliseconds: 450);
 
   static const Curve pressCurve = Curves.easeOutBack;
   static const Curve panelCurve = Curves.easeOutCubic;

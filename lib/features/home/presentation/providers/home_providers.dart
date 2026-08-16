@@ -33,11 +33,17 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
 
   bool get isTrash => _folderId == trashFolderId;
 
+  bool get isSaved => _folderId == savedFolderId;
+
   Future<void> _loadNodes() async {
     try {
       if (isTrash) {
         await _repository.purgeExpiredTrash();
         final nodes = await _repository.getDeletedNodes();
+        state = AsyncValue.data(nodes);
+      } else if (isSaved) {
+        unawaited(_repository.purgeExpiredTrash());
+        final nodes = await _repository.getStarredNodes();
         state = AsyncValue.data(nodes);
       } else {
         // Opportunistic purge while browsing the scrapyard.
@@ -50,7 +56,8 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
     }
   }
 
-  String get _createParentId => isTrash ? 'root' : _folderId;
+  String get _createParentId =>
+      (isTrash || isSaved) ? 'root' : _folderId;
 
   Future<void> createFolder(String title) async {
     final node = HomeNode.create(
@@ -143,6 +150,12 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
     final ok = await _repository.moveNode(id, newParentId);
     if (ok) await _loadNodes();
     return ok;
+  }
+
+  Future<void> toggleStarred(HomeNode node) async {
+    if (node.type == NodeType.folder) return;
+    await _repository.setStarred(node.id, !node.starred);
+    await _loadNodes();
   }
 
   Future<void> refresh() => _loadNodes();

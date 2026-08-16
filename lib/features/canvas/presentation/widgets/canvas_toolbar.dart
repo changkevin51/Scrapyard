@@ -32,7 +32,6 @@ const List<_ToolDef> _tools = [
   (icon: Icons.brush_outlined,     label: 'Brush', tip: 'Brush',        tool: CanvasTool.brush),
   (icon: Icons.highlight_outlined, label: 'Highlighter', tip: 'Highlighter',  tool: CanvasTool.highlighter), // icon unused — custom glyph
   (icon: Icons.auto_fix_off_outlined, label: 'Erase', tip: 'Eraser', tool: CanvasTool.eraser), // icon unused — custom glyph
-  (icon: Icons.horizontal_rule,    label: 'Line',  tip: 'Straight line', tool: CanvasTool.straightLine),
   (icon: Icons.text_fields_outlined, label: 'Text', tip: 'Text',       tool: CanvasTool.text),
   (icon: Icons.category_outlined,  label: 'Shape', tip: 'Shape',        tool: CanvasTool.shape),
   (icon: Icons.gesture,            label: 'Lasso', tip: 'Lasso',       tool: CanvasTool.lasso), // icon unused — custom glyph
@@ -536,7 +535,7 @@ class _SettingsButton extends ConsumerWidget {
         onTap: () => _showSettings(context),
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Icon(Icons.tune_outlined, size: 22, color: ScrapTheme.mutedText),
+          child: Icon(Icons.settings_outlined, size: 22, color: ScrapTheme.mutedText),
         ),
       ),
     );

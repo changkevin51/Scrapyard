@@ -384,7 +384,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
 
     if (tool == CanvasTool.lasso || tool == CanvasTool.smelt) return;
 
-    if (tool == CanvasTool.straightLine) {
+    if (_isRubberBandLine(tool)) {
       final pt = _makePoint(e);
       if (points.length > 1) {
         points[1] = pt;
@@ -404,8 +404,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     // line tool (a rubber-band from the last vertex to the pen).
     appendInterpolated(points, [pt], maxGap: strokeMaxGap(scale));
 
-    final beautify = ref.read(penSettingsProvider).beautify;
-    if (beautify) {
+    if (_shouldLiveSnap(tool)) {
       final anchor = _pauseAnchorLocal[e.pointer];
       if (anchor == null ||
           (e.localPosition - anchor).distance >= _shapeSnapPauseSlop) {
@@ -473,7 +472,23 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     List<double> vertices = [];
 
     final libraryShape = ref.read(selectedLibraryShapeProvider);
-    if (tool == CanvasTool.shape && libraryShape != null) {
+    if (_isRubberBandLine(tool)) {
+      shapeType = ShapeType.line;
+      if (points.length >= 2) {
+        vertices = [
+          points.first.x,
+          points.first.y,
+          points.last.x,
+          points.last.y,
+        ];
+      } else {
+        vertices = _libraryVertices(
+          ShapeType.line,
+          points.first.x,
+          points.first.y,
+        );
+      }
+    } else if (tool == CanvasTool.shape && libraryShape != null) {
       shapeType = libraryShape;
       final cx =
           points.map((p) => p.x).reduce((a, b) => a + b) / points.length;
@@ -481,7 +496,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
           points.map((p) => p.y).reduce((a, b) => a + b) / points.length;
       vertices = _libraryVertices(libraryShape, cx, cy);
     } else if (tool == CanvasTool.shape) {
-      final r = _shapeRecognizer.recognize(points);
+      final r = _shapeRecognizer.recognize(points, fromShapeTool: true);
       if (r.recognized) {
         shapeType = r.type;
         vertices = r.vertices;
@@ -492,16 +507,6 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
       vertices = snap.vertices;
     }
 
-    if (tool == CanvasTool.straightLine) {
-      shapeType = ShapeType.line;
-      vertices = [
-        points.first.x,
-        points.first.y,
-        points.last.x,
-        points.last.y,
-      ];
-    }
-
     final stroke = Stroke(
       id: _uuid.v4(),
       points: points,
@@ -510,7 +515,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
       isBrush: tool == CanvasTool.brush,
       isHighlighter: isHL,
       isTape: tool == CanvasTool.tape,
-      isStraightLine: tool == CanvasTool.straightLine,
+      isStraightLine: shapeType == ShapeType.line,
       shapeType: shapeType,
       shapeVertices: vertices,
       isBeautified: settings.beautify &&
@@ -674,17 +679,33 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
   }
 
   // ── Hold-and-pause shape snap ──────────────────────────────────
+  bool _isRubberBandLine(CanvasTool tool) {
+    if (tool == CanvasTool.straightLine) return true;
+    return tool == CanvasTool.shape &&
+        ref.read(selectedLibraryShapeProvider) == ShapeType.line;
+  }
+
+  bool _shouldLiveSnap(CanvasTool tool) {
+    if (_isRubberBandLine(tool)) return false;
+    if (tool == CanvasTool.shape) {
+      return ref.read(selectedLibraryShapeProvider) == null;
+    }
+    if (tool != CanvasTool.pen && tool != CanvasTool.brush) return false;
+    return ref.read(penSettingsProvider).beautify;
+  }
+
   void _armPauseTimer(int pointer) {
     _cancelPauseTimer(pointer);
-    final settings = ref.read(penSettingsProvider);
     final tool = ref.read(activeCanvasToolProvider);
-    if (!settings.beautify) return;
-    if (tool != CanvasTool.pen && tool != CanvasTool.brush) return;
+    if (!_shouldLiveSnap(tool)) return;
 
     _pauseTimers[pointer] = Timer(const Duration(milliseconds: 350), () {
       final pts = _activeStrokes[pointer];
       if (pts == null || pts.length < 8) return;
-      final r = _shapeRecognizer.recognize(pts);
+      final r = _shapeRecognizer.recognize(
+        pts,
+        fromShapeTool: tool == CanvasTool.shape,
+      );
       if (r.recognized) {
         _liveSnap[pointer] = (type: r.type, vertices: r.vertices);
         _tick();

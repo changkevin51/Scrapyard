@@ -262,8 +262,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     return ref.read(canvasViewportProvider).toScreen(world);
   }
 
+  bool _hitsSmeltBoundingBox(Offset world) {
+    if (_hitTextItem(world) != null) return true;
+    final noteId = ref.read(activeNoteIdProvider);
+    return ref.read(manualClustersProvider.notifier).hitTest(
+              world,
+              noteId: noteId,
+            ) !=
+            null ||
+        ref.read(detectedClustersProvider.notifier).hitTest(world) != null;
+  }
+
   void _onCanvasTapDown(TapDownDetails details) {
     final worldPos = _toWorld(details.localPosition);
+    // Stylus mode: a finger tap on a detected box opens the smelt menu on
+    // pointer-up; skip tap-down side effects (e.g. placing a text sticker).
+    if (ref.read(stylusOnlyModeProvider) &&
+        details.kind == PointerDeviceKind.touch &&
+        _hitsSmeltBoundingBox(worldPos)) {
+      return;
+    }
     if (_selectionRect != null && !_selectionRect!.contains(worldPos)) {
       _clearSelectionState();
       _hidePasteMenu();
@@ -545,14 +563,24 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
   void _onSelectionPointerDown(PointerDownEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
-    if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
-    // Let the selection-box pan handler move the box (stylus or finger).
-    if (_pointerHitsMovableSelection(event.localPosition)) return;
 
     final isStylus = _isStylusPointer(event.kind);
-    final isTouchSmelt = event.kind == PointerDeviceKind.touch &&
-        ref.read(activeCanvasToolProvider) == CanvasTool.smelt;
-    if (!isStylus && !isTouchSmelt) return;
+    final isTouch = event.kind == PointerDeviceKind.touch;
+    final isSelection = _isSelectionTool(ref.read(activeCanvasToolProvider));
+
+    if (isStylus) {
+      if (!isSelection) return;
+      // Let the selection-box pan handler move the box.
+      if (_pointerHitsMovableSelection(event.localPosition)) return;
+    } else if (!isTouch) {
+      return;
+    }
+
+    // A second finger (pinch / two-finger tap) should not open smelt.
+    if (_selectionPointerId != null) {
+      _selectionDragStarted = true;
+      return;
+    }
 
     _selectionPointerId = event.pointer;
     _selectionDownPos = event.localPosition;
@@ -571,7 +599,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         return;
       }
       _selectionDragStarted = true;
-      if (_selectionPointerIsStylus) {
+      if (_selectionPointerIsStylus &&
+          _isSelectionTool(ref.read(activeCanvasToolProvider))) {
         _startLassoAt(_selectionDownPos!);
       }
     }
@@ -592,8 +621,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           ref.read(activeCanvasToolProvider) == CanvasTool.smelt) {
         _handleSmeltTapAt(event.localPosition);
       }
-    } else if (!_selectionDragStarted &&
-        ref.read(activeCanvasToolProvider) == CanvasTool.smelt) {
+    } else if (!_selectionDragStarted) {
       _handleSmeltTapAt(event.localPosition);
     }
 
@@ -1555,6 +1583,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   void _dismissSmeltPopup() {
+    _clearSelectionState();
     final state = _smeltPopupKey.currentState;
     if (state != null) {
       state.dismiss();
@@ -1624,8 +1653,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _smeltPopupEntry?.remove();
     _smeltPopupEntry = null;
     ref.read(smeltProvider.notifier).clearState();
-    // Rebuild so action-menu gating re-evaluates after popup closes.
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Outside-tap / close should drop the highlight too — otherwise a second
+    // tap is needed just to dismiss the bounding box.
+    _clearSelectionState();
+    setState(() {});
   }
 
   void _removePinnedSmeltPopup({bool notify = true}) {
@@ -2182,7 +2214,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   onPanEnd: _finishResizeSelection,
                 ),
               ],
-              if (_showSelectionMenu && isSmeltMode && _smeltActionMenuAllowed)
+              if (_showSelectionMenu &&
+                  (isSmeltMode || _selectionFromDetection) &&
+                  _smeltActionMenuAllowed)
                 SmeltActionMenu(
                   rect: selectionScreen,
                   showManualSelect: _selectionFromDetection,
@@ -2192,7 +2226,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   onAddToChat: _attachSelectionToChat,
                   onManualSelect: _beginManualSelect,
                 )
-              else if (_showSelectionMenu && !isSmeltMode)
+              else if (_showSelectionMenu &&
+                  !isSmeltMode &&
+                  !_selectionFromDetection)
                 _SelectionActionMenu(
                   rect: selectionScreen,
                   onResize: _beginResizeSelection,
@@ -2307,14 +2343,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         worldOverlays: worldAnnotations,
         screenOverlays: contentOverlays,
         suppressTouchScroll: _isMovingSelection,
-        onPointerDown:
-            stylusOnly && isSelectionMode ? _onSelectionPointerDown : null,
-        onPointerMove:
-            stylusOnly && isSelectionMode ? _onSelectionPointerMove : null,
-        onPointerUp:
-            stylusOnly && isSelectionMode ? _onSelectionPointerUp : null,
-        onPointerCancel:
-            stylusOnly && isSelectionMode ? _onSelectionPointerCancel : null,
+        onPointerDown: stylusOnly ? _onSelectionPointerDown : null,
+        onPointerMove: stylusOnly ? _onSelectionPointerMove : null,
+        onPointerUp: stylusOnly ? _onSelectionPointerUp : null,
+        onPointerCancel: stylusOnly ? _onSelectionPointerCancel : null,
         onTapDown: _onCanvasTapDown,
         onTapUp: isSmeltMode ? _onCanvasTapUp : null,
         onLongPressStart: _handleCanvasLongPressStart,
@@ -2351,18 +2383,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                     width: viewportW,
                     height: 5000,
                     child: Listener(
-                      onPointerDown: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerDown
-                          : null,
-                      onPointerMove: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerMove
-                          : null,
-                      onPointerUp: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerUp
-                          : null,
-                      onPointerCancel: stylusOnly && isSelectionMode
-                          ? _onSelectionPointerCancel
-                          : null,
+                      onPointerDown:
+                          stylusOnly ? _onSelectionPointerDown : null,
+                      onPointerMove:
+                          stylusOnly ? _onSelectionPointerMove : null,
+                      onPointerUp: stylusOnly ? _onSelectionPointerUp : null,
+                      onPointerCancel:
+                          stylusOnly ? _onSelectionPointerCancel : null,
                       child: GestureDetector(
                         onTapDown: _onCanvasTapDown,
                         onTapUp: isSmeltMode ? _onCanvasTapUp : null,

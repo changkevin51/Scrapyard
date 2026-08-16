@@ -55,7 +55,7 @@ class ShapeLibraryPanel extends ConsumerWidget {
           const SizedBox(height: 8),
           Text('Shape Library', style: ScrapTextStyles.heading.copyWith(fontSize: 18)),
           const SizedBox(height: 6),
-          Text('Tap to place  ·  or draw your own',
+          Text('Draw to snap  ·  pick Line for a ruler',
               style: ScrapTextStyles.caption.copyWith(color: ScrapTheme.mutedText)),
           const SizedBox(height: 20),
           Wrap(

@@ -76,10 +76,9 @@ bool isInkColorTool(CanvasTool tool) =>
 bool keepsToolOnColorSelect(CanvasTool tool) =>
     tool == CanvasTool.pen ||
     tool == CanvasTool.brush ||
-    tool == CanvasTool.straightLine ||
     tool == CanvasTool.shape;
 
-/// If the scrap tool is not pen/brush/line/shape, switch to pen for drawing.
+/// If the scrap tool is not pen/brush/shape, switch to pen for drawing.
 void ensureCanvasToolForColorSelect(WidgetRef ref) {
   final tool = ref.read(activeCanvasToolProvider);
   if (keepsToolOnColorSelect(tool)) return;

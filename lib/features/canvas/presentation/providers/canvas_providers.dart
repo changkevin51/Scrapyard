@@ -371,6 +371,10 @@ final consumeTextCanvasTapProvider = StateProvider<bool>((ref) => false);
 /// keep it above the keyboard.
 final activeTextGlobalRectProvider = StateProvider<Rect?>((ref) => null);
 
+/// Pointer currently captured by a taped slip. Canvas tools (lasso / smelt /
+/// ink) must ignore this pointer until it is released.
+final tapedSlipActivePointerProvider = StateProvider<int?>((ref) => null);
+
 final canvasTablesProvider =
     StateNotifierProvider<CanvasTablesNotifier, List<CanvasTable>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);

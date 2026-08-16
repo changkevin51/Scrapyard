@@ -64,19 +64,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   final ScrollController _horizontalScrollController = ScrollController();
   final CanvasOcrService _ocrService = CanvasOcrService();
   final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
-  final GlobalKey<SmeltPopupState> _pinnedSmeltPopupKey =
-      GlobalKey<SmeltPopupState>();
 
   Timer? _ocrDebounce;
   int _textRevealGen = 0;
-  /// Active (unpinned) smelt response overlay.
   OverlayEntry? _smeltPopupEntry;
-  /// Pinned smelt response overlay (at most one).
-  OverlayEntry? _pinnedSmeltPopupEntry;
-  SmeltState? _pinnedSmeltState;
-  Rect? _pinnedSelectionRect;
-  String? _pinnedCacheKey;
-  Rect? _pinnedPopupBounds;
   final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
   Rect? _lassoPreviewRect;
@@ -118,6 +109,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   bool _isSelectionTool(CanvasTool tool) =>
       tool == CanvasTool.lasso || tool == CanvasTool.smelt;
 
+  bool _tapedSlipOwnsPointer([int? pointer]) {
+    final active = ref.read(tapedSlipActivePointerProvider);
+    if (active == null) return false;
+    return pointer == null || active == pointer;
+  }
+
   bool _pointerHitsMovableSelection(Offset localPosition) {
     if (_selectionRect == null) return false;
     if (_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty) return false;
@@ -149,7 +146,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _scrollController.dispose();
     _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
-    _pinnedSmeltPopupEntry?.remove();
     ref.read(smeltGuideProvider.notifier).pause();
     super.dispose();
   }
@@ -274,6 +270,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   void _onCanvasTapDown(TapDownDetails details) {
+    if (_tapedSlipOwnsPointer()) return;
     final worldPos = _toWorld(details.localPosition);
     // Stylus mode: a finger tap on a detected box opens the smelt menu on
     // pointer-up; skip tap-down side effects (e.g. placing a text sticker).
@@ -355,7 +352,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     CanvasTextItem? best;
     var bestArea = double.infinity;
     for (final node in nodes) {
-      if (node.text.trim().isEmpty) continue;
+      if (node.taped || node.text.trim().isEmpty) continue;
       final rect = _textItemBounds(node);
       if (!rect.contains(worldPos)) continue;
       final area = rect.width * rect.height;
@@ -394,12 +391,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   void _onCanvasTapUp(TapUpDetails details) {
     if (ref.read(activeCanvasToolProvider) != CanvasTool.smelt) return;
     if (ref.read(stylusOnlyModeProvider)) return;
+    if (_tapedSlipOwnsPointer()) return;
     if (_lassoStart != null || _lassoPreviewRect != null) return;
     if (_tapHitsManualSelectMenu(_toWorld(details.localPosition))) return;
     _handleSmeltTapAt(details.localPosition);
   }
 
   void _handleSmeltTapAt(Offset position) {
+    if (_tapedSlipOwnsPointer()) return;
     final world = _toWorld(position);
     if (_tapHitsManualSelectMenu(world)) return;
 
@@ -424,9 +423,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       });
 
       if (hasCached && !_guideHoldsSmeltMenu) {
-        if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
-          return;
-        }
         ref.read(smeltGuideProvider.notifier).onSmeltRequested();
         ref.read(smeltProvider.notifier).restoreCached(cacheKey);
         _showSmeltPopup(bounds);
@@ -482,10 +478,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     if (hasCached && !_guideHoldsSmeltMenu) {
-      // Already showing this result as the pinned popup — leave it alone.
-      if (_pinnedCacheKey == cacheKey && _pinnedSmeltPopupEntry != null) {
-        return;
-      }
       // Reopen the saved popup for this expression — no API call / no action menu.
       ref.read(smeltGuideProvider.notifier).onSmeltRequested();
       ref.read(smeltProvider.notifier).restoreCached(cacheKey);
@@ -543,9 +535,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
     final key =
         _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds);
-    if (_pinnedCacheKey == key && _pinnedSmeltPopupEntry != null) {
-      return;
-    }
     if (_guideHoldsSmeltMenu) {
       setState(() => _showSelectionMenu = true);
       return;
@@ -563,6 +552,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
   void _onSelectionPointerDown(PointerDownEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
+    if (_tapedSlipOwnsPointer(event.pointer)) return;
 
     final isStylus = _isStylusPointer(event.kind);
     final isTouch = event.kind == PointerDeviceKind.touch;
@@ -590,6 +580,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
   void _onSelectionPointerMove(PointerMoveEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
+    if (_tapedSlipOwnsPointer(event.pointer)) return;
     if (_selectionPointerId != event.pointer) return;
     if (_selectionDownPos == null) return;
 
@@ -613,6 +604,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   void _onSelectionPointerUp(PointerUpEvent event) {
     if (!ref.read(stylusOnlyModeProvider)) return;
     if (_selectionPointerId != event.pointer) return;
+    if (_tapedSlipOwnsPointer(event.pointer)) {
+      _resetSelectionPointer();
+      return;
+    }
 
     if (_selectionPointerIsStylus) {
       if (_selectionDragStarted && _lassoStart != null) {
@@ -649,11 +644,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   void _startLasso(DragStartDetails details) {
     if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
     if (ref.read(stylusOnlyModeProvider)) return;
+    if (_tapedSlipOwnsPointer()) return;
     _startLassoAt(details.localPosition);
   }
 
   void _startLassoAt(Offset position) {
     if (!_isSelectionTool(ref.read(activeCanvasToolProvider))) return;
+    if (_tapedSlipOwnsPointer()) return;
     final world = _toWorld(position);
     _hideSelectionMenu();
     setState(() {
@@ -668,6 +665,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
   void _updateLasso(DragUpdateDetails details) {
     if (ref.read(stylusOnlyModeProvider)) return;
+    if (_tapedSlipOwnsPointer()) return;
     _updateLassoTo(details.localPosition);
   }
 
@@ -685,6 +683,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     final textNodes = ref.read(canvasTextNodesProvider);
     final selectedTexts = textNodes
         .where((n) =>
+            !n.taped &&
             n.text.trim().isNotEmpty &&
             _textItemBounds(n).overlaps(draggedRect))
         .toList();
@@ -1395,12 +1394,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   void _showSmeltPopup(Rect selectionRect) {
-    // If a pinned popup is up and there isn't room for a second card, drop the
-    // pin (cache remains) so the new smelt can take the screen.
-    if (_pinnedSmeltPopupEntry != null && !_canFitSecondSmeltPopup()) {
-      _removePinnedSmeltPopup(notify: false);
-    }
-
     _smeltPopupEntry?.remove();
     if (_showSelectionMenu) {
       _showSelectionMenu = false;
@@ -1412,22 +1405,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _smeltPopupEntry = OverlayEntry(
       builder: (context) {
         final screenSize = MediaQuery.of(context).size;
-        final hasPinned = _pinnedSmeltPopupEntry != null;
         return Stack(
           children: [
-            // Full-screen dismiss only when this is the sole popup. With a
-            // pinned sibling, rely on TapRegion so the canvas stays usable.
-            if (!hasPinned)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    if (ref.read(smeltGuideProvider).locksSmeltPopup) return;
-                    _dismissSmeltPopup();
-                  },
-                  child: const SizedBox.expand(),
-                ),
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  if (ref.read(smeltGuideProvider).locksSmeltPopup) return;
+                  _dismissSmeltPopup();
+                },
+                child: const SizedBox.expand(),
               ),
+            ),
             SmeltPopup(
               key: _smeltPopupKey,
               selectionRect: globalRect,
@@ -1435,9 +1424,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               onCollapse: _collapseSmeltPopup,
               onTryAnotherModel: _tryAnotherModelFromSmelt,
               onTapeOntoScrap: _tapeSmeltOntoScrap,
-              allowPin: !hasPinned,
-              avoidRect: hasPinned ? _pinnedPopupBounds : null,
-              onPinnedChanged: _onActivePopupPinnedChanged,
               screenSize: screenSize,
             ),
           ],
@@ -1450,9 +1436,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   void _tapeSmeltOntoScrap(SmeltResponse response) {
-    final sel = _selectionRect ??
-        _pinnedSelectionRect ??
-        const Rect.fromLTWH(72, 72, 80, 48);
+    final sel = _selectionRect ?? const Rect.fromLTWH(72, 72, 80, 48);
     ref.read(canvasTextNodesProvider.notifier).add(
           CanvasTextItem(
             id: const Uuid().v4(),
@@ -1477,108 +1461,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _smeltHintTimer?.cancel();
     _smeltHintTimer = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _smeltHintVisible = false);
-    });
-  }
-
-  bool _canFitSecondSmeltPopup() {
-    final bounds = _pinnedPopupBounds ??
-        _pinnedSmeltPopupKey.currentState?.currentBounds;
-    if (bounds == null) {
-      // Bounds not measured yet — assume room on large screens only.
-      final size = MediaQuery.sizeOf(context);
-      return size.shortestSide >= 600;
-    }
-    return SmeltPopupState.canFitSecondPopup(
-      screen: MediaQuery.sizeOf(context),
-      padding: MediaQuery.viewPaddingOf(context),
-      pinnedBounds: bounds,
-    );
-  }
-
-  void _onActivePopupPinnedChanged(bool pinned) {
-    if (!pinned) return;
-    _promoteActivePopupToPinned();
-  }
-
-  void _promoteActivePopupToPinned() {
-    final live = ref.read(smeltProvider);
-    // Only pin a finished response (not mid-load).
-    if (live.isLoading || (live.response == null && live.error == null)) {
-      return;
-    }
-
-    final selectionWorld = _selectionRect;
-    final selectionGlobal = selectionWorld != null
-        ? _convertToGlobalRect(selectionWorld)
-        : Rect.fromCenter(
-            center: MediaQuery.sizeOf(context).center(Offset.zero),
-            width: 1,
-            height: 1,
-          );
-    final cacheKey = live.cacheKey ??
-        ((_selectedStrokeIds.isEmpty && _selectedTextIds.isEmpty)
-            ? null
-            : _smeltCacheKeyFor(_selectedStrokeIds, textIds: _selectedTextIds));
-    final frozen = SmeltState(
-      response: live.response,
-      error: live.error,
-      showSteps: live.showSteps,
-      showCodeOutput: live.showCodeOutput,
-      lastImageBytes: live.lastImageBytes,
-      cacheKey: cacheKey,
-      forceCodeExecution: live.forceCodeExecution,
-    );
-    final priorBounds = _smeltPopupKey.currentState?.currentBounds;
-
-    _smeltPopupEntry?.remove();
-    _smeltPopupEntry = null;
-
-    _pinnedSmeltState = frozen;
-    _pinnedSelectionRect = selectionWorld;
-    _pinnedCacheKey = cacheKey;
-    _pinnedPopupBounds = priorBounds;
-
-    _pinnedSmeltPopupEntry?.remove();
-    _pinnedSmeltPopupEntry = OverlayEntry(
-      builder: (context) {
-        final screenSize = MediaQuery.of(context).size;
-        return SmeltPopup(
-          key: _pinnedSmeltPopupKey,
-          selectionRect: selectionGlobal,
-          frozenState: _pinnedSmeltState,
-          initiallyPinned: true,
-          allowPin: true,
-          onDismiss: () => _removePinnedSmeltPopup(),
-          onCollapse: () => _removePinnedSmeltPopup(),
-          onTryAnotherModel: () {},
-          onTapeOntoScrap: _tapeSmeltOntoScrap,
-          onPinnedChanged: (stillPinned) {
-            if (stillPinned) return;
-            // Unpin → allow outside-tap dismiss via TapRegion inside the popup.
-            _pinnedSmeltPopupEntry?.markNeedsBuild();
-          },
-          onBoundsChanged: (bounds) {
-            _pinnedPopupBounds = bounds;
-            _smeltPopupEntry?.markNeedsBuild();
-          },
-          screenSize: screenSize,
-        );
-      },
-    );
-    Overlay.of(context).insert(_pinnedSmeltPopupEntry!);
-
-    // Free the live provider / selection so the user can draw and smelt again.
-    ref.read(smeltProvider.notifier).clearState();
-    setState(() {
-      _selectionRect = null;
-      _selectedStrokeIds = {};
-      _selectedTextIds = {};
-      _showSelectionMenu = false;
-      _isResizingSelection = false;
-      _isSmelting = false;
-      _activeClusterId = null;
-      _selectionFromDetection = false;
-      _manualSelectMenuAnchor = null;
     });
   }
 
@@ -1658,18 +1540,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     // tap is needed just to dismiss the bounding box.
     _clearSelectionState();
     setState(() {});
-  }
-
-  void _removePinnedSmeltPopup({bool notify = true}) {
-    _pinnedSmeltPopupEntry?.remove();
-    _pinnedSmeltPopupEntry = null;
-    _pinnedSmeltState = null;
-    _pinnedSelectionRect = null;
-    _pinnedCacheKey = null;
-    _pinnedPopupBounds = null;
-    // Active popup may regain the ability to pin.
-    _smeltPopupEntry?.markNeedsBuild();
-    if (notify && mounted) setState(() {});
   }
 
   void _deleteSelection() {
@@ -1871,6 +1741,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   }
 
   void _handleCanvasLongPressStart(LongPressStartDetails details) {
+    if (_tapedSlipOwnsPointer()) return;
     if (_clipboardSelection == null) return;
     _showPasteMenuAt(_toWorld(details.localPosition));
   }
@@ -2101,21 +1972,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           child: IgnorePointer(
             child: CustomPaint(
               painter: _LassoPainter(lassoScreen),
-            ),
-          ),
-        ),
-      );
-    }
-    final pinnedScreen = overlayRect(_pinnedSelectionRect);
-    if (pinnedScreen != null &&
-        _pinnedSmeltPopupEntry != null &&
-        (_selectionRect == null ||
-            _pinnedSelectionRect != _selectionRect)) {
-      contentOverlays.add(
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: _PinnedSelectionPainter(pinnedScreen),
             ),
           ),
         ),
@@ -2581,31 +2437,6 @@ class _LassoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LassoPainter oldDelegate) => oldDelegate.rect != rect;
-}
-
-/// Subtle dashed outline for the expression tied to a pinned smelt popup.
-class _PinnedSelectionPainter extends CustomPainter {
-  final Rect rect;
-
-  _PinnedSelectionPainter(this.rect);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.06)
-      ..style = PaintingStyle.fill;
-    final border = Paint()
-      ..color = ScrapTheme.accent.withValues(alpha: 0.35)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    canvas.drawRect(rect, fill);
-    canvas.drawRect(rect, border);
-  }
-
-  @override
-  bool shouldRepaint(covariant _PinnedSelectionPainter oldDelegate) =>
-      oldDelegate.rect != rect;
 }
 
 class _SelectionBoxHighlight extends StatefulWidget {

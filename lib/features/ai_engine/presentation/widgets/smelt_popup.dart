@@ -28,12 +28,7 @@ class SmeltPopup extends ConsumerStatefulWidget {
   final VoidCallback onCollapse;
   final VoidCallback onTryAnotherModel;
   final ValueChanged<SmeltResponse>? onTapeOntoScrap;
-  final ValueChanged<bool>? onPinnedChanged;
   final Size screenSize;
-  /// When false, the pin button is hidden (e.g. a second popup while one is pinned).
-  final bool allowPin;
-  /// Start already pinned (used when promoting an active popup to the pinned overlay).
-  final bool initiallyPinned;
   /// Snapshot of smelt UI state. When set, the popup ignores [smeltProvider].
   final SmeltState? frozenState;
   /// Screen-space rect of another popup to avoid overlapping.
@@ -49,9 +44,6 @@ class SmeltPopup extends ConsumerStatefulWidget {
     required this.onTryAnotherModel,
     this.onTapeOntoScrap,
     required this.screenSize,
-    this.onPinnedChanged,
-    this.allowPin = true,
-    this.initiallyPinned = false,
     this.frozenState,
     this.avoidRect,
     this.onBoundsChanged,
@@ -70,7 +62,6 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   late Animation<double> _rotateAnim;
   late Animation<double> _shakeAnim;
   bool _closing = false;
-  bool _pinned = false;
   bool _measured = false;
   Size? _cardSize;
   Offset? _dragPosition;
@@ -84,61 +75,6 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   static const double _gap = 12.0;
   static const double _minSideSpace = 160.0;
   static const double _hardMaxHeight = 400.0;
-  static const double _minSecondPopupWidth = 300.0;
-  static const double _minSecondPopupHeight = 180.0;
-
-  bool get isPinned => _pinned;
-
-  /// Whether [screen] has a free region large enough for a second popup
-  /// that does not overlap [pinnedBounds].
-  static bool canFitSecondPopup({
-    required Size screen,
-    required EdgeInsets padding,
-    required Rect pinnedBounds,
-  }) {
-    final usable = Rect.fromLTRB(
-      padding.left + _margin,
-      padding.top + _margin,
-      screen.width - padding.right - _margin,
-      screen.height - padding.bottom - _margin,
-    );
-    if (usable.width < _minSecondPopupWidth ||
-        usable.height < _minSecondPopupHeight) {
-      return false;
-    }
-
-    const gap = _gap;
-    final regions = <Rect>[
-      Rect.fromLTRB(
-        usable.left,
-        usable.top,
-        usable.right,
-        pinnedBounds.top - gap,
-      ),
-      Rect.fromLTRB(
-        usable.left,
-        pinnedBounds.bottom + gap,
-        usable.right,
-        usable.bottom,
-      ),
-      Rect.fromLTRB(
-        usable.left,
-        usable.top,
-        pinnedBounds.left - gap,
-        usable.bottom,
-      ),
-      Rect.fromLTRB(
-        pinnedBounds.right + gap,
-        usable.top,
-        usable.right,
-        usable.bottom,
-      ),
-    ];
-
-    return regions.any(
-      (r) => r.width >= _minSecondPopupWidth && r.height >= _minSecondPopupHeight,
-    );
-  }
 
   /// Current on-screen bounds of the popup card, if measured.
   Rect? get currentBounds {
@@ -155,7 +91,6 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   @override
   void initState() {
     super.initState();
-    _pinned = widget.initiallyPinned;
     _localShowSteps = widget.frozenState?.showSteps ?? false;
     _localShowCodeOutput = widget.frozenState?.showCodeOutput ?? false;
     _animController = AnimationController(
@@ -186,12 +121,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
   }
 
   /// Reverse entrance animation, then notify the host to remove the overlay.
-  /// No-ops while pinned (shows a shake cue). Use [forceDismiss] to close anyway.
   Future<void> dismiss() async {
-    if (_pinned) {
-      _shakeController.forward(from: 0);
-      return;
-    }
     if (ref.read(smeltGuideProvider).locksSmeltPopup) {
       _shakeController.forward(from: 0);
       return;
@@ -199,14 +129,10 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     await forceDismiss();
   }
 
-  /// Close regardless of pin state (used by the explicit close button).
+  /// Close regardless of outside-tap rules (used by the explicit close button).
   Future<void> forceDismiss() async {
     if (_closing) return;
     _closing = true;
-    if (_pinned) {
-      _pinned = false;
-      widget.onPinnedChanged?.call(false);
-    }
     await _animController.reverse();
     if (mounted) widget.onDismiss();
   }
@@ -225,20 +151,15 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
     return watch ? ref.watch(smeltProvider) : ref.read(smeltProvider);
   }
 
-  void _togglePinned() {
-    if (!widget.allowPin) {
+  void _tapeOntoScrap() {
+    final live = _effectiveState();
+    final response = live.response;
+    if (response == null || live.isLoading) {
       _shakeController.forward(from: 0);
       return;
     }
-    if (!_pinned) {
-      final live = _effectiveState();
-      if (live.isLoading || (live.response == null && live.error == null)) {
-        _shakeController.forward(from: 0);
-        return;
-      }
-    }
-    setState(() => _pinned = !_pinned);
-    widget.onPinnedChanged?.call(_pinned);
+    widget.onTapeOntoScrap?.call(response);
+    forceDismiss();
   }
 
   void _notifyBounds() {
@@ -567,11 +488,7 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             child: TapRegion(
               groupId: 'smelt-popups',
               onTapOutside: (_) {
-                if (_pinned) return;
                 if (ref.read(smeltGuideProvider).locksSmeltPopup) return;
-                // Secondary popup beside a pinned one stays open so the
-                // canvas remains usable for drawing / selecting.
-                if (!widget.allowPin) return;
                 dismiss();
               },
               child: _MeasureSize(
@@ -587,7 +504,9 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
 
   Widget _buildHeader() {
     final live = _effectiveState(watch: true);
-    final canPinNow = widget.allowPin && !live.isLoading;
+    final canTape = widget.onTapeOntoScrap != null &&
+        !live.isLoading &&
+        live.response != null;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -615,19 +534,17 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
                 margin: EdgeInsets.fromLTRB(8, 6, 4, 0),
               ),
             ),
-            if (widget.allowPin || _pinned)
+            if (widget.onTapeOntoScrap != null)
               PaperIconButton(
-                icon: _pinned ? Icons.push_pin : Icons.push_pin_outlined,
-                tooltip: !canPinNow && !_pinned
-                    ? (live.isLoading
-                        ? 'Wait for result to pin'
-                        : 'Another result is already pinned')
-                    : (_pinned ? 'Unpin' : 'Keep open'),
-                color: _pinned ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                icon: Icons.content_paste,
+                tooltip: live.isLoading
+                    ? 'Wait for result to tape'
+                    : 'Tape onto scrap',
+                color: canTape ? ScrapTheme.accent : ScrapTheme.secondaryText,
                 size: 32,
                 iconSize: 18,
-                onPressed: canPinNow || _pinned
-                    ? _togglePinned
+                onPressed: canTape
+                    ? _tapeOntoScrap
                     : () => _shakeController.forward(from: 0),
               ),
             if (!ref.watch(smeltGuideProvider).locksSmeltPopup)
@@ -1012,26 +929,6 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
             ],
           ),
         ),
-        if (widget.onTapeOntoScrap != null) ...[
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: () => widget.onTapeOntoScrap!(response),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Tape onto scrap',
-                  style: ScrapTextStyles.caption.copyWith(
-                    color: ScrapTheme.accent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.content_paste, size: 14, color: ScrapTheme.accent),
-              ],
-            ),
-          ),
-        ],
       ],
     );
   }

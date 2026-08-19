@@ -95,8 +95,8 @@ The first launch walks you through onboarding and asks for the key.
 | Ink | [perfect_freehand](https://pub.dev/packages/perfect_freehand) |
 | Storage | [sqflite](https://pub.dev/packages/sqflite), [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) |
 | PDFs | [pdfrx](https://pub.dev/packages/pdfrx) |
-| OCR | [Google ML Kit](https://pub.dev/packages/google_mlkit_text_recognition) |
-| Math | [flutter_math_fork](https://pub.dev/packages/flutter_math_fork) |
+| OCR | Trained with TensorFlow using [tf.keras](https://pypi.org/project/tf-keras/) on the [Kaggle Handwritten math symbols dataset](https://www.kaggle.com/datasets/xainano/handwrittenmathsymbols) |
+| Math Rendering| [flutter_math_fork](https://pub.dev/packages/flutter_math_fork) |
 
 
 ## Contributing

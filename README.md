@@ -57,7 +57,7 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 
 ## Recently added
 
-- **Quick calc** writes the answer next to a handwritten `=` using on-device detection — no API key, simple arithmetic only. Toggle it in canvas settings.
+- **Quick calc (Beta)** writes the answer next to a handwritten `=` using on-device detection and calculation. No API key required. Currently only trained for simple arithmetic and may make mistakes. Toggle it in canvas settings.
 
 <div align="center">
 <img src="assets/branding/readme/quick_calc_demo.webp" alt="Quick calc: writing an equals sign and getting an on-device answer" width="360"/>

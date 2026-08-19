@@ -77,7 +77,7 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 You'll need the [Flutter SDK](https://flutter.dev/docs/get-started/install) (3.0 or newer) and a [Google AI Studio key](https://aistudio.google.com/app/apikey).
 
 ```bash
-git clone https://github.com/<your-username>/scrapyard.git
+git clone https://github.com/changkevin51/Scrapyard.git
 cd scrapyard
 flutter pub get
 flutter run

@@ -370,10 +370,10 @@ packages:
     dependency: "direct dev"
     description:
       name: flutter_native_splash
-      sha256: "9db4b80b044e9af17cc4b1272137fc7ace0054d879ef8210a76adc34aaf4cdff"
+      sha256: "8321a6d11a8d13977fa780c89de8d257cce3d841eecfb7a4cadffcc4f12d82dc"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.8"
+    version: "2.4.6"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -500,18 +500,18 @@ packages:
     dependency: transitive
     description:
       name: google_mlkit_commons
-      sha256: "9990a65f407a3ef6bae646bf10143faa93fec126683771465bc6c0b43fb0e6e9"
+      sha256: c7fc384bdb66c3b83e24e3a41818e61d7a378d900f65f5e775344fbca95a0917
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.1"
+    version: "0.12.0"
   google_mlkit_text_recognition:
     dependency: "direct main"
     description:
       name: google_mlkit_text_recognition
-      sha256: "179349417066fa2c275d7a6ed6cbceeb7fa265d73aacdb2d732f1a2991face0a"
+      sha256: "8324fdc2628ebeb63568ad06437b984b716d938d87e4ce63ab24dfd3eeebf08a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.13.1"
+    version: "0.16.0"
   graphs:
     dependency: transitive
     description:
@@ -804,10 +804,10 @@ packages:
     dependency: transitive
     description:
       name: petitparser
-      sha256: "91bd59303e9f769f108f8df05e371341b15d59e995e6806aefab827b58336675"
+      sha256: "07c8f0b1913bcde1ff0d26e57ace2f3012ccbf2b204e070290dad3bb22797646"
       url: "https://pub.dev"
     source: hosted
-    version: "7.0.2"
+    version: "6.1.0"
   platform:
     dependency: transitive
     description:
@@ -912,6 +912,54 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.28.0"
+  serious_python:
+    dependency: "direct main"
+    description:
+      name: serious_python
+      sha256: "5fbf40b2da00ec488bd7ed819baa726af7e71dbb783f1a93aa319bf4e9e78564"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
+  serious_python_android:
+    dependency: transitive
+    description:
+      name: serious_python_android
+      sha256: "7e3a09b372dc6717d6db926fe521c8a5c4e64728c5ccd0987aad45f842b55b73"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
+  serious_python_darwin:
+    dependency: transitive
+    description:
+      name: serious_python_darwin
+      sha256: c016197e3c522d0d757ba6073ad19cf01e9e340195bd241b49ad935c40635149
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
+  serious_python_linux:
+    dependency: transitive
+    description:
+      name: serious_python_linux
+      sha256: b78976e2ab5fa13ad53b708249f22aee3ee4a2ec5acf8bb9c990c1367086ac1c
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
+  serious_python_platform_interface:
+    dependency: transitive
+    description:
+      name: serious_python_platform_interface
+      sha256: ca1891c38b1ab0329e1cde1cd2c55c0bdc7d2396abc8c6703a618de32af51957
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
+  serious_python_windows:
+    dependency: transitive
+    description:
+      name: serious_python_windows
+      sha256: "6299fb01dd737cdc249b8adca9dbf55ee4f463505c8519d571755c6f477a5122"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.1"
   share_plus:
     dependency: "direct main"
     description:
@@ -1157,6 +1205,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  toml:
+    dependency: transitive
+    description:
+      name: toml
+      sha256: "9968de24e45b632bf1a654fe1ac7b6fe5261c349243df83fd262397799c45a2d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.15.0"
   tuple:
     dependency: transitive
     description:
@@ -1377,10 +1433,10 @@ packages:
     dependency: transitive
     description:
       name: xml
-      sha256: "971043b3a0d3da28727e40ed3e0b5d18b742fa5a68665cca88e74b7876d5e025"
+      sha256: b015a8ad1c488f66851d762d3090a21c600e479dc75e68328c52774040cf9226
       url: "https://pub.dev"
     source: hosted
-    version: "6.6.1"
+    version: "6.5.0"
   yaml:
     dependency: transitive
     description:

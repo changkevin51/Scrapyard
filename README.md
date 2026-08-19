@@ -57,6 +57,12 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 
 ## Recently added
 
+- **Quick calc** writes the answer next to a handwritten `=` using on-device detection — no API key, simple arithmetic only. Toggle it in canvas settings.
+
+<div align="center">
+<img src="assets/branding/readme/quick_calc_demo.webp" alt="Quick calc: writing an equals sign and getting an on-device answer" width="360"/>
+</div>
+
 - **True splitscreen for study chat** allows users to keep writing on the canvas while the chat panel is open
 - **Smelt results can be pinned** and dragged so they stay while you write, or **taped onto the scrap** so they remain after you leave.
 - **Tear out** exports a scrap to share or save outside the app.

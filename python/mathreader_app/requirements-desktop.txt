@@ -1,0 +1,10 @@
+# Desktop (Windows/macOS/Linux) — no TensorFlow. Use LiteRT or the
+# TensorFlow package's tf.lite.Interpreter as a fallback.
+numpy
+opencv-python-headless
+pillow
+ai-edge-litert
+ply
+imutils
+idx2numpy
+imageio

@@ -20,6 +20,7 @@ import '../../domain/models/stroke.dart';
 import '../../domain/services/stroke_spatial_index.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
+import '../providers/ink_calculator_provider.dart';
 import 'eraser_preview.dart';
 
 // ══════════════════════════════════════════════════════════════════
@@ -1011,6 +1012,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
   }
 
   void _eraseAt(Offset pos, double radius) {
+    ref.read(inkCalculatorProvider.notifier).onEraseAt(pos, radius);
     final mode = ref.read(penSettingsProvider).eraser;
     if (mode == EraserMode.area) {
       _eraseAreaAt(pos, radius);

@@ -6,17 +6,21 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'package:sqflite/sqflite.dart';
 import 'core/theme/scrapyard_theme.dart';
 import 'core/router/app_router.dart';
+import 'features/canvas/data/math_reader_python.dart';
 import 'features/onboarding/presentation/widgets/smelt_guide_overlay.dart';
 import 'features/splash/presentation/widgets/splash_gate.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
     databaseFactory = databaseFactoryFfiWeb;
   } else if (defaultTargetPlatform == TargetPlatform.windows || defaultTargetPlatform == TargetPlatform.linux || defaultTargetPlatform == TargetPlatform.macOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  
+  // Unpack/start the calculator sidecar while splash is showing.
+  ensureMathReaderSidecar();
+
   runApp(
     const ProviderScope(
       child: ScrapyardApp(),

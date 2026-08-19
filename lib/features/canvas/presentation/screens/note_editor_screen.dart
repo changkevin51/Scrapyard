@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:async';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -26,8 +27,11 @@ import '../../../onboarding/domain/smelt_guide_step.dart';
 import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
+import '../providers/ink_calculator_provider.dart';
 import '../providers/smelt_detection_provider.dart';
 import '../widgets/handwriting_canvas.dart';
+import '../widgets/ink_calculator_answer.dart';
+import '../widgets/ink_calculator_popup.dart';
 import '../widgets/infinite_canvas_surface.dart';
 import '../widgets/canvas_toolbar.dart';
 import '../widgets/canvas_smart_widgets.dart';
@@ -68,6 +72,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   Timer? _ocrDebounce;
   int _textRevealGen = 0;
   OverlayEntry? _smeltPopupEntry;
+  OverlayEntry? _inkCalcPopupEntry;
   final GlobalKey _canvasRepaintKey = GlobalKey();
   Offset? _lassoStart;
   Rect? _lassoPreviewRect;
@@ -128,17 +133,36 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     WidgetsBinding.instance.addObserver(this);
     // Warm up background cluster detection without watching (no rebuilds).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ref.read(detectedClustersProvider);
-        ref.read(smeltGuideProvider.notifier).resume();
-      }
+      if (!_refSafe) return;
+      ref.read(detectedClustersProvider);
+      ref.read(inkCalculatorProvider);
+      ref.read(smeltGuideProvider.notifier).resume();
     });
+  }
+
+  bool get _refSafe => mounted && context.mounted;
+
+  @override
+  void deactivate() {
+    if (context.mounted) {
+      ref.read(smeltGuideProvider.notifier).pause();
+    }
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    if (widget.ownsRoute) {
+      ref.read(smeltGuideProvider.notifier).resume();
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ocrDebounce?.cancel();
+    _ocrDebounce = null;
     _manualHintTimer?.cancel();
     _smeltHintTimer?.cancel();
     _selectionEdgeScrollTimer?.cancel();
@@ -146,12 +170,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _scrollController.dispose();
     _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
-    ref.read(smeltGuideProvider.notifier).pause();
+    _inkCalcPopupEntry?.remove();
     super.dispose();
   }
 
   @override
   void didChangeMetrics() {
+    if (!_refSafe) return;
     if (ref.read(activeTextNodeIdProvider) != null) {
       _revealActiveTextAboveKeyboard();
     }
@@ -162,7 +187,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     final gen = ++_textRevealGen;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await Future<void>.delayed(const Duration(milliseconds: 60));
-      if (!mounted || gen != _textRevealGen) return;
+      if (!_refSafe || gen != _textRevealGen) return;
       if (ref.read(activeTextNodeIdProvider) == null) return;
 
       final keyboard = MediaQuery.viewInsetsOf(context).bottom;
@@ -220,7 +245,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
   void _triggerOcrRun() {
     _ocrDebounce?.cancel();
+    if (!_refSafe) return;
     _ocrDebounce = Timer(const Duration(milliseconds: 1500), () async {
+      if (!_refSafe) return;
       final strokes = ref.read(strokesProvider);
       final infinite = ref.read(pageLayoutProvider).isInfinite;
       BoxConstraints constraints;
@@ -243,6 +270,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       }
       final results =
           await _ocrService.recognizeStrokes(strokes, constraints);
+      if (!_refSafe) return;
       ref.read(ocrResultsProvider.notifier).state = results;
     });
   }
@@ -491,6 +519,95 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     setState(() => _showSelectionMenu = true);
   }
 
+  bool _handleInkCalcTapAt(Offset position) {
+    if (ref.read(activeCanvasToolProvider) == CanvasTool.smelt) return false;
+    final noteId = ref.read(activeNoteIdProvider);
+    final world = _toWorld(position);
+    for (final calc in ref.read(inkCalculatorProvider).resultsFor(noteId)) {
+      if (calc.containsWorld(world, pad: 10)) {
+        _showInkCalcPopup(calc);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _showInkCalcPopup(InkCalculatorResult result) {
+    _inkCalcPopupEntry?.remove();
+    final globalRect = _convertToGlobalRect(result.hitBounds);
+    ScrapFeedback.tap();
+    setState(() {
+      _selectionRect = result.hitBounds.inflate(6);
+      _selectedStrokeIds = {
+        ...result.expressionStrokeIds,
+        ...result.equalsStrokeIds,
+      };
+      _selectedTextIds = {};
+      _activeClusterId = null;
+      _selectionFromDetection = true;
+      _showSelectionMenu = false;
+      _isResizingSelection = false;
+      _manualHintVisible = false;
+      _manualSelectMenuAnchor = null;
+    });
+    _inkCalcPopupEntry = OverlayEntry(
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        return InkCalculatorPopup(
+          result: result,
+          selectionRect: globalRect,
+          screenSize: screenSize,
+          onDismiss: _dismissInkCalcPopup,
+          onRemoveAnswer: () {
+            _dismissInkCalcPopup();
+            ref.read(inkCalculatorProvider.notifier).removeAnswer(result: result);
+          },
+          onUseSmelt: () => _useSmeltInsteadOfCalc(result),
+        );
+      },
+    );
+    Overlay.of(context).insert(_inkCalcPopupEntry!);
+  }
+
+  void _dismissInkCalcPopup({bool clearSelection = true}) {
+    _inkCalcPopupEntry?.remove();
+    _inkCalcPopupEntry = null;
+    if (!clearSelection || !mounted) return;
+    setState(() {
+      _selectionRect = null;
+      _selectedStrokeIds = {};
+      _selectedTextIds = {};
+      _activeClusterId = null;
+      _selectionFromDetection = false;
+      _showSelectionMenu = false;
+    });
+  }
+
+  void _useSmeltInsteadOfCalc(InkCalculatorResult result) {
+    _dismissInkCalcPopup(clearSelection: false);
+    ref.read(inkCalculatorProvider.notifier).removeAnswer(result: result);
+    final bounds =
+        result.expressionBounds.expandToInclude(result.equalsBounds).inflate(8);
+    setState(() {
+      _selectionRect = bounds;
+      _selectedStrokeIds = {
+        ...result.expressionStrokeIds,
+        ...result.equalsStrokeIds,
+      };
+      _selectedTextIds = {};
+      _activeClusterId = null;
+      _selectionFromDetection = true;
+      _showSelectionMenu = false;
+      _isResizingSelection = false;
+      _manualHintVisible = false;
+      _manualSelectMenuAnchor = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _smeltSelection();
+    });
+  }
+
   String _smeltCacheKeyFor(
     Iterable<String> strokeIds, {
     Iterable<String>? textIds,
@@ -617,6 +734,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         _handleSmeltTapAt(event.localPosition);
       }
     } else if (!_selectionDragStarted) {
+      if (_handleInkCalcTapAt(event.localPosition)) {
+        _resetSelectionPointer();
+        return;
+      }
       _handleSmeltTapAt(event.localPosition);
     }
 
@@ -1847,10 +1968,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   @override
   Widget build(BuildContext context) {
     ref.listen(strokesProvider, (previous, next) {
+      if (!_refSafe) return;
       if (previous != null && next.length > previous.length) _triggerOcrRun();
     });
 
     ref.listen<String?>(activeTextNodeIdProvider, (previous, next) {
+      if (!_refSafe) return;
       if (next != null) {
         _revealActiveTextAboveKeyboard();
       } else {
@@ -1859,6 +1982,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     ref.listen<Rect?>(activeTextGlobalRectProvider, (previous, next) {
+      if (!_refSafe) return;
       if (next != null &&
           ref.read(activeTextNodeIdProvider) != null &&
           MediaQuery.viewInsetsOf(context).bottom > 0) {
@@ -1867,6 +1991,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     ref.listen<CanvasTool>(activeCanvasToolProvider, (previous, next) {
+      if (!_refSafe) return;
       if (previous == CanvasTool.text && next != CanvasTool.text) {
         ref.read(activeTextNodeIdProvider.notifier).state = null;
       }
@@ -1888,6 +2013,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     });
 
     ref.listen<bool>(chatCaptureRequestProvider, (previous, next) {
+      if (!_refSafe) return;
       if (next == true && previous != true) {
         _manualHintTimer?.cancel();
         ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.lasso;
@@ -1907,7 +2033,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
           _manualHintVisible = true;
         });
         _manualHintTimer = Timer(const Duration(seconds: 3), () {
-          if (!mounted) return;
+          if (!_refSafe) return;
           setState(() => _manualHintVisible = false);
         });
       } else if (next == false && _chatCaptureMode) {
@@ -1920,6 +2046,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
 
     // If the user reopens chat without finishing a capture, cancel capture mode.
     ref.listen<bool>(chatPanelOpenProvider, (previous, next) {
+      if (!_refSafe) return;
       if (next == true &&
           _chatCaptureMode &&
           ref.read(pendingChatAttachmentProvider) == null) {
@@ -1927,8 +2054,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       }
     });
 
+    ref.listen<InkCalculatorState>(inkCalculatorProvider, (previous, next) {
+      if (!_refSafe) return;
+      if (_inkCalcPopupEntry == null) return;
+      final noteId = ref.read(activeNoteIdProvider);
+      if (next.resultsFor(noteId).isEmpty) {
+        _dismissInkCalcPopup();
+      }
+    });
+
     ref.listen<bool>(stylusOnlyModeProvider, (previous, next) {
-      if (next && mounted) {
+      if (next && _refSafe) {
         _manualHintTimer?.cancel();
         _resetSelectionPointer();
         setState(() {
@@ -1990,6 +2126,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       });
     }
 
+    final calcState = ref.watch(inkCalculatorProvider);
+    final debugGuess = kDebugMode ? calcState.debugGuess : null;
     final worldAnnotations = <Widget>[
       if (strokes.isEmpty && !isInfinite && !hideFreshHint)
         Positioned(
@@ -2008,6 +2146,30 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       ...ref
           .watch(canvasTablesProvider)
           .map((t) => CanvasTableOverlay(table: t)),
+      ...calcState.resultsFor(ref.watch(activeNoteIdProvider)).map(
+            (calc) => InkCalculatorAnswerOverlay(
+              key: ValueKey(calc.pairKey),
+              result: calc,
+            ),
+          ),
+      if (debugGuess != null)
+        Positioned(
+          left: debugGuess.bounds.left,
+          top: debugGuess.bounds.top,
+          width: debugGuess.bounds.width,
+          height: debugGuess.bounds.height,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: const Color(0xE0C45C26),
+                  width: 2,
+                ),
+                color: const Color(0x22C45C26),
+              ),
+            ),
+          ),
+        ),
     ];
 
     // Finite sheet only — avoid building a second HandwritingCanvas (and moving
@@ -2075,7 +2237,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 fromDetection: _selectionFromDetection,
                 isSmelting: _isSmelting,
               ),
-              if (!_isResizingSelection && !_isSmelting)
+              if (!_isResizingSelection &&
+                  !_isSmelting &&
+                  _inkCalcPopupEntry == null)
                 Positioned.fromRect(
                   rect: selectionScreen,
                   child: GestureDetector(
@@ -2396,6 +2560,15 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 child: _FreshScrapHint(
                   ephemeral: isLooseScrap,
                 ),
+              ),
+            ),
+          if (debugGuess != null)
+            Positioned.fill(
+              child: InkCalculatorDebugPopup(
+                guess: debugGuess,
+                onDismiss: () {
+                  ref.read(inkCalculatorProvider.notifier).clearDebugGuess();
+                },
               ),
             ),
           // AI chat FAB — bottom right (skipped when parent hosts chat chrome)

@@ -1,0 +1,9 @@
+# Native wheels for Android/iOS come from https://pypi.flet.dev
+# Pin 3.12: tflite-runtime 2.21.0 has cp312 mobile wheels; 3.14 may not.
+numpy
+opencv-python
+pillow
+tflite-runtime==2.21.0
+ply
+imutils
+idx2numpy

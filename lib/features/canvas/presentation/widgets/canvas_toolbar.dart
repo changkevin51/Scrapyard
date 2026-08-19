@@ -10,6 +10,8 @@ import '../../../../core/widgets/toolbar_tool_icons.dart';
 import '../../data/pen_engine.dart';
 import '../providers/canvas_providers.dart';
 import '../providers/canvas_viewport_provider.dart';
+import '../providers/ink_calculator_provider.dart';
+import '../../data/math_reader_calculator_service.dart';
 import 'canvas_smart_widgets.dart';
 import 'ink_color_controls.dart';
 import 'pen_settings_panel.dart';
@@ -782,6 +784,42 @@ class _CanvasSettingsSheet extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            Builder(builder: (context) {
+              final supported = MathReaderCalculatorService.isPlatformSupported;
+              final enabled = ref.watch(onDeviceCalcEnabledProvider);
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('QUICK CALC',
+                            style: ScrapTextStyles.stamp.copyWith(fontSize: 10)),
+                        Text(
+                          supported
+                              ? 'Write = to solve simple arithmetic'
+                              : 'Not available in the browser',
+                          style: ScrapTextStyles.caption
+                              .copyWith(color: ScrapTheme.mutedText),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  PaperSwitch(
+                    value: supported && enabled,
+                    onChanged: supported
+                        ? (v) => ref
+                            .read(onDeviceCalcEnabledProvider.notifier)
+                            .setEnabled(v)
+                        : null,
+                  ),
+                ],
+              );
+            }),
             const SizedBox(height: 24),
           ],
         ),

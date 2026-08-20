@@ -47,30 +47,76 @@ class _SmeltGuideOverlayState extends ConsumerState<SmeltGuideOverlay>
     super.dispose();
   }
 
-  Rect? _holesFor(SmeltGuideStep step) {
+  Rect? _holesFor(SmeltGuideStep step, BuildContext overlayContext) {
     switch (step) {
       case SmeltGuideStep.openScrap:
-        return SmeltGuideKeys.rectOf(SmeltGuideKeys.newScrapButton);
+        return _toOverlay(
+          overlayContext,
+          SmeltGuideKeys.rectOf(SmeltGuideKeys.newScrapButton),
+        );
       case SmeltGuideStep.tapSmelt:
-        return SmeltGuideKeys.rectOf(SmeltGuideKeys.smeltTool);
+        return _toOverlay(
+          overlayContext,
+          SmeltGuideKeys.rectOf(SmeltGuideKeys.smeltTool),
+        );
       case SmeltGuideStep.chooseSmelt:
-        return SmeltGuideKeys.unionOf([
-          SmeltGuideKeys.smeltPill,
-          SmeltGuideKeys.smeltCodePill,
-        ]);
+        return _toOverlay(
+          overlayContext,
+          SmeltGuideKeys.unionOf([
+            SmeltGuideKeys.smeltPill,
+            SmeltGuideKeys.smeltCodePill,
+          ]),
+        );
       case SmeltGuideStep.showSteps:
-        return SmeltGuideKeys.rectOf(SmeltGuideKeys.showSteps);
+        return _toOverlay(
+          overlayContext,
+          SmeltGuideKeys.rectOf(SmeltGuideKeys.showSteps),
+        );
       case SmeltGuideStep.askNext:
-        return SmeltGuideKeys.rectOf(SmeltGuideKeys.askNext) ??
-            SmeltGuideKeys.rectOf(SmeltGuideKeys.continueInChat);
+        return _toOverlay(
+          overlayContext,
+          SmeltGuideKeys.rectOf(SmeltGuideKeys.askNext) ??
+              SmeltGuideKeys.rectOf(SmeltGuideKeys.continueInChat),
+        );
       case SmeltGuideStep.chatSelect:
-        return SmeltGuideKeys.rectOf(SmeltGuideKeys.chatSelect);
+        return _onscreenHole(
+          overlayContext,
+          SmeltGuideKeys.rectOf(SmeltGuideKeys.chatSelect),
+        );
       default:
         return null;
     }
   }
 
-  Rect? _answerRect() => SmeltGuideKeys.rectOf(SmeltGuideKeys.smeltAnswer);
+  Rect? _answerRect(BuildContext overlayContext) => _toOverlay(
+        overlayContext,
+        SmeltGuideKeys.rectOf(SmeltGuideKeys.smeltAnswer),
+      );
+
+  /// Ignore a target that's still sliding in from off-screen (chat overlay).
+  Rect? _onscreenHole(BuildContext overlayContext, Rect? global) {
+    final local = _toOverlay(overlayContext, global);
+    if (local == null) return null;
+    final screen = MediaQuery.sizeOf(overlayContext);
+    if (local.center.dx < 8 ||
+        local.center.dx > screen.width - 8 ||
+        local.center.dy < 8 ||
+        local.center.dy > screen.height - 8) {
+      return null;
+    }
+    return local;
+  }
+
+  /// GlobalKey rects are screen-space; paint this overlay in local space.
+  Rect? _toOverlay(BuildContext overlayContext, Rect? global) {
+    if (global == null) return null;
+    final box = overlayContext.findRenderObject();
+    if (box is! RenderBox || !box.attached) return global;
+    return Rect.fromPoints(
+      box.globalToLocal(global.topLeft),
+      box.globalToLocal(global.bottomRight),
+    );
+  }
 
   void _scheduleRemeasure() {
     _measureRetry?.cancel();
@@ -146,46 +192,46 @@ class _SmeltGuideOverlayState extends ConsumerState<SmeltGuideOverlay>
     if (!guide.isActive) return const SizedBox.shrink();
 
     final step = guide.step;
-    final hole = (step == SmeltGuideStep.showSteps && guide.stepsRevealed)
-        ? null
-        : _holesFor(step)?.inflate(10);
-    final answer = step.showArrowToAnswer && !guide.stepsRevealed
-        ? _answerRect()
-        : null;
-    final useBarrier = step.usesBarrier &&
-        hole != null &&
-        !guide.isSmelting &&
-        !(step == SmeltGuideStep.showSteps && guide.stepsRevealed);
-
-    if (hole == null &&
-        (step.usesBarrier ||
-            step == SmeltGuideStep.chatSelect ||
-            step == SmeltGuideStep.showSteps ||
-            step == SmeltGuideStep.askNext)) {
-      _scheduleRemeasure();
-    }
-
-    final media = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    final tooltipSize = Size(
-      math.min(340, media.width - 40),
-      0,
-    );
-    final tooltipPos = _tooltipOffset(
-      screen: media,
-      padding: padding,
-      hole: hole,
-      tooltipWidth: tooltipSize.width,
-      step: step,
-    );
-
     final tooltipId =
         '${step.name}_${guide.isSmelting}_${guide.smeltFailed}_${guide.hasInk}_${guide.hasSelection}_${guide.stepsRevealed}';
 
     return Positioned.fill(
       child: AnimatedBuilder(
         animation: _pulse,
-        builder: (context, _) {
+        builder: (overlayContext, _) {
+          // Measure each pulse frame so sliding chat / popups stay aligned.
+          final hole = (step == SmeltGuideStep.showSteps && guide.stepsRevealed)
+              ? null
+              : _holesFor(step, overlayContext)?.inflate(10);
+          final answer = step.showArrowToAnswer && !guide.stepsRevealed
+              ? _answerRect(overlayContext)
+              : null;
+          final useBarrier = step.usesBarrier &&
+              hole != null &&
+              !guide.isSmelting &&
+              !(step == SmeltGuideStep.showSteps && guide.stepsRevealed);
+
+          if (hole == null &&
+              (step.usesBarrier ||
+                  step == SmeltGuideStep.showSteps ||
+                  step == SmeltGuideStep.askNext)) {
+            _scheduleRemeasure();
+          }
+
+          final media = MediaQuery.sizeOf(overlayContext);
+          final padding = MediaQuery.paddingOf(overlayContext);
+          final tooltipSize = Size(
+            math.min(340, media.width - 40),
+            0,
+          );
+          final tooltipPos = _tooltipOffset(
+            screen: media,
+            padding: padding,
+            hole: hole,
+            tooltipWidth: tooltipSize.width,
+            step: step,
+          );
+
           return Stack(
             children: [
               if (useBarrier)
@@ -203,19 +249,6 @@ class _SmeltGuideOverlayState extends ConsumerState<SmeltGuideOverlay>
                       child: const SizedBox.expand(),
                     ),
                   ),
-                )
-              else if (step == SmeltGuideStep.chatSelect && hole != null)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(
-                      painter: _GuideDimPainter(
-                        hole: hole,
-                        pulse: _pulse.value,
-                        dimOpacity: 0.12,
-                      ),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
                 ),
               if (step.showArrowToAnswer && answer != null)
                 Positioned.fill(
@@ -224,9 +257,9 @@ class _SmeltGuideOverlayState extends ConsumerState<SmeltGuideOverlay>
                       painter: _GuideArrowPainter(
                         from: Offset(
                           tooltipPos.dx + tooltipSize.width * 0.35,
-                          tooltipPos.dy + 88,
+                          tooltipPos.dy - 6,
                         ),
-                        to: answer.center,
+                        to: Offset(answer.center.dx, answer.bottom),
                         pulse: _pulse.value,
                       ),
                     ),
@@ -297,11 +330,22 @@ class _SmeltGuideOverlayState extends ConsumerState<SmeltGuideOverlay>
     const gap = 16.0;
 
     if (step == SmeltGuideStep.writeProblem ||
-        step == SmeltGuideStep.selectExpression) {
+        step == SmeltGuideStep.selectExpression ||
+        step == SmeltGuideStep.chooseSmelt) {
       return Offset(
         (screen.width - tooltipWidth) / 2,
         padding.top + 20,
       );
+    }
+
+    if (step == SmeltGuideStep.chatSelect && hole != null) {
+      var left = hole.center.dx - tooltipWidth / 2;
+      left = left.clamp(16.0, screen.width - tooltipWidth - 16);
+      final above = hole.top - gap - cardHeightGuess;
+      final top = above > padding.top + 8
+          ? above
+          : padding.top + 20;
+      return Offset(left, top);
     }
 
     if (step == SmeltGuideStep.enjoy) {
@@ -602,13 +646,21 @@ class _GuideArrowPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final bob = math.sin(pulse * math.pi * 2) * 4;
-    final end = to.translate(0, bob);
+    var end = to.translate(0, bob);
+    var start = from;
+    final delta = end - start;
+    final dist = delta.distance;
+    // Keep a short pointer into the answer instead of stretching across the popup.
+    const maxLen = 56.0;
+    if (dist > maxLen) {
+      start = end - (delta / dist) * maxLen;
+    }
     final mid = Offset(
-      (from.dx + end.dx) / 2 + 18,
-      (from.dy + end.dy) / 2,
+      (start.dx + end.dx) / 2 + 8,
+      (start.dy + end.dy) / 2,
     );
     final path = Path()
-      ..moveTo(from.dx, from.dy)
+      ..moveTo(start.dx, start.dy)
       ..quadraticBezierTo(mid.dx, mid.dy, end.dx, end.dy);
 
     final paint = Paint()

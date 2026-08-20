@@ -516,27 +516,31 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 GestureDetector(
-                  key: SmeltGuideKeys.chatSelect,
                   onTap: isStreaming ? null : _requestCanvasCapture,
                   child: Tooltip(
                     message: 'Send this region to chat',
-                    child: AnimatedContainer(
-                    duration: ScrapMotion.fast,
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: ScrapTheme.codeSurface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: ScrapTheme.dividers),
+                    child: SizedBox(
+                      key: SmeltGuideKeys.chatSelect,
+                      width: 40,
+                      height: 40,
+                      child: AnimatedContainer(
+                        duration: ScrapMotion.fast,
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: ScrapTheme.codeSurface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: ScrapTheme.dividers),
+                        ),
+                        child: Icon(
+                          Icons.crop_free,
+                          color: isStreaming
+                              ? ScrapTheme.mutedText
+                              : ScrapTheme.secondaryText,
+                          size: 20,
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      Icons.crop_free,
-                      color: isStreaming
-                          ? ScrapTheme.mutedText
-                          : ScrapTheme.secondaryText,
-                      size: 20,
-                    ),
-                  ),
                   ),
                 ),
                 const SizedBox(width: 8),

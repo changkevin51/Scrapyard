@@ -36,7 +36,8 @@ extension SmeltGuideStepX on SmeltGuideStep {
         SmeltGuideStep.tapSmelt ||
         SmeltGuideStep.chooseSmelt ||
         SmeltGuideStep.showSteps ||
-        SmeltGuideStep.askNext =>
+        SmeltGuideStep.askNext ||
+        SmeltGuideStep.chatSelect =>
           SmeltGuideMode.gated,
         _ => SmeltGuideMode.soft,
       };

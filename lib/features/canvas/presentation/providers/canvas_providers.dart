@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,74 @@ export '../../domain/models/canvas_text_item.dart';
 export 'canvas_history.dart';
 
 enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, lasso, smelt, text, undo, redo }
+
+/// World-space height of one finite sheet. Grows to fill the editor, never
+/// shrinks with the keyboard.
+final finitePageHeightProvider = StateProvider<double>((ref) => 900);
+
+/// How many finite sheets are stacked. Always keeps a blank page under ink
+/// on the last used page.
+final finitePageCountProvider = StateProvider<int>((ref) => 1);
+
+const int kMaxFinitePages = 40;
+
+double suggestedFinitePageHeight({
+  required double canvasWidth,
+  required double viewportHeight,
+}) {
+  return math.max(viewportHeight, math.max(canvasWidth * 1.15, 720.0));
+}
+
+double finiteContentBottom({
+  required List<Stroke> strokes,
+  required List<CanvasTextItem> texts,
+  required List<CanvasTable> tables,
+  double liveY = -1,
+}) {
+  var maxY = liveY;
+  for (final s in strokes) {
+    if (s.isHidden || s.points.isEmpty) continue;
+    var strokeMax = s.points.first.y;
+    for (final p in s.points) {
+      if (p.y > strokeMax) strokeMax = p.y;
+    }
+    strokeMax += s.baseWidth;
+    if (strokeMax > maxY) maxY = strokeMax;
+  }
+  for (final t in texts) {
+    final bottom = t.position.dy + (t.taped ? 240.0 : t.fontSize * 2.5);
+    if (bottom > maxY) maxY = bottom;
+  }
+  for (final t in tables) {
+    final bottom = t.position.dy + t.rows * t.cellHeight;
+    if (bottom > maxY) maxY = bottom;
+  }
+  return maxY;
+}
+
+int finitePagesForBottom(double bottom, double pageHeight) {
+  if (pageHeight <= 0) return 1;
+  if (bottom < 0) return 1;
+  final last = (bottom / pageHeight).floor();
+  return math.min(kMaxFinitePages, last + 2);
+}
+
+/// Grow the finite scrap if [liveY] or existing marks sit on the last page.
+void ensureFinitePages(WidgetRef ref, {double? liveY}) {
+  if (ref.read(pageLayoutProvider).isInfinite) return;
+  final pageH = ref.read(finitePageHeightProvider);
+  final bottom = finiteContentBottom(
+    strokes: ref.read(strokesProvider),
+    texts: ref.read(canvasTextNodesProvider),
+    tables: ref.read(canvasTablesProvider),
+    liveY: liveY ?? -1,
+  );
+  final needed = finitePagesForBottom(bottom, pageH);
+  final current = ref.read(finitePageCountProvider);
+  if (needed > current) {
+    ref.read(finitePageCountProvider.notifier).state = needed;
+  }
+}
 
 final canvasRepositoryProvider = Provider((ref) => StrokeRepository());
 
@@ -135,6 +204,19 @@ void applyInkColor(
   }
 }
 
+/// Switch the scrap desk back to pen (draw mode + pen ink family).
+void selectPenTool(WidgetRef ref) {
+  ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
+  ref.read(isPenModeActiveProvider.notifier).state = true;
+  ref.read(activeInkFamilyProvider.notifier).state = InkFamily.pen;
+  final settings = ref.read(penSettingsProvider);
+  if (settings.penStyle.family != InkFamily.pen) {
+    ref.read(penSettingsProvider.notifier).state =
+        settings.copyWith(penStyle: PenStyle.pen);
+  }
+  restoreToolColor(ref, CanvasTool.pen);
+}
+
 /// Restore the colour last used by [tool] into the active ink + toolbar slot.
 void restoreToolColor(WidgetRef ref, CanvasTool tool) {
   if (!isInkColorTool(tool)) return;
@@ -189,7 +271,11 @@ class PageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
   PageLayoutNotifier(this._ref)
       : super(_ref.read(defaultPageLayoutProvider)) {
     _loadForActiveNote();
-    _ref.listen<String>(activeNoteIdProvider, (_, __) => _loadForActiveNote());
+    _ref.listen<String>(activeNoteIdProvider, (_, __) {
+      _ref.read(finitePageCountProvider.notifier).state = 1;
+      _ref.read(finitePageHeightProvider.notifier).state = 900;
+      _loadForActiveNote();
+    });
   }
 
   final Ref _ref;
@@ -835,6 +921,7 @@ void openNoteTab(
     stashActiveEphemeralCanvas(ref);
     ref.read(activeTabIdProvider.notifier).state = id;
     ref.read(activeNoteIdProvider.notifier).state = id;
+    selectPenTool(ref);
 }
 
 /// Drop a single loose scrap from memory (tab + ephemeral set).
@@ -1008,4 +1095,5 @@ void switchActiveNote(WidgetRef ref, String id) {
   stashActiveEphemeralCanvas(ref);
   ref.read(activeTabIdProvider.notifier).state = id;
   ref.read(activeNoteIdProvider.notifier).state = id;
+  selectPenTool(ref);
 }

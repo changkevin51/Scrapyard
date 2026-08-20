@@ -135,6 +135,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     // Warm up background cluster detection without watching (no rebuilds).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_refSafe) return;
+      selectPenTool(ref);
       ref.read(detectedClustersProvider);
       ref.read(inkCalculatorProvider);
       ref.read(smeltGuideProvider.notifier).resume();
@@ -2104,6 +2105,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     ref.watch(canvasHistoryCoordinatorProvider);
 
     final strokes = ref.watch(strokesProvider);
+    final textNodes = ref.watch(canvasTextNodesProvider);
+    final tables = ref.watch(canvasTablesProvider);
+    final storedPageH = ref.watch(finitePageHeightProvider);
+    final storedPageCount = ref.watch(finitePageCountProvider);
 
     final activeNoteId = ref.watch(activeNoteIdProvider);
     final isLooseScrap = ref
@@ -2187,6 +2192,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                   onZoomChanged: (v) =>
                       ref.read(canvasZoomProvider.notifier).state = v,
                   suppressTouchScroll: _isMovingSelection,
+                  pageHeight: storedPageH,
                 ),
                 const Positioned.fill(
                   child: IgnorePointer(
@@ -2465,8 +2471,34 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         builder: (context, constraints) {
           final viewportW = constraints.maxWidth;
           final zoom = canvasZoom;
+          final proposedH = suggestedFinitePageHeight(
+            canvasWidth: viewportW,
+            viewportHeight: constraints.maxHeight,
+          );
+          final pageH = math.max(storedPageH, proposedH);
+          final contentBottom = finiteContentBottom(
+            strokes: strokes,
+            texts: textNodes,
+            tables: tables,
+          );
+          final pageCount = math.max(
+            storedPageCount,
+            finitePagesForBottom(contentBottom, pageH),
+          );
+          final sheetH = pageH * pageCount;
+          if (pageH > storedPageH + 0.5 || pageCount > storedPageCount) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (pageH > ref.read(finitePageHeightProvider)) {
+                ref.read(finitePageHeightProvider.notifier).state = pageH;
+              }
+              if (pageCount > ref.read(finitePageCountProvider)) {
+                ref.read(finitePageCountProvider.notifier).state = pageCount;
+              }
+            });
+          }
           final scaledW = viewportW * zoom;
-          final scaledH = 5000 * zoom;
+          final scaledH = sheetH * zoom;
           final contentW = math.max(viewportW, scaledW);
 
           final page = SizedBox(
@@ -2476,8 +2508,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
               alignment: Alignment.topLeft,
               minWidth: viewportW,
               maxWidth: viewportW,
-              minHeight: 5000,
-              maxHeight: 5000,
+              minHeight: sheetH,
+              maxHeight: sheetH,
               child: Transform.scale(
                 scale: zoom,
                 alignment: Alignment.topLeft,
@@ -2487,7 +2519,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                       : const BoxDecoration(),
                   child: SizedBox(
                     width: viewportW,
-                    height: 5000,
+                    height: sheetH,
                     child: Listener(
                       onPointerDown:
                           stylusOnly ? _onSelectionPointerDown : null,

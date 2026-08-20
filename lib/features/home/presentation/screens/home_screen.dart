@@ -276,13 +276,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     if (currentFolder != trashFolderId &&
                         currentFolder != savedFolderId) ...[
                       SliverToBoxAdapter(
-                        child: KeyedSubtree(
-                          key: SmeltGuideKeys.newScrapButton,
-                          child: _NewScrapButton(
-                            compact: layout.compactCta,
-                            onTap: _createAndOpenScrap,
-                            onLooseTap: _openLooseScrap,
-                          ),
+                        child: _NewScrapButton(
+                          compact: layout.compactCta,
+                          onTap: _createAndOpenScrap,
+                          onLooseTap: _openLooseScrap,
                         ),
                       ),
                       SliverToBoxAdapter(
@@ -2003,6 +2000,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
               _pressed = false;
             }),
             child: GestureDetector(
+              key: SmeltGuideKeys.newScrapButton,
               behavior: HitTestBehavior.opaque,
               onTapDown: (_) => setState(() => _pressed = true),
               onTapUp: (_) => setState(() => _pressed = false),

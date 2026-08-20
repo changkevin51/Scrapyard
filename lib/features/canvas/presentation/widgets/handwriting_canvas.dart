@@ -139,6 +139,7 @@ class HandwritingCanvas extends ConsumerStatefulWidget {
   /// When true, pan/zoom use [canvasViewportProvider] and strokes are stored
   /// in world coordinates. Finite sheet mode keeps scroll controllers.
   final bool infiniteMode;
+  final double pageHeight;
 
   const HandwritingCanvas({
     super.key,
@@ -148,6 +149,7 @@ class HandwritingCanvas extends ConsumerStatefulWidget {
     required this.onZoomChanged,
     this.suppressTouchScroll = false,
     this.infiniteMode = false,
+    this.pageHeight = 900,
   });
 
   @override
@@ -292,6 +294,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
 
     if (!isPenMode) return;
 
+    if (ref.read(tapedSlipActivePointerProvider) == e.pointer) return;
+
     if (stylusOnly &&
         e.kind != PointerDeviceKind.stylus &&
         e.kind != PointerDeviceKind.invertedStylus) {
@@ -378,6 +382,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     }
 
     final stylusOnly = ref.read(stylusOnlyModeProvider);
+    if (ref.read(tapedSlipActivePointerProvider) == e.pointer) return;
     if (stylusOnly &&
         e.kind != PointerDeviceKind.stylus &&
         e.kind != PointerDeviceKind.invertedStylus) {
@@ -418,6 +423,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     // — using it to replace the last point made slow curves look like the
     // line tool (a rubber-band from the last vertex to the pen).
     appendInterpolated(points, [pt], maxGap: strokeMaxGap(scale));
+
+    if (!widget.infiniteMode) {
+      ensureFinitePages(ref, liveY: pt.y);
+    }
 
     if (_shouldLiveSnap(tool)) {
       final anchor = _pauseAnchorLocal[e.pointer];
@@ -550,6 +559,8 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     ref.read(strokesProvider.notifier).addStroke(stroke);
     if (widget.infiniteMode) {
       ref.read(canvasViewportProvider.notifier).onStrokeCommitted(stroke);
+    } else {
+      ensureFinitePages(ref, liveY: stroke.points.last.y);
     }
     _tick();
   }
@@ -1280,6 +1291,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
                 allStrokes: strokes,
                 viewport: viewport,
                 spatialIndex: spatialIndex,
+                pageHeight: widget.pageHeight,
               ),
               size: Size.infinite,
             ),
@@ -1363,6 +1375,7 @@ class _HighlightLayerPainter extends CustomPainter {
   final _InfinitePictureCache infiniteCache;
   final CanvasViewport? viewport;
   final StrokeSpatialIndex? spatialIndex;
+  final double pageHeight;
 
   _HighlightLayerPainter({
     required this.strokes,
@@ -1372,6 +1385,7 @@ class _HighlightLayerPainter extends CustomPainter {
     required this.infiniteCache,
     this.viewport,
     this.spatialIndex,
+    this.pageHeight = 900,
   });
 
   @override
@@ -1385,7 +1399,7 @@ class _HighlightLayerPainter extends CustomPainter {
     if (!cache.isValid(allStrokes, size, pageLayout)) {
       cache.build(allStrokes, size, pageLayout, (c, sz) {
         c.drawColor(ScrapTheme.background, BlendMode.srcOver);
-        _drawPageLines(c, sz, pageLayout);
+        _drawPageLines(c, sz, pageLayout, pageHeight: pageHeight);
         for (final stroke in strokes) {
           InkRenderer.paintStroke(c, stroke);
         }
@@ -1434,6 +1448,7 @@ class _HighlightLayerPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _HighlightLayerPainter old) =>
       old.pageLayout != pageLayout ||
+      old.pageHeight != pageHeight ||
       !identical(old.allStrokes, allStrokes) ||
       old.viewport != viewport;
 }
@@ -1714,7 +1729,12 @@ void _paintShapePreview(
   );
 }
 
-void _drawPageLines(Canvas canvas, Size size, PageLayout pageLayout) {
+void _drawPageLines(
+  Canvas canvas,
+  Size size,
+  PageLayout pageLayout, {
+  double pageHeight = 900,
+}) {
   final p = Paint()
     ..color = ScrapTheme.notebookLines
     ..strokeWidth = 0.7;
@@ -1750,6 +1770,18 @@ void _drawPageLines(Canvas canvas, Size size, PageLayout pageLayout) {
     }
   }
 
+  if (pageHeight > 64 && size.height > pageHeight + 1) {
+    final breakPaint = Paint()
+      ..color = ScrapTheme.kraft.withValues(alpha: 0.55)
+      ..strokeWidth = 1.5;
+    final shadow = Paint()
+      ..color = ScrapTheme.primaryText.withValues(alpha: 0.06)
+      ..strokeWidth = 6;
+    for (double y = pageHeight; y < size.height - 0.5; y += pageHeight) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), shadow);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), breakPaint);
+    }
+  }
   _drawPageEdge(canvas, size);
 }
 

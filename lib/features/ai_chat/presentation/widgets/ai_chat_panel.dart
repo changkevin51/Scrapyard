@@ -27,9 +27,12 @@ import 'chat_message_bubble.dart';
 import 'chat_suggestion_chips.dart';
 import 'model_picker_sheet.dart';
 
-/// Right-side AI chat panel — split-screen sibling of the note editor.
+/// Right-side AI chat panel — split-screen sibling of the note editor,
+/// or a full-height overlay on compact / narrow windows.
 class AiChatPanel extends ConsumerStatefulWidget {
-  const AiChatPanel({super.key});
+  final bool overlay;
+
+  const AiChatPanel({super.key, this.overlay = false});
 
   @override
   ConsumerState<AiChatPanel> createState() => _AiChatPanelState();
@@ -154,6 +157,11 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
 
     final widthPref = ref.watch(chatPanelWidthProvider);
     final screenW = MediaQuery.of(context).size.width;
+
+    if (widget.overlay) {
+      return _buildOverlay(screenW);
+    }
+
     // Leave room for the editor so content isn't crushed on narrow screens.
     const minEditorW = 280.0;
     final maxPanel = math.max(280.0, screenW - minEditorW);
@@ -172,7 +180,49 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
     );
   }
 
-  Widget _buildPanel(double panelW) {
+  Widget _buildOverlay(double screenW) {
+    return Positioned.fill(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          final absorbing = _ctrl.value > 0;
+          return IgnorePointer(
+            ignoring: !absorbing,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                GestureDetector(
+                  onTap: _close,
+                  child: ColoredBox(
+                    color: Colors.black.withValues(alpha: 0.45 * _ctrl.value),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(1, 0),
+                      end: Offset.zero,
+                    ).animate(_sizeFactor),
+                    child: SizedBox(
+                      width: screenW,
+                      height: double.infinity,
+                      child: SafeArea(
+                        child: _buildPanel(screenW, overlay: true),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPanel(double panelW, {bool overlay = false}) {
     final chat = ref.watch(activeChatProvider);
     final modelId = ref.watch(chatModelProvider);
     final modelLabel = GeminiChatModel.displayLabel(modelId);
@@ -207,7 +257,8 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
             ),
           ),
           // Drag handle for resize — sits on the torn edge.
-          Positioned(
+          if (!overlay)
+            Positioned(
             left: 0,
             top: 0,
             bottom: 0,

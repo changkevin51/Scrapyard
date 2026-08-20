@@ -68,7 +68,9 @@ class GestureSettingsScreen extends ConsumerWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: ScrapTextStyles.body),
+        Expanded(
+          child: Text(label, style: ScrapTextStyles.body),
+        ),
         Switch(
           value: value,
           onChanged: onChanged,

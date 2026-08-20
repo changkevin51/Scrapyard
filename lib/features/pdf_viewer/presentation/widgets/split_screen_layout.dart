@@ -11,12 +11,14 @@ class SplitScreenLayout extends StatefulWidget {
   final Widget leftChild;
   final Widget rightChild;
   final bool split;
+  final bool vertical;
 
   const SplitScreenLayout({
     super.key,
     required this.leftChild,
     required this.rightChild,
     this.split = true,
+    this.vertical = false,
   });
 
   @override
@@ -33,7 +35,9 @@ class _SplitScreenLayoutState extends State<SplitScreenLayout> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final totalWidth = constraints.maxWidth;
+        final totalAlong = widget.vertical
+            ? constraints.maxHeight
+            : constraints.maxWidth;
 
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: targetRatio),
@@ -46,29 +50,67 @@ class _SplitScreenLayoutState extends State<SplitScreenLayout> {
                 ((1.0 - animatedRatio) * 1000).round().clamp(0, 999);
             final showRight = widget.split && rightFlex > 0;
 
-            return Row(
-              children: [
-                Expanded(
-                  flex: leftFlex,
-                  child: widget.leftChild,
-                ),
-                if (showRight) ...[
-                  GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onHorizontalDragStart: (_) {
+            final divider = GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: widget.vertical
+                  ? null
+                  : (_) {
                       setState(() => _dragging = true);
                     },
-                    onHorizontalDragUpdate: (details) {
+              onHorizontalDragUpdate: widget.vertical
+                  ? null
+                  : (details) {
                       setState(() {
                         _splitRatio =
-                            (_splitRatio + details.delta.dx / totalWidth)
+                            (_splitRatio + details.delta.dx / totalAlong)
                                 .clamp(0.2, 0.8);
                       });
                     },
-                    onHorizontalDragEnd: (_) {
+              onHorizontalDragEnd: widget.vertical
+                  ? null
+                  : (_) {
                       setState(() => _dragging = false);
                     },
-                    child: Container(
+              onVerticalDragStart: widget.vertical
+                  ? (_) {
+                      setState(() => _dragging = true);
+                    }
+                  : null,
+              onVerticalDragUpdate: widget.vertical
+                  ? (details) {
+                      setState(() {
+                        _splitRatio =
+                            (_splitRatio + details.delta.dy / totalAlong)
+                                .clamp(0.2, 0.8);
+                      });
+                    }
+                  : null,
+              onVerticalDragEnd: widget.vertical
+                  ? (_) {
+                      setState(() => _dragging = false);
+                    }
+                  : null,
+              child: widget.vertical
+                  ? Container(
+                      height: 16,
+                      alignment: Alignment.center,
+                      child: Container(
+                        height: 1,
+                        width: double.infinity,
+                        color: ScrapTheme.dividers,
+                        child: Center(
+                          child: Container(
+                            height: 4,
+                            width: 24,
+                            decoration: BoxDecoration(
+                              color: ScrapTheme.accent,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Container(
                       width: 16,
                       alignment: Alignment.center,
                       child: Container(
@@ -87,14 +129,26 @@ class _SplitScreenLayoutState extends State<SplitScreenLayout> {
                         ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    flex: rightFlex,
-                    child: widget.rightChild,
-                  ),
-                ],
-              ],
             );
+
+            final children = <Widget>[
+              Expanded(
+                flex: leftFlex,
+                child: widget.leftChild,
+              ),
+              if (showRight) ...[
+                divider,
+                Expanded(
+                  flex: rightFlex,
+                  child: widget.rightChild,
+                ),
+              ],
+            ];
+
+            if (widget.vertical) {
+              return Column(children: children);
+            }
+            return Row(children: children);
           },
         );
       },

@@ -34,6 +34,8 @@ class ScrapStampLabel extends StatelessWidget {
         ),
         child: Text(
           text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: ScrapTextStyles.stamp.copyWith(color: c),
         ),
       ),

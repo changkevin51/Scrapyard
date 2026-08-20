@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../../../core/gestures/pan_fling.dart';
+import '../../../../core/layout/scrap_layout.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_pressable.dart';
@@ -207,6 +208,51 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
     final pdfTitle = ref.watch(activePdfTitleProvider);
     final documentId = ref.watch(pdfDocumentIdProvider);
 
+    final layout = ScrapLayout.of(context);
+    final overlayChat = layout.usesChatOverlay;
+
+    Widget main = Stack(
+      children: [
+        // Keep a single PdfViewer mounted across split toggles.
+        // AnimatedSwitcher previously created a second viewer that
+        // disposed first and called controller._attach(null), killing
+        // finger pan/zoom while a draw tool was active.
+        SplitScreenLayout(
+          split: isSplitScreen,
+          vertical: layout.stackSplitVertically,
+          leftChild: _buildPdfViewer(pdfPath, documentId),
+          rightChild: const NoteEditorScreen(
+            showChatChrome: false,
+            ownsRoute: false,
+          ),
+        ),
+        const AnnotationToolbar(),
+        // Chat FAB stays available even when scrap split is off.
+        const Positioned(
+          right: 16,
+          bottom: 16,
+          child: CanvasSmartBar(),
+        ),
+      ],
+    );
+
+    if (overlayChat) {
+      main = Stack(
+        children: [
+          Positioned.fill(child: main),
+          const AiChatPanel(overlay: true),
+        ],
+      );
+    } else {
+      main = Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: main),
+          const AiChatPanel(),
+        ],
+      );
+    }
+
     return Scaffold(
       backgroundColor: ScrapTheme.cardSurface,
       appBar: AppBar(
@@ -238,37 +284,7 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
           ),
         ],
       ),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                // Keep a single PdfViewer mounted across split toggles.
-                // AnimatedSwitcher previously created a second viewer that
-                // disposed first and called controller._attach(null), killing
-                // finger pan/zoom while a draw tool was active.
-                SplitScreenLayout(
-                  split: isSplitScreen,
-                  leftChild: _buildPdfViewer(pdfPath, documentId),
-                  rightChild: const NoteEditorScreen(
-                    showChatChrome: false,
-                    ownsRoute: false,
-                  ),
-                ),
-                const AnnotationToolbar(),
-                // Chat FAB stays available even when scrap split is off.
-                const Positioned(
-                  right: 16,
-                  bottom: 16,
-                  child: CanvasSmartBar(),
-                ),
-              ],
-            ),
-          ),
-          const AiChatPanel(),
-        ],
-      ),
+      body: main,
     );
   }
 

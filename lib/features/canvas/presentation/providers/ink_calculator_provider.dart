@@ -15,16 +15,16 @@ import 'canvas_providers.dart';
 
 const _prefsKeyOnDeviceCalc = 'canvas_on_device_calc';
 
-/// App-wide toggle. Default on; no-ops on web (MathReader is not bundled there).
+/// App-wide toggle. Default off; no-ops on web (MathReader is not bundled there).
 class OnDeviceCalcEnabledNotifier extends StateNotifier<bool> {
-  OnDeviceCalcEnabledNotifier() : super(true) {
+  OnDeviceCalcEnabledNotifier() : super(false) {
     _load();
   }
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    state = prefs.getBool(_prefsKeyOnDeviceCalc) ?? true;
+    state = prefs.getBool(_prefsKeyOnDeviceCalc) ?? false;
   }
 
   Future<void> setEnabled(bool value) async {

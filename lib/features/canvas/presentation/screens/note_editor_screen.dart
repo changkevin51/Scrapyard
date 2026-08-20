@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/layout/scrap_layout.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_motion.dart';
 import '../../../../core/theme/scrap_feedback.dart';
@@ -2642,24 +2643,38 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         break;
     }
 
+    final overlayChat = widget.showChatChrome &&
+        ScrapLayout.of(context).usesChatOverlay;
+
+    Widget editorColumn = Column(
+      children: [
+        const SafeArea(bottom: false, child: DocumentTabBar()),
+        Expanded(child: toolSurface),
+      ],
+    );
+
+    Widget body = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: editorColumn),
+        if (widget.showChatChrome && !overlayChat) const AiChatPanel(),
+      ],
+    );
+
+    if (overlayChat) {
+      body = Stack(
+        children: [
+          Positioned.fill(child: body),
+          const AiChatPanel(overlay: true),
+        ],
+      );
+    }
+
     final scaffold = Scaffold(
       backgroundColor: ScrapTheme.background,
       // Keep full canvas height; we pan/scroll text above the keyboard ourselves.
       resizeToAvoidBottomInset: false,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Column(
-              children: [
-                const SafeArea(bottom: false, child: DocumentTabBar()),
-                Expanded(child: toolSurface),
-              ],
-            ),
-          ),
-          if (widget.showChatChrome) const AiChatPanel(),
-        ],
-      ),
+      body: body,
     );
 
     if (!widget.ownsRoute) return scaffold;
@@ -2668,6 +2683,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (overlayChat && ref.read(chatPanelOpenProvider)) {
+          ref.read(chatPanelOpenProvider.notifier).state = false;
+          return;
+        }
         await leaveNoteEditorIfAllowed(context, ref);
       },
       child: scaffold,

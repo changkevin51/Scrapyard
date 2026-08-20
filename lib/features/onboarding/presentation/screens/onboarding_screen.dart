@@ -55,7 +55,7 @@ class OnboardingScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Smelt and chat send the scraps you select to Google Gemini, using your own API key. You can skip the key and still draw. Palm rejection is off by default so a finger works; turn it on in canvas settings if you use a stylus.',
+                        'Smelt and chat send the scraps you select to Google Gemini, using your own API key. You can skip the key and still draw. Palm rejection is on by default on iPad and Android tablets; elsewhere it stays off until a stylus is used. You can change it in canvas settings.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,

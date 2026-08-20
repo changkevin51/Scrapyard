@@ -579,6 +579,7 @@ class _AnnotationLayerState extends ConsumerState<AnnotationLayer> {
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    ref.read(stylusOnlyModeProvider.notifier).enableIfStylusDetected(event.kind);
     final tool = ref.read(activeToolProvider);
     if (tool == AnnotationTool.pan || _shouldNavigate(event.kind)) {
       _handleNavDown(event);

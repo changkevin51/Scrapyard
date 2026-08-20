@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -822,22 +823,62 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
 final isPenModeActiveProvider = StateProvider<bool>((ref) => true);
 
 const _prefsKeyPalmReject = 'canvas_palm_rejection';
+const _prefsKeyPalmRejectUser = 'canvas_palm_rejection_user';
+
+/// iPad or Android tablet. Used for palm-rejection default only.
+bool isTabletDevice() {
+  if (kIsWeb) return false;
+  final platform = defaultTargetPlatform;
+  if (platform != TargetPlatform.iOS && platform != TargetPlatform.android) {
+    return false;
+  }
+  final views = WidgetsBinding.instance.platformDispatcher.views;
+  if (views.isEmpty) return false;
+  final view = views.first;
+  final ratio = view.devicePixelRatio;
+  if (ratio <= 0) return false;
+  return view.physicalSize.shortestSide / ratio >= 600;
+}
+
+bool _isStylusKind(PointerDeviceKind kind) =>
+    kind == PointerDeviceKind.stylus || kind == PointerDeviceKind.invertedStylus;
 
 class StylusOnlyNotifier extends StateNotifier<bool> {
-  StylusOnlyNotifier() : super(false) {
+  StylusOnlyNotifier() : super(isTabletDevice()) {
     _load();
   }
+
+  bool _userSet = false;
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    state = prefs.getBool(_prefsKeyPalmReject) ?? false;
+    _userSet = prefs.getBool(_prefsKeyPalmRejectUser) == true;
+    final saved = prefs.getBool(_prefsKeyPalmReject);
+    if (_userSet) {
+      state = saved ?? false;
+    } else {
+      state = saved ?? isTabletDevice();
+    }
   }
 
-  Future<void> setEnabled(bool value) async {
+  /// [fromUser] is true for the canvas-settings switch.
+  Future<void> setEnabled(bool value, {bool fromUser = true}) async {
+    if (fromUser) _userSet = true;
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefsKeyPalmReject, value);
+    if (fromUser) {
+      await prefs.setBool(_prefsKeyPalmRejectUser, true);
+    }
+  }
+
+  /// Turn palm rejection on the first time a stylus is used, unless the user
+  /// has already chosen a setting.
+  void enableIfStylusDetected(PointerDeviceKind kind) {
+    if (!_isStylusKind(kind)) return;
+    if (state || _userSet) return;
+    setEnabled(true, fromUser: false);
   }
 }
 

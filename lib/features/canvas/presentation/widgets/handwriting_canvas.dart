@@ -238,6 +238,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
   void _onPointerDown(PointerDownEvent e) {
     _updateSPenEraserFromEvent(e);
     _panFling.stop();
+    ref.read(stylusOnlyModeProvider.notifier).enableIfStylusDetected(e.kind);
 
     final isPenMode = ref.read(isPenModeActiveProvider);
     final stylusOnly = ref.read(stylusOnlyModeProvider);

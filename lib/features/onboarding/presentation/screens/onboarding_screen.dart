@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,15 +7,18 @@ import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/paper_button.dart';
 import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+import '../providers/smelt_guide_provider.dart';
 
 const onboardingCompletedPrefsKey = 'onboarding_completed';
 
 /// Single kraft sheet — the paper teaches the desk. Not a multi-page wizard.
-class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({super.key});
+class OnboardingScreen extends ConsumerWidget {
+  final bool replayGuide;
+
+  const OnboardingScreen({super.key, this.replayGuide = false});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: ScrapTheme.background,
       body: Stack(
@@ -39,7 +43,7 @@ class OnboardingScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Scribble a problem. Circle it and Smelt — the paper works through it with you, step by step.',
+                        'Scribble out a problem, select it, and the app works through it with you step by step.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,
@@ -47,7 +51,7 @@ class OnboardingScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Study chat already knows what you circled. Loose scraps drift; named ones get filed into piles.',
+                        'Use the study chat (located bottom right corner) to clarify or ask follow-up questions.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,
@@ -55,7 +59,7 @@ class OnboardingScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Smelt and chat send the scraps you select to Google Gemini, using your own API key. You can skip the key and still draw. Palm rejection is on by default on iPad and Android tablets; elsewhere it stays off until a stylus is used. You can change it in canvas settings.',
+                        'Smelt send the scraps you select to Google Gemini, using your own API key. You may learn more about this app in the guide.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,
@@ -72,6 +76,11 @@ class OnboardingScreen extends StatelessWidget {
                             true,
                           );
                           if (context.mounted) context.go('/');
+                          if (replayGuide) {
+                            await ref
+                                .read(smeltGuideProvider.notifier)
+                                .startFromHome(force: true);
+                          }
                         },
                       ),
                     ],

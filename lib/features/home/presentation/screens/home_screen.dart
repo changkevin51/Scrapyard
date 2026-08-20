@@ -627,7 +627,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         showPaperToast(context, message);
       },
       onReplayGuide: () {
-        ref.read(smeltGuideProvider.notifier).startFromHome(force: true);
+        context.go('/onboarding?replay=1');
       },
     );
   }

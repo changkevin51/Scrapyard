@@ -103,7 +103,9 @@ class AppRouter {
         name: 'onboarding',
         pageBuilder: (context, state) => _scrapPage(
           key: state.pageKey,
-          child: const OnboardingScreen(),
+          child: OnboardingScreen(
+            replayGuide: state.uri.queryParameters['replay'] == '1',
+          ),
         ),
       ),
     ],

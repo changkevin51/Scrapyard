@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../providers/ink_calculator_provider.dart';
 
@@ -27,11 +26,12 @@ class InkCalculatorAnswerOverlay extends ConsumerWidget {
             result.displayAnswer,
             maxLines: 1,
             overflow: TextOverflow.visible,
-            style: GoogleFonts.caveat(
+            style: TextStyle(
+              fontFamily: 'Courier Prime',
               fontSize: result.fontSize,
               height: 1.0,
               color: result.color,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ),

@@ -168,7 +168,7 @@ class HomeNavPanel extends StatelessWidget {
                   onTap: actions.onLooseScrap,
                 ),
                 _CreateLink(
-                  label: '↑  Import app/doc',
+                  label: '↑  Import a PDF/doc',
                   onTap: actions.onImport,
                 ),
               ],
@@ -368,7 +368,7 @@ class HomeCreateMenuButton extends StatelessWidget {
         ),
         PopupMenuItem(
           value: 'import',
-          child: Text('↑  Import app/doc', style: ScrapTextStyles.body),
+          child: Text('↑  Import a PDF/doc', style: ScrapTextStyles.body),
         ),
       ],
     );

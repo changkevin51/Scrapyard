@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/paper_button.dart';
 import '../../../../core/widgets/paper_grain.dart';
 import '../../../../core/widgets/scrap_stamp_label.dart';
+
+const onboardingCompletedPrefsKey = 'onboarding_completed';
 
 /// Single kraft sheet — the paper teaches the desk. Not a multi-page wizard.
 class OnboardingScreen extends StatelessWidget {
@@ -23,7 +26,8 @@ class OnboardingScreen extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Column(
+                  child: SingleChildScrollView(
+                    child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -49,13 +53,29 @@ class OnboardingScreen extends StatelessWidget {
                           height: 1.45,
                         ),
                       ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Smelt and chat send the scraps you select to Google Gemini, using your own API key. You can skip the key and still draw. Palm rejection is off by default so a finger works; turn it on in canvas settings if you use a stylus.',
+                        style: ScrapTextStyles.body.copyWith(
+                          color: ScrapTheme.secondaryText,
+                          height: 1.45,
+                        ),
+                      ),
                       const SizedBox(height: 36),
                       PaperButton(
                         label: 'Get to the desk',
                         variant: PaperButtonVariant.primary,
-                        onPressed: () => context.go('/'),
+                        onPressed: () async {
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool(
+                            onboardingCompletedPrefsKey,
+                            true,
+                          );
+                          if (context.mounted) context.go('/');
+                        },
                       ),
                     ],
+                  ),
                   ),
                 ),
               ),

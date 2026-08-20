@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -7,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/math_reader_calculator_service.dart';
+import '../../data/math_reader_python.dart';
 import '../../domain/models/stroke.dart';
 import '../../domain/services/equals_detector.dart';
 import '../../domain/services/ink_geometry.dart';
@@ -25,12 +27,16 @@ class OnDeviceCalcEnabledNotifier extends StateNotifier<bool> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     state = prefs.getBool(_prefsKeyOnDeviceCalc) ?? false;
+    if (state) unawaited(ensureMathReaderSidecar());
   }
 
   Future<void> setEnabled(bool value) async {
     state = value;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefsKeyOnDeviceCalc, value);
+    if (value) {
+      unawaited(ensureMathReaderSidecar());
+    }
   }
 }
 

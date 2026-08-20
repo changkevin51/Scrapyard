@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -10,80 +11,109 @@ import '../domain/models/stroke.dart';
 class CanvasOcrResult {
   final String text;
   final Rect boundingBox;
-  
+
   CanvasOcrResult({required this.text, required this.boundingBox});
 }
 
 class CanvasOcrService {
+  static const double _maxRasterPx = 1920;
+
   TextRecognizer? _textRecognizer;
 
   TextRecognizer _getRecognizer() {
-    _textRecognizer ??= TextRecognizer(script: TextRecognitionScript.japanese);
+    _textRecognizer ??= TextRecognizer(script: TextRecognitionScript.latin);
     return _textRecognizer!;
   }
 
-  Future<List<CanvasOcrResult>> recognizeStrokes(List<Stroke> strokes, BoxConstraints constraints) async {
-    // OCR only works on real Android/iOS devices — skip on web/desktop
+  Future<List<CanvasOcrResult>> recognizeStrokes(
+    List<Stroke> strokes,
+    BoxConstraints constraints,
+  ) async {
     if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return [];
-    if (strokes.isEmpty) return [];
+    final visible = strokes.where((s) => !s.isHidden && s.points.isNotEmpty);
+    if (visible.isEmpty) return [];
 
+    File? tempFile;
     try {
-      // 1. Draw strokes to a ui.Picture
+      var minX = double.infinity;
+      var minY = double.infinity;
+      var maxX = -double.infinity;
+      var maxY = -double.infinity;
+      for (final stroke in visible) {
+        for (final p in stroke.points) {
+          minX = math.min(minX, p.x);
+          minY = math.min(minY, p.y);
+          maxX = math.max(maxX, p.x);
+          maxY = math.max(maxY, p.y);
+        }
+      }
+      if (!minX.isFinite) return [];
+
+      final worldW = math.max(maxX - minX, 1.0);
+      final worldH = math.max(maxY - minY, 1.0);
+      final capW = math.min(constraints.maxWidth, _maxRasterPx);
+      final capH = math.min(constraints.maxHeight, _maxRasterPx);
+      final scale = math.min(capW / worldW, capH / worldH).clamp(0.05, 4.0);
+      final imgW = (worldW * scale).ceil().clamp(1, _maxRasterPx.toInt());
+      final imgH = (worldH * scale).ceil().clamp(1, _maxRasterPx.toInt());
+
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
-      
       canvas.drawRect(
-        Rect.fromLTWH(0, 0, constraints.maxWidth, constraints.maxHeight),
+        Rect.fromLTWH(0, 0, imgW.toDouble(), imgH.toDouble()),
         Paint()..color = Colors.white,
       );
 
-      for (var stroke in strokes) {
-        if (stroke.points.isEmpty) continue;
-        final paint = Paint()
-          ..color = Colors.black
-          ..strokeWidth = 2.0
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round;
+      final paint = Paint()
+        ..color = Colors.black
+        ..strokeWidth = 2.0
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
+      for (final stroke in visible) {
         final path = Path();
-        path.moveTo(stroke.points.first.x, stroke.points.first.y);
-        for (int i = 1; i < stroke.points.length; i++) {
-          path.lineTo(stroke.points[i].x, stroke.points[i].y);
+        final first = stroke.points.first;
+        path.moveTo((first.x - minX) * scale, (first.y - minY) * scale);
+        for (var i = 1; i < stroke.points.length; i++) {
+          final p = stroke.points[i];
+          path.lineTo((p.x - minX) * scale, (p.y - minY) * scale);
         }
         canvas.drawPath(path, paint);
       }
 
-      // 2. Extract picture to image
       final picture = recorder.endRecording();
-      final image = await picture.toImage(
-        constraints.maxWidth.toInt(),
-        constraints.maxHeight.toInt()
-      );
-
-      // 3. Convert image to PNG bytes
+      final image = await picture.toImage(imgW, imgH);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      picture.dispose();
       if (byteData == null) return [];
-      
+
       final tempDir = await getTemporaryDirectory();
-      final tempFile = File('${tempDir.path}/ocr_temp_${DateTime.now().millisecondsSinceEpoch}.png');
+      tempFile = File(
+        '${tempDir.path}/ocr_temp_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
       await tempFile.writeAsBytes(byteData.buffer.asUint8List(), flush: true);
 
-      final inputImage = InputImage.fromFilePath(tempFile.path);
+      final recognizedText =
+          await _getRecognizer().processImage(InputImage.fromFilePath(tempFile.path));
 
-      // 4. Process with ML Kit
-      final recognizedText = await _getRecognizer().processImage(inputImage);
-      
-      if (await tempFile.exists()) {
-         await tempFile.delete();
-      }
-
-      return recognizedText.blocks.map((block) => CanvasOcrResult(
-        text: block.text,
-        boundingBox: block.boundingBox,
-      )).toList();
+      return recognizedText.blocks
+          .map(
+            (block) => CanvasOcrResult(
+              text: block.text,
+              boundingBox: block.boundingBox,
+            ),
+          )
+          .toList();
     } catch (e) {
-      debugPrint("OCR failed: $e");
+      if (kDebugMode) debugPrint('OCR failed: $e');
       return [];
+    } finally {
+      try {
+        if (tempFile != null && await tempFile.exists()) {
+          await tempFile.delete();
+        }
+      } catch (_) {}
     }
   }
 

@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -290,10 +292,27 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
 
   Widget _buildPdfViewer(String? pdfPath, String? documentId) {
     if (pdfPath == null || pdfPath.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No PDF selected',
-          style: TextStyle(color: ScrapTheme.secondaryText),
+          style: ScrapTextStyles.caption.copyWith(
+            color: ScrapTheme.secondaryText,
+          ),
+        ),
+      );
+    }
+
+    if (!kIsWeb && !File(pdfPath).existsSync()) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'This PDF is missing from the device. It may have been moved or deleted.',
+            textAlign: TextAlign.center,
+            style: ScrapTextStyles.body.copyWith(
+              color: ScrapTheme.secondaryText,
+            ),
+          ),
         ),
       );
     }

@@ -66,8 +66,12 @@ class PDFDocumentRepository {
     );
 
     return List.generate(maps.length, (i) {
-      return AnnotationRecord.fromMap(maps[i]);
-    });
+      try {
+        return AnnotationRecord.fromMap(maps[i]);
+      } catch (_) {
+        return null;
+      }
+    }).whereType<AnnotationRecord>().toList();
   }
 
   Future<void> saveAnnotation(AnnotationRecord record) async {
@@ -93,6 +97,22 @@ class PDFDocumentRepository {
       where: 'id IN ($placeholders)',
       whereArgs: ids.toList(),
     );
+  }
+
+  Future<void> deleteAllForDocument(String documentId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'annotations',
+        where: 'document_id = ?',
+        whereArgs: [documentId],
+      );
+      await txn.delete(
+        'documents',
+        where: 'id = ?',
+        whereArgs: [documentId],
+      );
+    });
   }
 
   Future<void> exportPdfWithAnnotations(String documentId, String outPath) async {

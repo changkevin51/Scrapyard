@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import 'smelt_service.dart';
+import 'gemini_api.dart';
 
 /// Result of testing a Gemini API key against the cheapest model.
 class ApiKeyTestResult {
@@ -47,10 +48,9 @@ class ApiKeyService {
   /// Masks a key for display, e.g. `AIza••••••3f9c`.
   static String mask(String key) {
     final trimmed = key.trim();
-    if (trimmed.length <= 8) return '••••••••';
-    final prefix = trimmed.substring(0, 4);
+    if (trimmed.length <= 4) return '••••••••';
     final suffix = trimmed.substring(trimmed.length - 4);
-    return '$prefix••••••$suffix';
+    return '••••••••$suffix';
   }
 
   /// Sends a tiny prompt to the cheapest Gemini model to verify the key.
@@ -64,8 +64,7 @@ class ApiKeyService {
     }
 
     final model = SmeltService.cheapestModel;
-    final url =
-        'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$trimmed';
+    final url = GeminiApi.generateContent(model);
 
     final body = {
       'contents': [
@@ -84,8 +83,8 @@ class ApiKeyService {
     try {
       final response = await http
           .post(
-            Uri.parse(url),
-            headers: {'Content-Type': 'application/json'},
+            url,
+            headers: GeminiApi.headers(trimmed),
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
@@ -132,11 +131,13 @@ class ApiKeyService {
   static String _friendlyError(int statusCode, String body) {
     final lower = body.toLowerCase();
 
-    if (statusCode == 400 ||
-        lower.contains('api_key_invalid') ||
+    if (lower.contains('api_key_invalid') ||
         lower.contains('api key not valid') ||
         lower.contains('invalid api key')) {
       return 'That key was rejected. Check you copied the whole key.';
+    }
+    if (statusCode == 400) {
+      return "Couldn't verify the key with Gemini. Try again, or check the default model is available on this key.";
     }
     if (statusCode == 403) {
       return "Key valid but the Generative Language API isn't enabled for this project.";

@@ -21,6 +21,7 @@ class SmeltTiming {
   }
 
   static void step(String name, {Map<String, Object?> extra = const {}}) {
+    if (!kDebugMode) return;
     final now = DateTime.now();
     final start = _start ?? now;
     final last = _last ?? now;

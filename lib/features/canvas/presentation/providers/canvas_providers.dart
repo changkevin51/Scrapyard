@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/models/stroke.dart';
@@ -8,6 +11,7 @@ import '../../data/stroke_repository.dart';
 import '../../data/canvas_settings_repository.dart';
 import '../../data/pen_engine.dart';
 import '../../data/canvas_ocr_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'canvas_history.dart';
 
 export '../../domain/models/page_layout.dart';
@@ -245,6 +249,8 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   final bool _ephemeral;
   final void Function(String noteId)? _onContentChanged;
   final CanvasHistoryNotifier? _history;
+  int _loadGen = 0;
+  bool _mutatedSinceLoad = false;
 
   TextNodesNotifier(
     this._repository,
@@ -265,9 +271,25 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   }
 
   Future<void> _load() async {
+    final gen = ++_loadGen;
     _history?.ignoreChanges = true;
-    state = await _repository.loadTextNodes(_noteId);
-    _history?.ignoreChanges = false;
+    try {
+      final loaded = await _repository.loadTextNodes(_noteId);
+      if (gen != _loadGen) return;
+      if (_mutatedSinceLoad) {
+        final existingIds = {for (final n in state) n.id};
+        state = [
+          ...loaded.where((n) => !existingIds.contains(n.id)),
+          ...state,
+        ];
+      } else {
+        state = loaded;
+      }
+    } catch (e) {
+      debugPrint('load text nodes failed: $e');
+    } finally {
+      if (gen == _loadGen) _history?.ignoreChanges = false;
+    }
   }
 
   void restore(List<CanvasTextItem> items) {
@@ -279,6 +301,7 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   }
 
   void add(CanvasTextItem item) {
+    _mutatedSinceLoad = true;
     state = [...state, item];
     // Empty placeholders stay in memory only until the user types.
     if (!_ephemeral && (item.text.trim().isNotEmpty || item.taped)) {
@@ -346,7 +369,7 @@ final canvasTextNodesProvider =
     StateNotifierProvider<TextNodesNotifier, List<CanvasTextItem>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
-  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
   final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
   return TextNodesNotifier(
     repo,
@@ -379,7 +402,7 @@ final canvasTablesProvider =
     StateNotifierProvider<CanvasTablesNotifier, List<CanvasTable>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
-  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
   final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
   return CanvasTablesNotifier(
     repo,
@@ -399,6 +422,8 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
   final bool _ephemeral;
   final void Function(String noteId)? _onContentChanged;
   final CanvasHistoryNotifier? _history;
+  int _loadGen = 0;
+  bool _mutatedSinceLoad = false;
 
   CanvasTablesNotifier(
     this._repository,
@@ -419,12 +444,29 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
   }
 
   Future<void> _load() async {
+    final gen = ++_loadGen;
     _history?.ignoreChanges = true;
-    state = await _repository.loadTables(_noteId);
-    _history?.ignoreChanges = false;
+    try {
+      final loaded = await _repository.loadTables(_noteId);
+      if (gen != _loadGen) return;
+      if (_mutatedSinceLoad) {
+        final existingIds = {for (final t in state) t.id};
+        state = [
+          ...loaded.where((t) => !existingIds.contains(t.id)),
+          ...state,
+        ];
+      } else {
+        state = loaded;
+      }
+    } catch (e) {
+      debugPrint('load tables failed: $e');
+    } finally {
+      if (gen == _loadGen) _history?.ignoreChanges = false;
+    }
   }
 
   void add(CanvasTable table) {
+    _mutatedSinceLoad = true;
     state = [...state, table];
     if (!_ephemeral) {
       _repository.saveTables(_noteId, [table]);
@@ -474,6 +516,8 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   final bool _ephemeral;
   final void Function(String noteId)? _onContentChanged;
   final CanvasHistoryNotifier? _history;
+  int _loadGen = 0;
+  bool _mutatedSinceLoad = false;
 
   StrokesNotifier(
     this._repository,
@@ -497,9 +541,25 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   void _endSilent() => _history?.ignoreChanges = false;
 
   Future<void> _loadStrokes() async {
+    final gen = ++_loadGen;
     _beginSilent();
-    state = await _repository.loadStrokes(_noteId);
-    _endSilent();
+    try {
+      final loaded = await _repository.loadStrokes(_noteId);
+      if (gen != _loadGen) return;
+      if (_mutatedSinceLoad) {
+        final existingIds = {for (final s in state) s.id};
+        state = [
+          ...loaded.where((s) => !existingIds.contains(s.id)),
+          ...state,
+        ];
+      } else {
+        state = loaded;
+      }
+    } catch (e) {
+      debugPrint('load strokes failed: $e');
+    } finally {
+      if (gen == _loadGen) _endSilent();
+    }
   }
 
   void restore(List<Stroke> strokes) {
@@ -511,6 +571,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   }
 
   void addStroke(Stroke stroke) {
+    _mutatedSinceLoad = true;
     state = [...state, stroke];
     
     // Loose scraps stay in memory only — never filed to disk.
@@ -649,13 +710,16 @@ final ephemeralNoteIdsProvider = StateProvider<Set<String>>((ref) => {});
 /// Home bumps [HomeNode.updatedAt] from this set when returning from the editor.
 final dirtyNoteIdsProvider = StateProvider<Set<String>>((ref) => {});
 
+/// Whether the active note is still in-memory only.
+final activeNoteIsEphemeralProvider = Provider<bool>((ref) {
+  final id = ref.watch(activeNoteIdProvider);
+  return ref.watch(ephemeralNoteIdsProvider).contains(id);
+});
+
 final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((ref) {
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
-  // Read (don't watch) so tab cleanup of other scraps won't wipe this canvas.
-  // Callers must register the id in [ephemeralNoteIdsProvider] before flipping
-  // [activeNoteIdProvider].
-  final ephemeral = ref.read(ephemeralNoteIdsProvider).contains(noteId);
+  final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
   final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
   return StrokesNotifier(
     repo,
@@ -670,7 +734,31 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
 });
 
 final isPenModeActiveProvider = StateProvider<bool>((ref) => true);
-final stylusOnlyModeProvider = StateProvider<bool>((ref) => true);
+
+const _prefsKeyPalmReject = 'canvas_palm_rejection';
+
+class StylusOnlyNotifier extends StateNotifier<bool> {
+  StylusOnlyNotifier() : super(false) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    state = prefs.getBool(_prefsKeyPalmReject) ?? false;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefsKeyPalmReject, value);
+  }
+}
+
+final stylusOnlyModeProvider =
+    StateNotifierProvider<StylusOnlyNotifier, bool>((ref) {
+  return StylusOnlyNotifier();
+});
 final canvasZoomProvider = StateProvider<double>((ref) => 1.0);
 final strokeWidthModifierProvider = StateProvider<double>((ref) => 1.0);
 final penSettingsProvider = StateProvider<PenSettings>((ref) => const PenSettings());
@@ -751,6 +839,7 @@ void openNoteTab(
 
 /// Drop a single loose scrap from memory (tab + ephemeral set).
 void discardEphemeralNote(WidgetRef ref, String id) {
+  unawaited(ref.read(canvasRepositoryProvider).deleteAllForNote(id));
   final tabs = ref.read(openedTabsProvider).where((t) => t.id != id).toList();
   ref.read(openedTabsProvider.notifier).state = tabs;
   ref.read(ephemeralNoteIdsProvider.notifier).update((ids) {
@@ -772,6 +861,10 @@ void discardEphemeralNote(WidgetRef ref, String id) {
 void discardAllEphemeralNotes(WidgetRef ref) {
   final ephemeral = ref.read(ephemeralNoteIdsProvider);
   if (ephemeral.isEmpty) return;
+  final repo = ref.read(canvasRepositoryProvider);
+  for (final id in ephemeral) {
+    unawaited(repo.deleteAllForNote(id));
+  }
   // Use the id set — never read OpenedTab.isEphemeral here. Tabs created
   // before a hot reload can have a null field and throw on access.
   final tabs = ref

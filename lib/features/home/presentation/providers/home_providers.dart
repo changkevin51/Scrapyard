@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/home_repository.dart';
@@ -86,29 +87,50 @@ class HomeNodesNotifier extends StateNotifier<AsyncValue<List<HomeNode>>> {
     return node;
   }
 
-  Future<void> importDocument() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
-    );
+  /// Returns a toast message, or null if the user cancelled.
+  Future<String?> importDocument() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+      );
 
-    if (result != null && result.files.single.path != null) {
-      final file = File(result.files.single.path!);
+      if (result == null || result.files.isEmpty) return null;
+      final picked = result.files.single;
+      if (picked.path == null) {
+        return "Couldn't read that file.";
+      }
+      final file = File(picked.path!);
 
-      // Copy to app dir so it doesn't get lost from cache
       final appDir = await getApplicationDocumentsDirectory();
-      final docPath = '${appDir.path}/${result.files.single.name}';
-      await file.copy(docPath);
+      final destPath = await _uniqueCopyPath(appDir.path, picked.name);
+      await file.copy(destPath);
 
       final node = HomeNode.create(
-        title: result.files.single.name,
+        title: p.basename(destPath),
         type: NodeType.document,
         parentId: _createParentId,
-        externalPath: docPath,
+        externalPath: destPath,
       );
       await _repository.insertNode(node);
       await _loadNodes();
+      return 'Imported ${node.title}';
+    } catch (_) {
+      return "Couldn't import that file.";
     }
+  }
+
+  Future<String> _uniqueCopyPath(String dir, String name) async {
+    var dest = File(p.join(dir, name));
+    if (!await dest.exists()) return dest.path;
+    final stem = p.basenameWithoutExtension(name);
+    final ext = p.extension(name);
+    var i = 2;
+    while (await dest.exists()) {
+      dest = File(p.join(dir, '${stem}_$i$ext'));
+      i++;
+    }
+    return dest.path;
   }
 
   /// Soft-delete into Recently Deleted (with crush animation upstream).

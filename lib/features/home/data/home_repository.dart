@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/models/home_node.dart';
+import 'note_artifacts.dart';
 
 class HomeRepository {
   static const String _tableName = 'home_nodes';
@@ -38,35 +39,6 @@ class HomeRepository {
             starred INTEGER NOT NULL DEFAULT 0
           )
         ''');
-
-        final ideasFolder =
-            HomeNode.create(title: 'Loose Ideas', type: NodeType.folder);
-        await db.insert(_tableName, ideasFolder.toMap());
-
-        final sketchNote = HomeNode.create(
-          title: 'Quick Sketch',
-          type: NodeType.note,
-          parentId: ideasFolder.id,
-        );
-        await db.insert(_tableName, sketchNote.toMap());
-
-        final doodleNote = HomeNode.create(
-          title: 'Margin Doodles',
-          type: NodeType.note,
-          parentId: ideasFolder.id,
-        );
-        await db.insert(_tableName, doodleNote.toMap());
-
-        final physicsFolder =
-            HomeNode.create(title: 'Physics 205', type: NodeType.folder);
-        await db.insert(_tableName, physicsFolder.toMap());
-
-        final kinematicsNote = HomeNode.create(
-          title: 'Kinematics Equations',
-          type: NodeType.note,
-          parentId: physicsFolder.id,
-        );
-        await db.insert(_tableName, kinematicsNote.toMap());
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -257,6 +229,10 @@ class HomeRepository {
     for (final child in children) {
       await permanentlyDeleteNode(child.id);
     }
+    final node = await getNodeById(id);
+    if (node != null) {
+      await NoteArtifacts.deleteFor(node);
+    }
     final db = await database;
     await db.delete(
       _tableName,
@@ -267,10 +243,14 @@ class HomeRepository {
 
   Future<void> emptyTrash() async {
     final db = await database;
-    await db.delete(
+    final rows = await db.query(
       _tableName,
+      columns: ['id'],
       where: 'deleted_at IS NOT NULL',
     );
+    for (final row in rows) {
+      await permanentlyDeleteNode(row['id'] as String);
+    }
   }
 
   /// Permanently remove items whose [deletedAt] is older than [retention].

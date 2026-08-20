@@ -273,6 +273,20 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
             }
           }
         }
+      } else {
+        // Finger-draw mode: a second touch pinches instead of a second stroke.
+        _touchPointers[e.pointer] = e.position;
+        if (_touchPointers.length >= 2) {
+          _abortActiveTouchStrokes();
+          final positions = _touchPointers.values.toList();
+          final distance = (positions[0] - positions[1]).distance;
+          if (distance > 5.0) {
+            _pinchInitialDistance = distance;
+            _pinchInitialZoom = widget.zoomLevel;
+            _pinchContentFocal = _canvasPointUnderPinch(positions);
+          }
+          return;
+        }
       }
     }
 

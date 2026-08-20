@@ -40,7 +40,7 @@ putEnv(
 )
 putEnv("SERIOUS_PYTHON_APP", File(kotoRepoRoot, "build/python-app").absolutePath)
 putEnv("SERIOUS_PYTHON_ANDROID_EXTRACT_PACKAGES", "mathreader")
-putEnv("SERIOUS_PYTHON_BUNDLE_ID", "com.example.koto")
+putEnv("SERIOUS_PYTHON_BUNDLE_ID", "dev.changkevin.scrapyard")
 
 pluginManagement {
     val flutterSdkPath =

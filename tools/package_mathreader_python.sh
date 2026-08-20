@@ -10,7 +10,7 @@ export SERIOUS_PYTHON_VERSION=3.12
 export SERIOUS_PYTHON_SITE_PACKAGES="$ROOT/build/site-packages"
 export SERIOUS_PYTHON_APP="$ROOT/build/python-app"
 export SERIOUS_PYTHON_ANDROID_EXTRACT_PACKAGES=mathreader
-export SERIOUS_PYTHON_BUNDLE_ID=com.example.koto
+export SERIOUS_PYTHON_BUNDLE_ID=dev.changkevin.scrapyard
 export SERIOUS_PYTHON_ALLOW_SOURCE_DISTRIBUTIONS=imutils,ply,idx2numpy
 
 mkdir -p "$SERIOUS_PYTHON_SITE_PACKAGES" "$SERIOUS_PYTHON_APP"

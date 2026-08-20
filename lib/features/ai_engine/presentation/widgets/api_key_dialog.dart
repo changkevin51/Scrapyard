@@ -49,8 +49,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
   @override
   void initState() {
     super.initState();
-    final existing = ref.read(apiKeyProvider).valueOrNull;
-    _controller = TextEditingController(text: existing ?? '');
+    _controller = TextEditingController();
     _keyFocusNode = FocusNode();
     _keyFocusNode.addListener(_scrollKeyFieldIntoView);
     _controller.addListener(() {
@@ -122,6 +121,16 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
 
     setState(() => _saving = true);
     try {
+      var result = _testResult;
+      if (result == null || !result.success) {
+        result = await ref.read(apiKeyProvider.notifier).test(key);
+        if (!mounted) return;
+        setState(() => _testResult = result);
+        if (!result.success) {
+          setState(() => _saving = false);
+          return;
+        }
+      }
       await ref.read(apiKeyProvider.notifier).save(key);
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -186,7 +195,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Scrapyard uses your own free Google AI Studio key, so Smelt costs nothing.',
+                'Scrapyard uses your own free Google AI Studio key. Smelt and chat send the scraps you select to Gemini along with that key.',
                 style: ScrapTextStyles.caption.copyWith(
                   color: ScrapTheme.secondaryText,
                 ),
@@ -201,6 +210,16 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (_hasExistingKey) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'A key is already saved. Paste a new one to replace it.',
+                  style: ScrapTextStyles.caption.copyWith(
+                    color: ScrapTheme.mutedText,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               KeyedSubtree(
                 key: _keyFieldKey,
@@ -209,13 +228,17 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
                 focusNode: _keyFocusNode,
                 obscureText: _obscure,
                 enabled: !busy,
+                autocorrect: false,
+                enableSuggestions: false,
+                enableIMEPersonalizedLearning: false,
+                keyboardType: TextInputType.visiblePassword,
                 style: ScrapTextStyles.body.copyWith(
                   fontFamily: 'monospace',
                   fontSize: 14,
                   letterSpacing: 0.4,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'AQ.Ab...',
+                  hintText: 'Paste your Gemini API key',
                   hintStyle: ScrapTextStyles.caption.copyWith(
                     color: ScrapTheme.mutedText,
                     fontFamily: 'monospace',
@@ -380,13 +403,13 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           _step(
             '4',
             Text(
-              'Copy the key (it starts with "AQ.") and paste it below.',
+              'Copy the key and paste it below. Google keys often start with AIza or AQ.',
               style: ScrapTextStyles.body.copyWith(fontSize: 14),
             ),
           ),
           const SizedBox(height: 14),
           Text(
-            'The free tier is enough for normal use. Your key stays on this device only.',
+            'The key is stored in this device’s secure storage. When you Smelt or chat, it is sent to Google with the selected notes. Free AI Studio keys may be used by Google to improve their products. See Settings → Privacy.',
             style: ScrapTextStyles.caption.copyWith(
               color: ScrapTheme.mutedText,
               fontSize: 12,

@@ -52,17 +52,36 @@ class CanvasTable {
     'cells': jsonEncode(cells),
   };
 
-  factory CanvasTable.fromMap(Map<String, dynamic> m) => CanvasTable(
-    id: m['id'],
-    position: Offset((m['x'] as num).toDouble(), (m['y'] as num).toDouble()),
-    rows: m['rows'],
-    cols: m['cols'],
-    cellWidth: (m['cellWidth'] as num).toDouble(),
-    cellHeight: (m['cellHeight'] as num).toDouble(),
-    cells: (jsonDecode(m['cells']) as List)
-        .map((r) => (r as List).map((c) => c.toString()).toList())
-        .toList(),
-  );
+  factory CanvasTable.fromMap(Map<String, dynamic> m) {
+    final rows = (m['rows'] as num?)?.toInt() ?? 1;
+    final cols = (m['cols'] as num?)?.toInt() ?? 1;
+    var cells = <List<String>>[];
+    try {
+      cells = (jsonDecode(m['cells']) as List)
+          .map((r) => (r as List).map((c) => c.toString()).toList())
+          .toList();
+    } catch (_) {}
+    while (cells.length < rows) {
+      cells.add(List.filled(cols, ''));
+    }
+    for (var r = 0; r < cells.length; r++) {
+      if (cells[r].length < cols) {
+        cells[r] = [...cells[r], ...List.filled(cols - cells[r].length, '')];
+      }
+    }
+    return CanvasTable(
+      id: '${m['id']}',
+      position: Offset(
+        (m['x'] as num?)?.toDouble() ?? 0,
+        (m['y'] as num?)?.toDouble() ?? 0,
+      ),
+      rows: rows,
+      cols: cols,
+      cellWidth: (m['cellWidth'] as num?)?.toDouble() ?? 120.0,
+      cellHeight: (m['cellHeight'] as num?)?.toDouble() ?? 48.0,
+      cells: cells,
+    );
+  }
 
   String toJson() => jsonEncode(toMap());
 

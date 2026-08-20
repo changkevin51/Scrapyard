@@ -1,9 +1,8 @@
-import 'package:flutter/foundation.dart';
-import 'package:path/path.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../domain/models/page_layout.dart';
+import 'stroke_repository.dart';
 
 /// Persisted per-note canvas settings (page layout, home anchor, last view).
 class NoteCanvasSettings {
@@ -63,114 +62,7 @@ class CanvasSettingsRepository {
   /// Shared DB schema version (must match [StrokeRepository.dbVersion]).
   static const int dbVersion = 6;
 
-  static Database? _database;
-
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _openSharedDb();
-    return _database!;
-  }
-
-  /// Opens the same `koto_strokes.db` used by [StrokeRepository] so both
-  /// share the `note_settings` table after the v2 migration.
-  Future<Database> _openSharedDb() async {
-    String path;
-    if (kIsWeb) {
-      path = 'koto_strokes.db';
-    } else {
-      final dbPath = await getDatabasesPath();
-      path = join(dbPath, 'koto_strokes.db');
-    }
-
-    return openDatabase(
-      path,
-      version: dbVersion,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE strokes (
-            id TEXT PRIMARY KEY,
-            note_id TEXT NOT NULL,
-            data TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-          )
-        ''');
-        await _createNoteSettings(db);
-        await _createTextNodes(db);
-        await _createCanvasLayers(db);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await _createNoteSettings(db);
-        }
-        if (oldVersion < 3) {
-          await _migrateToV3(db);
-        }
-        if (oldVersion < 4) {
-          await _createTextNodes(db);
-        }
-        if (oldVersion < 5) {
-          await _createCanvasLayers(db);
-        }
-        if (oldVersion < 6) {
-          await db.execute('DROP TABLE IF EXISTS canvas_stickers');
-        }
-      },
-    );
-  }
-
-  static Future<void> _createTextNodes(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS text_nodes (
-        id TEXT PRIMARY KEY,
-        note_id TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    ''');
-  }
-
-  static Future<void> _createCanvasLayers(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS canvas_tables (
-        id TEXT PRIMARY KEY,
-        note_id TEXT NOT NULL,
-        data TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      )
-    ''');
-  }
-
-  static Future<void> _createNoteSettings(Database db) async {
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS note_settings (
-        note_id TEXT PRIMARY KEY,
-        page_layout TEXT NOT NULL,
-        is_infinite INTEGER NOT NULL DEFAULT 0,
-        home_x REAL,
-        home_y REAL,
-        view_x REAL,
-        view_y REAL,
-        view_scale REAL
-      )
-    ''');
-  }
-
-  /// Split legacy `page_layout = 'infinite'` into style + is_infinite flag.
-  static Future<void> _migrateToV3(Database db) async {
-    final cols = await db.rawQuery('PRAGMA table_info(note_settings)');
-    final hasInfinite =
-        cols.any((c) => (c['name'] as String?) == 'is_infinite');
-    if (!hasInfinite) {
-      await db.execute(
-        'ALTER TABLE note_settings ADD COLUMN is_infinite INTEGER NOT NULL DEFAULT 0',
-      );
-    }
-    await db.execute('''
-      UPDATE note_settings
-      SET is_infinite = 1, page_layout = 'grid'
-      WHERE page_layout = 'infinite'
-    ''');
-  }
+  Future<Database> get database => openStrokesDatabase();
 
   Future<PageCanvasConfig> loadDefaultPageConfig() async {
     final prefs = await SharedPreferences.getInstance();

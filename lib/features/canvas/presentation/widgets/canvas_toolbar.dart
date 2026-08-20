@@ -780,7 +780,7 @@ class _CanvasSettingsSheet extends ConsumerWidget {
                 PaperSwitch(
                   value: palmReject,
                   onChanged: (v) =>
-                      ref.read(stylusOnlyModeProvider.notifier).state = v,
+                      ref.read(stylusOnlyModeProvider.notifier).setEnabled(v),
                 ),
               ],
             ),

@@ -261,13 +261,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         } else {
           final visible = vp.visibleWorld(size);
           constraints = BoxConstraints(
-            maxWidth: math.max(visible.width, 1),
-            maxHeight: math.max(visible.height, 1),
+            maxWidth: math.min(math.max(visible.width, 1), 1920),
+            maxHeight: math.min(math.max(visible.height, 1), 1920),
           );
         }
       } else {
-        constraints =
-            const BoxConstraints(maxWidth: 1000, maxHeight: 5000);
+        constraints = const BoxConstraints(maxWidth: 1920, maxHeight: 1920);
       }
       final results =
           await _ocrService.recognizeStrokes(strokes, constraints);
@@ -3126,7 +3125,7 @@ class _FreshScrapHintState extends State<_FreshScrapHint> {
             Text(
               widget.ephemeral
                   ? 'scribble freely — this sheet won\'t be filed'
-                  : 'scribble anything — Smelt figures it out',
+                  : 'scribble anything — finger or stylus',
               textAlign: TextAlign.center,
               style: ScrapTextStyles.stamp.copyWith(
                 fontSize: 11,

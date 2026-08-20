@@ -1,15 +1,13 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
 import '../../data/api_key_service.dart';
+import '../../data/gemini_api.dart';
 import '../../../ai_chat/domain/models/gemini_model.dart';
-import '../../_debug_log_helper.dart';
 import '../../smelt_timing.dart';
 
-final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
+final secureStorageProvider = Provider((ref) => GeminiApi.secureStorage());
 
 final smeltServiceProvider = Provider((ref) {
   return SmeltService(ref.watch(secureStorageProvider));
@@ -129,7 +127,6 @@ class SmeltState {
 
 class SmeltNotifier extends StateNotifier<SmeltState> {
   final SmeltService _smeltService;
-  int _onProgressCallCount = 0;
 
   /// In-memory cache for this app session (survives popup dismiss).
   final Map<String, SmeltCacheEntry> _sessionCache = {};
@@ -247,27 +244,6 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         preferredModel: preferredModel,
         singleModel: singleModel,
         forceCodeExecution: forceCodeExecution,
-        onProgress: ({
-          partialAnswer = '',
-          partialSteps = '',
-          partialSuggestions,
-          isComplete = false,
-          error,
-        }) {
-          _onProgressCallCount++;
-          // #region agent log
-          dlog(
-              'H5_H2_onProgress_call',
-              'onProgress invoked - checking call count and raw partialSteps vs cleaned',
-              {
-                'callCount': _onProgressCallCount,
-                'isComplete': isComplete,
-                'partialStepsJsonEncoded': jsonEncode(partialSteps ?? ''),
-                'cleanedStepsJsonEncoded':
-                    jsonEncode(_cleanSteps(partialSteps ?? '')),
-              });
-          // #endregion
-        },
       );
       SmeltTiming.step('provider_api_returned', extra: {
         'modelUsed': result.modelUsed,
@@ -318,10 +294,10 @@ class SmeltNotifier extends StateNotifier<SmeltState> {
         'stepsChars': response.steps.length,
       });
     } catch (e) {
-      SmeltTiming.step('provider_error', extra: {'error': e.toString()});
+      SmeltTiming.step('provider_error');
       state = SmeltState(
         isLoading: false,
-        error: e.toString(),
+        error: GeminiApi.userFacingError(e),
         lastImageBytes: imageBytes,
         cacheKey: key,
         forceCodeExecution: forceCodeExecution,

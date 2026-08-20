@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class ScrapTheme {
   // Colour Palette
@@ -140,8 +139,11 @@ class ScrapTheme {
 }
 
 class ScrapTextStyles {
+  static const String _sans = 'Noto Sans';
+  static const String _serif = 'Courier Prime';
+
   static TextTheme get textTheme {
-    return GoogleFonts.notoSansTextTheme().copyWith(
+    return const TextTheme().copyWith(
       displayLarge: display,
       titleLarge: heading,
       bodyLarge: body,
@@ -150,35 +152,40 @@ class ScrapTextStyles {
     );
   }
 
-  static TextStyle get display => GoogleFonts.libreBaskerville(
+  static TextStyle get display => const TextStyle(
+        fontFamily: _serif,
         fontSize: 32,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         color: ScrapTheme.primaryText,
         letterSpacing: -0.5,
       );
 
-  static TextStyle get heading => GoogleFonts.libreBaskerville(
+  static TextStyle get heading => const TextStyle(
+        fontFamily: _serif,
         fontSize: 24,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w700,
         color: ScrapTheme.primaryText,
         letterSpacing: -0.2,
       );
 
-  static TextStyle get body => GoogleFonts.notoSans(
+  static TextStyle get body => const TextStyle(
+        fontFamily: _sans,
         fontSize: 16,
         fontWeight: FontWeight.normal,
         color: ScrapTheme.bodyText,
         height: 1.5,
       );
 
-  static TextStyle get caption => GoogleFonts.notoSans(
+  static TextStyle get caption => const TextStyle(
+        fontFamily: _sans,
         fontSize: 14,
         fontWeight: FontWeight.normal,
         color: ScrapTheme.secondaryText,
         height: 1.4,
       );
 
-  static TextStyle get label => GoogleFonts.notoSans(
+  static TextStyle get label => const TextStyle(
+        fontFamily: _sans,
         fontSize: 12,
         fontWeight: FontWeight.w500,
         color: ScrapTheme.mutedText,
@@ -186,7 +193,8 @@ class ScrapTextStyles {
       );
 
   /// Typewriter stamp style for filing tags and ⟨ ⟩ chrome.
-  static TextStyle get stamp => GoogleFonts.courierPrime(
+  static TextStyle get stamp => const TextStyle(
+        fontFamily: _serif,
         fontSize: 11,
         fontWeight: FontWeight.w700,
         color: ScrapTheme.accent,

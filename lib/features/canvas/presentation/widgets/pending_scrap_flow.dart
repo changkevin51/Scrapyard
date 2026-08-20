@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/theme/scrap_feedback.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
+import '../../../home/data/note_artifacts.dart';
 import '../../../home/domain/models/home_node.dart';
 import '../../../home/presentation/providers/home_providers.dart';
 import '../providers/canvas_providers.dart';
@@ -118,6 +121,7 @@ Future<void> filePendingNewScrap(
 void discardPendingNewScrap(WidgetRef ref, String id) {
   ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m}..remove(id));
   discardEphemeralNote(ref, id);
+  unawaited(NoteArtifacts.deleteForNoteId(id));
 }
 
 /// Prompt to name or discard a single pending scrap. Returns false if cancelled.

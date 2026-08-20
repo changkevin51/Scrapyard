@@ -66,7 +66,7 @@ class ChatHistorySheet extends ConsumerWidget {
                   child: CircularProgressIndicator(color: ScrapTheme.accent),
                 ),
                 error: (e, _) => Text(
-                  'Could not load history: $e',
+                  'Could not load history. Try again.',
                   style: ScrapTextStyles.caption
                       .copyWith(color: Colors.redAccent),
                 ),

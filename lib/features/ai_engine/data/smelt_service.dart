@@ -8,7 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../ai_chat/domain/models/gemini_model.dart';
 import '../domain/models/smelt_response.dart';
 import '../domain/latex_json_repair.dart';
-import '../_debug_log_helper.dart';
+import 'gemini_api.dart';
 import '../smelt_timing.dart';
 
 /// Callback for streaming progress updates
@@ -188,7 +188,7 @@ class SmeltService {
         });
         lastError = e;
         if (singleModel || i == models.length - 1) {
-          throw Exception('Gemini model failed: $e');
+          throw Exception(GeminiApi.userFacingError(e));
         }
         if (!GeminiChatModel.isRetryableError(e)) {
           rethrow;
@@ -197,7 +197,9 @@ class SmeltService {
       }
     }
 
-    throw Exception('All Gemini models are unavailable: $lastError');
+    throw Exception(GeminiApi.userFacingError(
+      lastError ?? Exception('All Gemini models are unavailable'),
+    ));
   }
 
   Future<SmeltStreamResult> _callGemini(
@@ -208,7 +210,7 @@ class SmeltService {
     bool forceCodeExecution = false,
     String? selectedText,
   }) async {
-    final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
+    final url = GeminiApi.generateContent(model);
 
     final forceCodeBlock = forceCodeExecution
         ? '''
@@ -347,8 +349,8 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
     };
 
     // Send request and stream the response body chunks
-    final request = http.Request('POST', Uri.parse(url))
-      ..headers['Content-Type'] = 'application/json'
+    final request = http.Request('POST', url)
+      ..headers.addAll(GeminiApi.headers(apiKey))
       ..body = jsonEncode(requestBody);
     SmeltTiming.step('http_request_encoded', extra: {
       'model': model,
@@ -404,24 +406,9 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
         'codeRuns': codeRuns.length,
       });
 
-      // #region agent log
-      dlog('H1_H4_raw_content', 'raw content from gemini before any parsing',
-          {'model': model, 'contentJsonEncoded': jsonEncode(content)});
-      // #endregion
-
       try {
         final jsonResponse = await _parseJsonContent(content);
         SmeltTiming.step('json_parse_direct_ok', extra: {'model': model});
-
-        // #region agent log
-        dlog(
-            'H1_H2_direct_parse_steps',
-            'steps field right after DIRECT jsonDecode succeeded (no repair needed)',
-            {
-              'model': model,
-              'stepsJsonEncoded': jsonEncode(jsonResponse['steps']),
-            });
-        // #endregion
 
         onProgress?.call(
           partialAnswer: jsonResponse['answer'] as String?,
@@ -441,25 +428,11 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
           modelUsed: model,
         );
       } on FormatException catch (e) {
-        print('=== GEMINI JSON PARSE ERROR ===');
-        print('Error: $e');
-        print('Raw content from Gemini:');
-        print(content);
-        print('=== END GEMINI RESPONSE ===');
+        debugOnlyPrint('Gemini JSON parse error: $e');
 
         try {
           final jsonResponse = await _repairAndParseJsonContent(content);
           SmeltTiming.step('json_parse_repaired_ok', extra: {'model': model});
-
-          // #region agent log
-          dlog(
-              'H1_H2_repaired_parse_steps',
-              'steps field right after FALLBACK repair+parse succeeded',
-              {
-                'model': model,
-                'stepsJsonEncoded': jsonEncode(jsonResponse['steps']),
-              });
-          // #endregion
 
           onProgress?.call(
             partialAnswer: jsonResponse['answer'] as String?,
@@ -481,16 +454,14 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
             modelUsed: model,
           );
         } catch (e2) {
-          print('=== SECOND PARSE ERROR ===');
-          print('Error: $e2');
-          print('=== END SECOND PARSE ERROR ===');
-          throw Exception('Failed to parse Gemini response: $e2\nRaw response: $content');
+          debugOnlyPrint('Gemini JSON repair failed: $e2');
+          throw Exception("Couldn't read Gemini's reply");
         }
       }
     } else if (response.statusCode == 429) {
       throw Exception('Rate limit exceeded (429)');
     } else {
-      throw Exception('Gemini API error: ${response.statusCode} - ${await response.stream.bytesToString()}');
+      throw Exception('Gemini API error: ${response.statusCode}');
     }
   }
 
@@ -606,17 +577,6 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
   /// Worker function for fixing and parsing JSON in isolate
   static Map<String, dynamic> _fixAndParseJsonWorker(String content) {
     final fixed = _fixJsonEscapeSequences(_normalizeJsonContent(content));
-
-    // #region agent log
-    dlog(
-        'H1_escape_fix_before_after',
-        'comparing raw content vs escape-fixed content around \\b \\f \\n \\r \\t sequences',
-        {
-          'beforeJsonEncoded': jsonEncode(content),
-          'afterJsonEncoded': jsonEncode(fixed),
-        });
-    // #endregion
-
     return jsonDecode(fixed) as Map<String, dynamic>;
   }
 

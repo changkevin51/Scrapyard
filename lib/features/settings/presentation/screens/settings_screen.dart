@@ -14,6 +14,9 @@ import '../../../ai_engine/data/api_key_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
+import 'privacy_policy_screen.dart';
+
+const _appVersion = '1.0.0';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -228,6 +231,50 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text('Privacy', style: ScrapTextStyles.body),
+            subtitle: Text(
+              'What Smelt and chat send to Google',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: ScrapTheme.mutedText,
+            ),
+            onTap: () {
+              ScrapFeedback.tap();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const PrivacyPolicyScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text('Open-source licenses', style: ScrapTextStyles.body),
+            onTap: () {
+              ScrapFeedback.tap();
+              showLicensePage(
+                context: context,
+                applicationName: 'Scrapyard',
+                applicationVersion: _appVersion,
+              );
+            },
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              'Scrapyard $_appVersion\nNotes stay on this device. AI features send selected scraps and your API key to Google Gemini.',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+                height: 1.4,
+              ),
+            ),
+          ),
         ],
       ),
     );

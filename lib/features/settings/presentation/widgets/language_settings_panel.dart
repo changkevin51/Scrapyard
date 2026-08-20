@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // Example providers for settings
 final languageDetectionProvider = StateProvider<bool>((ref) => true);
 final nativeLanguageProvider = StateProvider<String>((ref) => 'English');
-final enabledScriptsProvider = StateProvider<List<String>>((ref) => ['Japanese', 'Latin']);
+final enabledScriptsProvider = StateProvider<List<String>>((ref) => ['Latin']);
 
 class LanguageSettingsPanel extends ConsumerWidget {
   const LanguageSettingsPanel({super.key});
@@ -41,9 +41,7 @@ class LanguageSettingsPanel extends ConsumerWidget {
         const SizedBox(height: 24),
         _buildSectionHeader('Detected Scripts'),
         const SizedBox(height: 16),
-        _buildScriptToggle('Japanese', ref, true),
-        _buildScriptToggle('Chinese', ref, false),
-        _buildScriptToggle('Korean', ref, false),
+        _buildScriptToggle('Latin', ref, true),
       ],
     );
   }

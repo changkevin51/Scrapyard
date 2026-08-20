@@ -5,36 +5,37 @@ import '../domain/models/stroke.dart';
 import '../domain/models/canvas_text_item.dart';
 import '../domain/models/canvas_smart_models.dart';
 
-class StrokeRepository {
-  static Database? _database;
+Future<Database>? _strokesDbFuture;
 
+/// Single connection to `koto_strokes.db` for ink, text, tables, and settings.
+Future<Database> openStrokesDatabase() {
+  return _strokesDbFuture ??= _openStrokesDatabase();
+}
+
+Future<Database> _openStrokesDatabase() async {
+  final String path;
+  if (kIsWeb) {
+    path = 'koto_strokes.db';
+  } else {
+    final dbPath = await getDatabasesPath();
+    path = join(dbPath, 'koto_strokes.db');
+  }
+
+  return openDatabase(
+    path,
+    version: StrokeRepository.dbVersion,
+    onCreate: StrokeRepository.createDb,
+    onUpgrade: StrokeRepository.upgradeDb,
+  );
+}
+
+class StrokeRepository {
   /// Shared schema version — keep in sync with [CanvasSettingsRepository.dbVersion].
   static const int dbVersion = 6;
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('koto_strokes.db');
-    return _database!;
-  }
+  Future<Database> get database => openStrokesDatabase();
 
-  Future<Database> _initDB(String filePath) async {
-    String path;
-    if (kIsWeb) {
-      path = filePath;
-    } else {
-      final dbPath = await getDatabasesPath();
-      path = join(dbPath, filePath);
-    }
-
-    return await openDatabase(
-      path,
-      version: dbVersion,
-      onCreate: _createDB,
-      onUpgrade: _upgradeDB,
-    );
-  }
-
-  Future _createDB(Database db, int version) async {
+  static Future<void> createDb(Database db, int version) async {
     await db.execute('''
       CREATE TABLE strokes (
         id TEXT PRIMARY KEY,
@@ -48,7 +49,11 @@ class StrokeRepository {
     await _createCanvasTables(db);
   }
 
-  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+  static Future<void> upgradeDb(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
     if (oldVersion < 2) {
       await _createNoteSettings(db);
     }
@@ -66,7 +71,7 @@ class StrokeRepository {
     }
   }
 
-  Future<void> _createNoteSettings(Database db) async {
+  static Future<void> _createNoteSettings(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS note_settings (
         note_id TEXT PRIMARY KEY,
@@ -81,7 +86,7 @@ class StrokeRepository {
     ''');
   }
 
-  Future<void> _createTextNodes(Database db) async {
+  static Future<void> _createTextNodes(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS text_nodes (
         id TEXT PRIMARY KEY,
@@ -92,7 +97,7 @@ class StrokeRepository {
     ''');
   }
 
-  Future<void> _createCanvasTables(Database db) async {
+  static Future<void> _createCanvasTables(Database db) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS canvas_tables (
         id TEXT PRIMARY KEY,
@@ -103,7 +108,7 @@ class StrokeRepository {
     ''');
   }
 
-  Future<void> _migrateNoteSettingsToV3(Database db) async {
+  static Future<void> _migrateNoteSettingsToV3(Database db) async {
     final cols = await db.rawQuery('PRAGMA table_info(note_settings)');
     final hasInfinite =
         cols.any((c) => (c['name'] as String?) == 'is_infinite');
@@ -120,6 +125,7 @@ class StrokeRepository {
   }
 
   Future<void> saveStrokes(String noteId, List<Stroke> newStrokes) async {
+    if (newStrokes.isEmpty) return;
     final db = await database;
     final batch = db.batch();
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -153,9 +159,15 @@ class StrokeRepository {
       orderBy: 'created_at ASC',
     );
 
-    return List.generate(maps.length, (i) {
-      return Stroke.fromJson(maps[i]['data']);
-    });
+    final strokes = <Stroke>[];
+    for (final row in maps) {
+      try {
+        strokes.add(Stroke.fromJson(row['data'] as String));
+      } catch (e) {
+        debugPrint('Skipping corrupt stroke: $e');
+      }
+    }
+    return strokes;
   }
 
   Future<void> deleteStrokes(List<String> strokeIds) async {
@@ -199,9 +211,15 @@ class StrokeRepository {
       whereArgs: [noteId],
       orderBy: 'created_at ASC',
     );
-    return List.generate(maps.length, (i) {
-      return CanvasTextItem.fromJson(maps[i]['data'] as String);
-    });
+    final nodes = <CanvasTextItem>[];
+    for (final row in maps) {
+      try {
+        nodes.add(CanvasTextItem.fromJson(row['data'] as String));
+      } catch (e) {
+        debugPrint('Skipping corrupt text node: $e');
+      }
+    }
+    return nodes;
   }
 
   Future<void> deleteTextNodes(List<String> ids) async {
@@ -220,8 +238,25 @@ class StrokeRepository {
 
   Future<void> replaceStrokes(String noteId, List<Stroke> strokes) async {
     final db = await database;
-    await db.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
-    if (strokes.isNotEmpty) await saveStrokes(noteId, strokes);
+    await db.transaction((txn) async {
+      await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
+      if (strokes.isEmpty) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = txn.batch();
+      for (final stroke in strokes) {
+        batch.insert(
+          'strokes',
+          {
+            'id': stroke.id,
+            'note_id': noteId,
+            'data': stroke.toJson(),
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> replaceTextNodes(
@@ -229,8 +264,25 @@ class StrokeRepository {
     List<CanvasTextItem> nodes,
   ) async {
     final db = await database;
-    await db.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
-    if (nodes.isNotEmpty) await saveTextNodes(noteId, nodes);
+    await db.transaction((txn) async {
+      await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
+      if (nodes.isEmpty) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = txn.batch();
+      for (final node in nodes) {
+        batch.insert(
+          'text_nodes',
+          {
+            'id': node.id,
+            'note_id': noteId,
+            'data': node.toJson(),
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> saveTables(String noteId, List<CanvasTable> tables) async {
@@ -261,9 +313,15 @@ class StrokeRepository {
       whereArgs: [noteId],
       orderBy: 'created_at ASC',
     );
-    return List.generate(maps.length, (i) {
-      return CanvasTable.fromJson(maps[i]['data'] as String);
-    });
+    final tables = <CanvasTable>[];
+    for (final row in maps) {
+      try {
+        tables.add(CanvasTable.fromJson(row['data'] as String));
+      } catch (e) {
+        debugPrint('Skipping corrupt table: $e');
+      }
+    }
+    return tables;
   }
 
   Future<void> deleteTables(List<String> ids) async {
@@ -278,7 +336,38 @@ class StrokeRepository {
 
   Future<void> replaceTables(String noteId, List<CanvasTable> tables) async {
     final db = await database;
-    await db.delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
-    if (tables.isNotEmpty) await saveTables(noteId, tables);
+    await db.transaction((txn) async {
+      await txn
+          .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
+      if (tables.isEmpty) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final batch = txn.batch();
+      for (final table in tables) {
+        batch.insert(
+          'canvas_tables',
+          {
+            'id': table.id,
+            'note_id': noteId,
+            'data': table.toJson(),
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// Remove every canvas row for a scrap (used by discard and trash).
+  Future<void> deleteAllForNote(String noteId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
+      await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
+      await txn
+          .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
+      await txn
+          .delete('note_settings', where: 'note_id = ?', whereArgs: [noteId]);
+    });
   }
 }

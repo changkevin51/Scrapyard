@@ -48,3 +48,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Upload keystore (never commit)
+*.jks
+*.keystore
+android/key.properties

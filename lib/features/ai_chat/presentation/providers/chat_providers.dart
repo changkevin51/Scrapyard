@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../../ai_engine/data/gemini_api.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart'
     show secureStorageProvider;
 import '../../data/chat_repository.dart';
@@ -454,7 +455,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       id: assistantId,
       conversationId: conv.id,
       role: ChatRole.assistant,
-      content: 'Something went wrong: $error',
+      content: GeminiApi.userFacingError(error),
       createdAt: DateTime.now(),
       isError: true,
     );
@@ -465,7 +466,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messages: [...state.messages, assistantMsg],
       isStreaming: false,
       streamingText: '',
-      error: error,
+      error: GeminiApi.userFacingError(error),
     );
     _streamingAssistantId = null;
     _sub = null;

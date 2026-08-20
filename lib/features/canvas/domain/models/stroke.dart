@@ -21,10 +21,10 @@ class StrokePoint {
   };
 
   factory StrokePoint.fromMap(Map<String, dynamic> map) => StrokePoint(
-    x: map['x'].toDouble(),
-    y: map['y'].toDouble(),
-    pressure: map['pressure'].toDouble(),
-    timestamp: map['timestamp'],
+    x: (map['x'] as num?)?.toDouble() ?? 0,
+    y: (map['y'] as num?)?.toDouble() ?? 0,
+    pressure: (map['pressure'] as num?)?.toDouble() ?? 1,
+    timestamp: (map['timestamp'] as num?)?.toInt() ?? 0,
   );
 }
 

@@ -21,7 +21,7 @@ class GestureSettingsScreen extends ConsumerWidget {
         children: [
            _buildSectionHeader('Canvas'),
            _buildToggleRow('Two-Finger Tap to Undo', ref.watch(twoFingerTapUndoEnabledProvider), (val) {
-             ref.read(twoFingerTapUndoEnabledProvider.notifier).state = val;
+             ref.read(twoFingerTapUndoEnabledProvider.notifier).setEnabled(val);
            }),
            const SizedBox(height: 8),
            Text(
@@ -30,7 +30,7 @@ class GestureSettingsScreen extends ConsumerWidget {
            ),
            const SizedBox(height: 16),
            _buildToggleRow('Three-Finger Tap to Redo', ref.watch(threeFingerTapRedoEnabledProvider), (val) {
-             ref.read(threeFingerTapRedoEnabledProvider.notifier).state = val;
+             ref.read(threeFingerTapRedoEnabledProvider.notifier).setEnabled(val);
            }),
            const SizedBox(height: 8),
            Text(
@@ -39,7 +39,7 @@ class GestureSettingsScreen extends ConsumerWidget {
            ),
            const SizedBox(height: 16),
            _buildToggleRow('S Pen Button Eraser', ref.watch(sPenButtonEraserEnabledProvider), (val) {
-             ref.read(sPenButtonEraserEnabledProvider.notifier).state = val;
+             ref.read(sPenButtonEraserEnabledProvider.notifier).setEnabled(val);
            }),
            const SizedBox(height: 8),
            Text(

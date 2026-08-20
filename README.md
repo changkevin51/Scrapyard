@@ -27,7 +27,7 @@ Scribble out a problem, select it, and the app works through it with you — ste
 
 Free without an asterisk. No subscription, no credits, nothing to upgrade to.
 
-You bring your own API key from [Google AI Studio](https://aistudio.google.com/app/apikey), which is also free and takes about thirty seconds to create. Paste it in when the app asks and that's the whole setup. The key lives in your device's secure storage and never leaves it.
+You bring your own API key from [Google AI Studio](https://aistudio.google.com/app/apikey), which is also free and takes about thirty seconds to create. Paste it in when the app asks. The key is stored in your device's secure storage. When you use Smelt or study chat, that key is sent to Google along with the scraps you select — see [PRIVACY.md](PRIVACY.md).
 
 <div align="center">
 <img src="assets/branding/readme/api_key_setup.jpg" alt="API key setup dialog in Scrapyard" width="400"/>

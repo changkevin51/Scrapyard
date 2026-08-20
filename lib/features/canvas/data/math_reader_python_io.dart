@@ -16,7 +16,7 @@ const _readyFileName = 'mathreader_ready.json';
 Future<MathReaderSidecar?>? _inFlight;
 
 void _log(String msg) {
-  debugPrint('MathReader: $msg');
+  if (kDebugMode) debugPrint('MathReader: $msg');
 }
 
 Future<MathReaderSidecar?> ensureMathReaderSidecar() {
@@ -31,7 +31,7 @@ Future<MathReaderSidecar?> _ensureMathReaderSidecar() async {
   final ready = File('${tmp.path}/$_readyFileName');
   final logFile = File(p.join(tmp.path, 'mathreader.log'));
 
-  var host = '127.0.0.1';
+  var host = 'localhost';
   var port = _defaultPort;
 
   Future<bool> readReady() async {
@@ -41,7 +41,9 @@ Future<MathReaderSidecar?> _ensureMathReaderSidecar() async {
       if (data is! Map) return false;
       final h = data['host'];
       final p0 = data['port'];
-      if (h is String && h.isNotEmpty) host = h;
+      if (h is String && h.isNotEmpty) {
+        host = (h == '127.0.0.1' || h == '::1') ? 'localhost' : h;
+      }
       if (p0 is int) {
         port = p0;
         return true;

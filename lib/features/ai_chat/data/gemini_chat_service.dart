@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../../ai_engine/data/smelt_service.dart';
+import '../../ai_engine/data/gemini_api.dart';
 import '../domain/models/chat_message.dart';
 import '../domain/models/gemini_model.dart';
 
@@ -127,8 +128,7 @@ Rules for that line:
     Uint8List? imageBytes,
     void Function(ChatStreamResult result)? onComplete,
   }) async* {
-    final url =
-        'https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$apiKey';
+    final url = GeminiApi.streamGenerateContent(model);
 
     final contents = <Map<String, dynamic>>[];
     for (var i = 0; i < history.length; i++) {
@@ -179,8 +179,8 @@ Rules for that line:
       },
     };
 
-    final request = http.Request('POST', Uri.parse(url))
-      ..headers['Content-Type'] = 'application/json'
+    final request = http.Request('POST', url)
+      ..headers.addAll(GeminiApi.headers(apiKey))
       ..body = jsonEncode(requestBody);
 
     final streamed = await request.send().timeout(const Duration(seconds: 60));
@@ -189,8 +189,7 @@ Rules for that line:
       throw Exception('Rate limit exceeded (429)');
     }
     if (streamed.statusCode != 200) {
-      final body = await streamed.stream.bytesToString();
-      throw Exception('Gemini API error: ${streamed.statusCode} - $body');
+      throw Exception('Gemini API error: ${streamed.statusCode}');
     }
 
     final buffer = StringBuffer(); // raw accumulated (incl. sentinel)

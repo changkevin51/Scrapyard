@@ -28,12 +28,21 @@ class AnnotationRecord {
   }
 
   factory AnnotationRecord.fromMap(Map<String, dynamic> map) {
+    AnnotationType type = AnnotationType.ink;
+    try {
+      type = AnnotationType.values.byName('${map['type']}');
+    } catch (_) {}
+    Map<String, dynamic> data = const {};
+    try {
+      final decoded = jsonDecode(map['data'] as String? ?? '{}');
+      if (decoded is Map<String, dynamic>) data = decoded;
+    } catch (_) {}
     return AnnotationRecord(
-      id: map['id'],
-      documentId: map['document_id'],
-      pageNumber: map['page_number'],
-      type: AnnotationType.values.byName(map['type']),
-      data: jsonDecode(map['data']),
+      id: '${map['id']}',
+      documentId: '${map['document_id']}',
+      pageNumber: (map['page_number'] as num?)?.toInt() ?? 0,
+      type: type,
+      data: data,
     );
   }
 }

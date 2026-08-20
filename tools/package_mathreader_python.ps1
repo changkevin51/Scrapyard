@@ -16,7 +16,7 @@ $env:SERIOUS_PYTHON_VERSION = "3.12"
 $env:SERIOUS_PYTHON_SITE_PACKAGES = Join-Path $root "build\site-packages"
 $env:SERIOUS_PYTHON_APP = Join-Path $root "build\python-app"
 $env:SERIOUS_PYTHON_ANDROID_EXTRACT_PACKAGES = "mathreader"
-$env:SERIOUS_PYTHON_BUNDLE_ID = "com.example.koto"
+$env:SERIOUS_PYTHON_BUNDLE_ID = "dev.changkevin.scrapyard"
 # Mobile pip is --only-binary :all:; allow sdists for these pure-Python packages.
 $env:SERIOUS_PYTHON_ALLOW_SOURCE_DISTRIBUTIONS = "imutils,ply,idx2numpy"
 

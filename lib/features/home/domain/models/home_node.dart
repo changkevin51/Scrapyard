@@ -110,7 +110,7 @@ class HomeNode {
         (e) => e.name == map['type'],
         orElse: () => NodeType.note,
       ),
-      updatedAt: DateTime.parse(map['updated_at']),
+      updatedAt: DateTime.tryParse('${map['updated_at']}') ?? DateTime.now(),
       externalPath: map['external_path'],
       deletedAt: deletedRaw != null && deletedRaw.isNotEmpty
           ? DateTime.tryParse(deletedRaw)

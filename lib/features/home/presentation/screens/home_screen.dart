@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:open_filex/open_filex.dart';
 import '../../../../core/layout/scrap_layout.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
@@ -33,6 +34,7 @@ import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../onboarding/presentation/screens/onboarding_screen.dart';
 import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../../../onboarding/presentation/smelt_guide_keys.dart';
 import '../../../splash/presentation/providers/splash_providers.dart';
@@ -96,14 +98,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(onboardingCompletedPrefsKey) != true) {
+      if (!mounted) return;
+      context.go('/onboarding');
+      return;
+    }
+
     ref.read(apiKeySetupPromptedProvider.notifier).state = true;
 
     final key = keyState.valueOrNull;
     if (key == null || key.isEmpty) {
       final saved = await showApiKeyDialog(context, allowSkip: true);
       if (saved == true && mounted) {
-        showPaperToast(context, 'API key saved');
-        await ref.read(smeltGuideProvider.notifier).startFromHome();
+        final nowHasKey =
+            (ref.read(apiKeyProvider).valueOrNull ?? '').isNotEmpty;
+        showPaperToast(
+          context,
+          nowHasKey ? 'API key saved' : 'API key removed',
+        );
+        if (nowHasKey) {
+          await ref.read(smeltGuideProvider.notifier).startFromHome();
+        }
       }
     }
   }
@@ -111,8 +127,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _openApiKeyDialog() async {
     final saved = await showApiKeyDialog(context, allowSkip: true);
     if (saved == true && mounted) {
-      showPaperToast(context, 'API key saved');
-      await ref.read(smeltGuideProvider.notifier).startFromHome();
+      final nowHasKey =
+          (ref.read(apiKeyProvider).valueOrNull ?? '').isNotEmpty;
+      showPaperToast(
+        context,
+        nowHasKey ? 'API key saved' : 'API key removed',
+      );
+      if (nowHasKey) {
+        await ref.read(smeltGuideProvider.notifier).startFromHome();
+      }
     }
   }
 
@@ -131,7 +154,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (!mounted) return;
     ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m, node.id: node});
-    ref.read(activeNoteIdProvider.notifier).state = node.id;
     openNoteTab(ref, node.id, node.title, ephemeral: true);
     _notifyGuideOpenedScrap();
     context.push('/note_editor').then((_) => _onNoteEditorClosed(node.id));
@@ -143,6 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       builder: (ctx) => const _RenameNodeDialog(
         initialTitle: 'New Folder',
+        dialogTitle: 'New pile',
       ),
     );
     if (title == null || !mounted) return;
@@ -300,28 +323,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       Icons.arrow_back,
                                       color: ScrapTheme.primaryText,
                                     ),
-                                    onPressed: () {
-                                      final path =
-                                          ref.read(folderPathProvider);
-                                      if (path.length > 1) {
-                                        ref
-                                            .read(currentFolderIdProvider
-                                                .notifier)
-                                            .state = path[path.length - 2].id;
-                                        ref
-                                            .read(folderPathProvider.notifier)
-                                            .state = path.sublist(
-                                                0, path.length - 1);
-                                      } else {
-                                        ref
-                                            .read(currentFolderIdProvider
-                                                .notifier)
-                                            .state = 'root';
-                                        ref
-                                            .read(folderPathProvider.notifier)
-                                            .state = [];
-                                      }
-                                    },
+                                    onPressed: _popHomeFolder,
                                   ),
                                 ),
                               ),
@@ -366,7 +368,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         ? 'Saved'
                                         : currentFolder == 'root'
                                             ? 'All Files'
-                                            : folderPath.last.title,
+                                            : folderPath.isNotEmpty
+                                                ? folderPath.last.title
+                                                : 'All Files',
                                 key: ValueKey(currentFolder),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -438,7 +442,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         SliverToBoxAdapter(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 48),
-                            child: Center(child: Text('Error: $err')),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    "Couldn't load this pile.",
+                                    style: ScrapTextStyles.caption.copyWith(
+                                      color: ScrapTheme.mutedText,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  PaperButton(
+                                    label: 'Retry',
+                                    variant: PaperButtonVariant.secondary,
+                                    compact: true,
+                                    onPressed: () => ref
+                                        .read(currentHomeNodesProvider.notifier)
+                                        .refresh(),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -501,7 +525,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       desk = SafeArea(top: false, child: desk);
     }
 
-    return Scaffold(
+    return PopScope(
+      canPop: currentFolder == 'root',
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _popHomeFolder();
+      },
+      child: Scaffold(
       resizeToAvoidBottomInset: false,
       drawer: layout.isCompact
           ? Drawer(
@@ -553,7 +583,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Expanded(child: desk),
               ],
             ),
+      ),
     );
+  }
+
+  void _popHomeFolder() {
+    final currentFolder = ref.read(currentFolderIdProvider);
+    if (currentFolder == 'root') return;
+    final path = ref.read(folderPathProvider);
+    if (currentFolder == trashFolderId ||
+        currentFolder == savedFolderId ||
+        path.length <= 1) {
+      ref.read(currentFolderIdProvider.notifier).state = 'root';
+      ref.read(folderPathProvider.notifier).state = [];
+      return;
+    }
+    ref.read(currentFolderIdProvider.notifier).state = path[path.length - 2].id;
+    ref.read(folderPathProvider.notifier).state =
+        path.sublist(0, path.length - 1);
   }
 
   HomeNavActions _homeNavActions(String currentFolder, bool hasApiKey) {
@@ -576,8 +623,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onNewFolder: _onNewFolder,
       onNewScrap: _createAndOpenScrap,
       onLooseScrap: _openLooseScrap,
-      onImport: () {
-        ref.read(currentHomeNodesProvider.notifier).importDocument();
+      onImport: () async {
+        final message =
+            await ref.read(currentHomeNodesProvider.notifier).importDocument();
+        if (!mounted || message == null) return;
+        showPaperToast(context, message);
       },
       onReplayGuide: () {
         ref.read(smeltGuideProvider.notifier).startFromHome(force: true);
@@ -1462,8 +1512,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 class _RenameNodeDialog extends StatefulWidget {
   final String initialTitle;
+  final String dialogTitle;
 
-  const _RenameNodeDialog({required this.initialTitle});
+  const _RenameNodeDialog({
+    required this.initialTitle,
+    this.dialogTitle = 'Rename',
+  });
 
   @override
   State<_RenameNodeDialog> createState() => _RenameNodeDialogState();
@@ -1504,7 +1558,7 @@ class _RenameNodeDialogState extends State<_RenameNodeDialog> {
         borderRadius: BorderRadius.circular(ScrapTheme.borderRadiusDefault),
       ),
       title: Text(
-        'Rename',
+        widget.dialogTitle,
         style: ScrapTextStyles.heading.copyWith(fontSize: 18),
       ),
       content: TextField(

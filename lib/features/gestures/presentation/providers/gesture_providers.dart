@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/models/gesture_action.dart';
 
 class GestureActionNotifier extends StateNotifier<GestureAction> {
@@ -6,12 +7,12 @@ class GestureActionNotifier extends StateNotifier<GestureAction> {
 
   void dispatch(GestureAction action) {
     state = action;
-    // Reset after microtask guarantees listeners can react
     Future.microtask(() => state = GestureAction.none);
   }
 }
 
-final gestureActionProvider = StateNotifierProvider<GestureActionNotifier, GestureAction>((ref) {
+final gestureActionProvider =
+    StateNotifierProvider<GestureActionNotifier, GestureAction>((ref) {
   return GestureActionNotifier();
 });
 
@@ -19,11 +20,38 @@ final edgeSwipesEnabledProvider = StateProvider<bool>((ref) => true);
 final tapHoldExpandEnabledProvider = StateProvider<bool>((ref) => true);
 final multiFingerEnabledProvider = StateProvider<bool>((ref) => true);
 
-/// Two-finger tap on the canvas undoes the last stroke change.
-final twoFingerTapUndoEnabledProvider = StateProvider<bool>((ref) => true);
+class _BoolPrefNotifier extends StateNotifier<bool> {
+  _BoolPrefNotifier(this._key, this._defaultValue) : super(_defaultValue) {
+    _load();
+  }
 
-/// Three-finger tap on the canvas redoes the last undone change.
-final threeFingerTapRedoEnabledProvider = StateProvider<bool>((ref) => true);
+  final String _key;
+  final bool _defaultValue;
 
-/// Holding the S Pen / stylus side button temporarily switches to eraser.
-final sPenButtonEraserEnabledProvider = StateProvider<bool>((ref) => true);
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    state = prefs.getBool(_key) ?? _defaultValue;
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_key, value);
+  }
+}
+
+final twoFingerTapUndoEnabledProvider =
+    StateNotifierProvider<_BoolPrefNotifier, bool>((ref) {
+  return _BoolPrefNotifier('gesture_two_finger_undo', true);
+});
+
+final threeFingerTapRedoEnabledProvider =
+    StateNotifierProvider<_BoolPrefNotifier, bool>((ref) {
+  return _BoolPrefNotifier('gesture_three_finger_redo', true);
+});
+
+final sPenButtonEraserEnabledProvider =
+    StateNotifierProvider<_BoolPrefNotifier, bool>((ref) {
+  return _BoolPrefNotifier('gesture_spen_eraser', true);
+});

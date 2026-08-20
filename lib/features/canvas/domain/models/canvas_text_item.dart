@@ -48,10 +48,10 @@ class CanvasTextItem {
       };
 
   factory CanvasTextItem.fromMap(Map<String, dynamic> map) => CanvasTextItem(
-        id: map['id'] as String,
+        id: '${map['id']}',
         position: Offset(
-          (map['x'] as num).toDouble(),
-          (map['y'] as num).toDouble(),
+          (map['x'] as num?)?.toDouble() ?? 0,
+          (map['y'] as num?)?.toDouble() ?? 0,
         ),
         text: map['text'] as String? ?? '',
         fontSize: (map['fontSize'] as num?)?.toDouble() ?? 18.0,

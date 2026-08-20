@@ -28,7 +28,11 @@ Future<void> shareScrapPng(
   final bytes = await _renderPng(strokes);
 
   final dir = await getTemporaryDirectory();
-  final file = File('${dir.path}/tearout_${node.id}.png');
+  final shareDir = Directory('${dir.path}/share');
+  if (!await shareDir.exists()) {
+    await shareDir.create(recursive: true);
+  }
+  final file = File('${shareDir.path}/tearout_${node.id}.png');
   await file.writeAsBytes(bytes, flush: true);
 
   try {

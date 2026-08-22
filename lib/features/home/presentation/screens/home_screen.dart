@@ -626,9 +626,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (!mounted || message == null) return;
         showPaperToast(context, message);
       },
-      onReplayGuide: () {
-        context.go('/onboarding?replay=1');
-      },
+      onGuide: () => context.push('/guide'),
     );
   }
 

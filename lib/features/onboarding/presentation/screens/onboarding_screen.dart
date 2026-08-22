@@ -51,7 +51,7 @@ class OnboardingScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Use the study chat (located bottom right corner) to clarify or ask follow-up questions.',
+                        'Use Ask (bottom-right) to clarify or ask follow-up questions.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,

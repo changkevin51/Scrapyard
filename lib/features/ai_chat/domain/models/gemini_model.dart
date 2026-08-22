@@ -2,7 +2,6 @@
 enum GeminiModelTier {
   flashLite,
   flash,
-  pro,
 }
 
 /// Catalog of Gemini models available for chat (and Smelt fallback).
@@ -53,21 +52,12 @@ class GeminiChatModel {
     mayTakeLonger: true,
   );
 
-  static const pro31Preview = GeminiChatModel(
-    id: 'gemini-3.1-pro-preview',
-    label: '3.1 Pro Preview',
-    blurb: 'Deepest reasoning for hard problems',
-    tier: GeminiModelTier.pro,
-    mayTakeLonger: true,
-  );
-
   /// Models shown in the picker (fast → slow).
   static const List<GeminiChatModel> all = [
     flash35Lite,
     flash31Lite,
     flash35,
     flash36,
-    pro31Preview,
   ];
 
   static const GeminiChatModel defaultModel = flash35Lite;
@@ -87,7 +77,6 @@ class GeminiChatModel {
   ///
   /// - Flash Lite → other Flash Lite
   /// - Flash → other Flash, then Flash Lites
-  /// - Pro → Flash models, then Flash Lites
   static List<String> fallbackChain(String preferredModelId) {
     final preferred = byId(preferredModelId);
     if (preferred == null) {
@@ -104,14 +93,6 @@ class GeminiChatModel {
       case GeminiModelTier.flashLite:
         break;
       case GeminiModelTier.flash:
-        for (final m in _modelsInTier(GeminiModelTier.flashLite)) {
-          chain.add(m.id);
-        }
-        break;
-      case GeminiModelTier.pro:
-        for (final m in _modelsInTier(GeminiModelTier.flash)) {
-          chain.add(m.id);
-        }
         for (final m in _modelsInTier(GeminiModelTier.flashLite)) {
           chain.add(m.id);
         }

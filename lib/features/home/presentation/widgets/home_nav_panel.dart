@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/layout/scrap_layout.dart';
@@ -22,7 +21,7 @@ class HomeNavActions {
   final VoidCallback onNewScrap;
   final VoidCallback onLooseScrap;
   final VoidCallback onImport;
-  final VoidCallback? onReplayGuide;
+  final VoidCallback onGuide;
 
   const HomeNavActions({
     required this.currentFolder,
@@ -35,7 +34,7 @@ class HomeNavActions {
     required this.onNewScrap,
     required this.onLooseScrap,
     required this.onImport,
-    this.onReplayGuide,
+    required this.onGuide,
   });
 
   bool get inTrash => currentFolder == trashFolderId;
@@ -117,24 +116,6 @@ class HomeNavPanel extends StatelessWidget {
               ),
             ),
           ),
-        if (kDebugMode && actions.onReplayGuide != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 32, top: 10),
-            child: ScrapPressable(
-              onTap: () {
-                ScrapFeedback.tap();
-                actions.onReplayGuide!();
-                onAfterNavigate?.call();
-              },
-              child: Text(
-                '⟨ Replay guide ⟩',
-                style: ScrapTextStyles.label.copyWith(
-                  color: ScrapTheme.mutedText,
-                  letterSpacing: 0.8,
-                ),
-              ),
-            ),
-          ),
       ],
     );
 
@@ -159,17 +140,12 @@ class HomeNavPanel extends StatelessWidget {
                   onTap: actions.onNewFolder,
                 ),
                 _CreateLink(
-                  label: '+  New scrap',
-                  onTap: actions.onNewScrap,
-                ),
-                _CreateLink(
-                  label: '~  Loose scrap',
-                  color: ScrapTheme.mutedText,
-                  onTap: actions.onLooseScrap,
-                ),
-                _CreateLink(
                   label: '↑  Import a PDF/doc',
                   onTap: actions.onImport,
+                ),
+                _CreateLink(
+                  label: '?  Guide',
+                  onTap: () => _go(actions.onGuide),
                 ),
               ],
             ),
@@ -269,6 +245,12 @@ class HomeIndexStrip extends StatelessWidget {
                         isSelected: false,
                         horizontal: true,
                         onTap: actions.onSettings,
+                      ),
+                      HomeNavItem(
+                        title: 'Guide',
+                        isSelected: false,
+                        horizontal: true,
+                        onTap: actions.onGuide,
                       ),
                     ],
                   ),
@@ -446,12 +428,10 @@ class HomeNavItem extends StatelessWidget {
 class _CreateLink extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
-  final Color? color;
 
   const _CreateLink({
     required this.label,
     required this.onTap,
-    this.color,
   });
 
   @override
@@ -467,7 +447,7 @@ class _CreateLink extends StatelessWidget {
         child: Text(
           label,
           style: ScrapTextStyles.body.copyWith(
-            color: color ?? ScrapTheme.accent,
+            color: ScrapTheme.accent,
             fontWeight: FontWeight.w500,
           ),
         ),

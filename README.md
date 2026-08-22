@@ -27,7 +27,7 @@ Scribble out a problem, select it, and the app works through it with you — ste
 
 Free without an asterisk. No subscription, no credits, nothing to upgrade to.
 
-You bring your own API key from [Google AI Studio](https://aistudio.google.com/app/apikey), which is also free and takes about thirty seconds to create. Paste it in when the app asks. The key is stored in your device's secure storage. When you use Smelt or study chat, that key is sent to Google along with the scraps you select — see [PRIVACY.md](PRIVACY.md).
+You bring your own API key from [Google AI Studio](https://aistudio.google.com/app/apikey), which is also free and takes about thirty seconds to create. Paste it in when the app asks. The key is stored in your device's secure storage. When you use Smelt or Ask, that key is sent to Google along with the scraps you select — see [PRIVACY.md](PRIVACY.md).
 
 <div align="center">
 <img src="assets/branding/readme/api_key_setup.jpg" alt="API key setup dialog in Scrapyard" width="400"/>
@@ -47,7 +47,7 @@ Pressure-aware vector ink keeps handwriting close to the real thing. Every tool 
 
 Circle any part of the canvas and hit Smelt. It reads the selection with on-device OCR and Gemini's vision model, then streams back a worked solution, step by step. Stuck on something harder? Verify the result with code execution, or switch to a heavier model. If one model is unavailable, it falls back to another.
 
-### Study chat
+### Ask
 
 An ordinary conversation with the AI, except it already has context on what's on your canvas. Chats are saved, you can pick the model, and suggestion chips are there for when you're not sure what to ask.
 
@@ -63,7 +63,7 @@ Open a PDF and annotate right on top of it. Split-screen puts the document on on
 <img src="assets/branding/readme/quick_calc_demo.webp" alt="Quick calc: writing an equals sign and getting an on-device answer" width="360"/>
 </div>
 
-- **True splitscreen for study chat** allows users to keep writing on the canvas while the chat panel is open
+- **True splitscreen for Ask** allows users to keep writing on the canvas while the chat panel is open
 - **Smelt results can be pinned** and dragged so they stay while you write, or **taped onto the scrap** so they remain after you leave.
 - **Tear out** exports a scrap to share or save outside the app.
 - **Step-by-step onboarding** walks through Smelt and the AI features on a first scrap.

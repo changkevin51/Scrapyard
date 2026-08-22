@@ -134,3 +134,57 @@ class _EraserIconPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _EraserIconPainter old) => old.color != color;
 }
+
+/// Rectangular selection marquee — rounded square with a dashed outline.
+class LassoIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const LassoIcon({super.key, required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _LassoIconPainter(color)),
+    );
+  }
+}
+
+class _LassoIconPainter extends CustomPainter {
+  final Color color;
+  const _LassoIconPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+
+    final w = size.width;
+    final h = size.height;
+
+    final outline = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTRB(w * 0.12, h * 0.16, w * 0.88, h * 0.84),
+        Radius.circular(w * 0.18),
+      ));
+
+    final dash = w * 0.17;
+    final gap = w * 0.11;
+    for (final metric in outline.computeMetrics()) {
+      double dist = dash * 0.5;
+      while (dist < metric.length) {
+        final end = (dist + dash).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(dist, end), paint);
+        dist += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LassoIconPainter old) => old.color != color;
+}

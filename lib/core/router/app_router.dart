@@ -7,6 +7,8 @@ import '../../features/pdf_viewer/presentation/screens/pdf_viewer_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/gestures/presentation/screens/gesture_settings_screen.dart';
 import '../../features/onboarding/presentation/screens/onboarding_screen.dart';
+import '../../features/guide/presentation/screens/guide_screen.dart';
+import '../../features/guide/presentation/screens/guide_topic_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'root');
@@ -94,6 +96,26 @@ class AppRouter {
             pageBuilder: (context, state) => _scrapPage(
               key: state.pageKey,
               child: const GestureSettingsScreen(),
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/guide',
+        name: 'guide',
+        pageBuilder: (context, state) => _scrapPage(
+          key: state.pageKey,
+          child: const GuideScreen(),
+        ),
+        routes: [
+          GoRoute(
+            path: ':topic',
+            name: 'guide_topic',
+            pageBuilder: (context, state) => _scrapPage(
+              key: state.pageKey,
+              child: GuideTopicScreen(
+                topicId: state.pathParameters['topic'] ?? '',
+              ),
             ),
           ),
         ],

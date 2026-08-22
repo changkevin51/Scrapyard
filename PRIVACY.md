@@ -2,7 +2,7 @@
 
 Last updated: 20 August 2026
 
-Scrapyard is a local note-taking app with optional AI features (Smelt and study chat) powered by Google Gemini. You bring your own Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+Scrapyard is a local note-taking app with optional AI features (Smelt and Ask) powered by Google Gemini. You bring your own Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ## Who we are
 
@@ -14,7 +14,7 @@ The following stay on your device unless you use an AI feature or share/export t
 
 - Handwritten scraps, typed text, tables, and canvas settings
 - Imported PDFs and PDF annotations
-- Study-chat transcripts and any images attached to chats
+- Ask transcripts and any images attached to chats
 - Gesture and canvas preferences
 - Your Gemini API key (in the device’s secure storage)
 
@@ -22,7 +22,7 @@ Chat history and notes are stored in local databases. Android Auto Backup is dis
 
 ## Data sent off the device
 
-**Only when you use Smelt or study chat** (and only if you have saved an API key):
+**Only when you use Smelt or Ask** (and only if you have saved an API key):
 
 1. **Your Gemini API key** is sent to Google (`generativelanguage.googleapis.com`) with the request so Gemini can authenticate you. The key is stored on-device; it is not kept by Scrapyard on a server.
 2. **Content you select or send** — circled handwriting (as an image), typed selection text, PDF page crops, chat messages, and previously attached chat images — is sent to Google Gemini so the model can reply.

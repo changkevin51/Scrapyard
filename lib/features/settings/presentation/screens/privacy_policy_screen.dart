@@ -29,7 +29,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
         future: rootBundle.loadString('PRIVACY.md'),
         builder: (context, snapshot) {
           final text = snapshot.data ??
-              'Scrapyard stores notes on your device. Smelt and study chat '
+              'Scrapyard stores notes on your device. Smelt and Ask '
               'send the content you select, plus your Gemini API key, to Google.\n\n'
               '${GeminiApi.privacyPolicyUrl}';
           return ListView(

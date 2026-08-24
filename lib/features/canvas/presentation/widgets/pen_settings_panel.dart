@@ -528,10 +528,6 @@ class PenSettingsButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeTool = ref.watch(activeCanvasToolProvider);
-    final isRelevant = activeTool == CanvasTool.pen ||
-        activeTool == CanvasTool.brush ||
-        activeTool == CanvasTool.highlighter ||
-        activeTool == CanvasTool.eraser;
 
     return Tooltip(
       message: 'Pen / Brush / Highlighter / Eraser settings',
@@ -555,20 +551,12 @@ class PenSettingsButton extends ConsumerWidget {
             builder: (_) => const PenSettingsPanel(),
           );
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.symmetric(horizontal: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-          decoration: BoxDecoration(
-            color: isRelevant
-                ? ScrapTheme.accent.withValues(alpha: 0.08)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           child: Icon(
             Icons.tune,
             size: 18,
-            color: isRelevant ? ScrapTheme.accent : ScrapTheme.mutedText,
+            color: ScrapTheme.secondaryText,
           ),
         ),
       ),

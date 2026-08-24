@@ -135,6 +135,12 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
                   color: _toolColor(activeTool == AnnotationTool.eraser),
                 ),
               ),
+              Container(
+                width: 1,
+                height: 16,
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                color: ScrapTheme.tape.withValues(alpha: 0.7),
+              ),
               _toolButton(
                 tip: 'Smelt',
                 tool: AnnotationTool.smelt,
@@ -142,7 +148,9 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
                 child: Icon(
                   Icons.auto_awesome,
                   size: 24,
-                  color: _toolColor(activeTool == AnnotationTool.smelt),
+                  color: activeTool == AnnotationTool.smelt
+                      ? ScrapTheme.primaryText
+                      : ScrapTheme.accent,
                 ),
               ),
               const SizedBox(width: 8),

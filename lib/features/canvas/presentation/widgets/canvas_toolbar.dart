@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
@@ -36,8 +38,14 @@ const List<_ToolDef> _tools = [
   (icon: Icons.text_fields_outlined, label: 'Text', tip: 'Text',       tool: CanvasTool.text),
   (icon: Icons.category_outlined,  label: 'Shape', tip: 'Shape',        tool: CanvasTool.shape),
   (icon: Icons.gesture,            label: 'Lasso', tip: 'Lasso',       tool: CanvasTool.lasso), // icon unused — custom glyph
-  (icon: Icons.auto_awesome,       label: 'Smelt', tip: 'Smelt',       tool: CanvasTool.smelt),
 ];
+
+const _ToolDef _smeltTool = (
+  icon: Icons.auto_awesome,
+  label: 'Smelt',
+  tip: 'Smelt',
+  tool: CanvasTool.smelt,
+);
 
 // ─────────────────────────────────────────────────────────
 // Shared press scale — same feel as home _ScrapPressable
@@ -101,22 +109,17 @@ class CanvasToolbar extends ConsumerWidget {
     final centeredChildren = <Widget>[
       _sep(isHorizontal),
 
-      // ── All drawing tools – always exposed ─────────────
-      for (final t in _tools)
-        _ToolButton(
-          key: t.tool == CanvasTool.smelt ? SmeltGuideKeys.smeltTool : null,
-          def: t,
-        ),
+      // ── Drawing / insert tools ─────────────────────────
+      for (final t in _tools) _ToolButton(def: t),
       const PenSettingsButton(),
       _sep(isHorizontal),
 
-      // ── Undo / Redo ────────────────────────────────────
-      const _ActionButton(
-          icon: Icons.undo_outlined, tip: 'Undo',
-          action: CanvasTool.undo),
-      const _ActionButton(
-          icon: Icons.redo_outlined, tip: 'Redo',
-          action: CanvasTool.redo),
+      // ── Smelt — isolated primary action ────────────────
+      _ToolButton(
+        key: SmeltGuideKeys.smeltTool,
+        def: _smeltTool,
+        emphasized: true,
+      ),
       _sep(isHorizontal),
 
       // ── Colour palette ─────────────────────────────────
@@ -200,6 +203,13 @@ class CanvasToolbar extends ConsumerWidget {
                     },
                   ),
                 ),
+                _sep(true),
+                const _ActionButton(
+                    icon: Icons.undo_outlined, tip: 'Undo',
+                    action: CanvasTool.undo),
+                const _ActionButton(
+                    icon: Icons.redo_outlined, tip: 'Redo',
+                    action: CanvasTool.redo),
               ],
             )
           : Column(
@@ -223,6 +233,13 @@ class CanvasToolbar extends ConsumerWidget {
                     },
                   ),
                 ),
+                _sep(false),
+                const _ActionButton(
+                    icon: Icons.undo_outlined, tip: 'Undo',
+                    action: CanvasTool.undo),
+                const _ActionButton(
+                    icon: Icons.redo_outlined, tip: 'Redo',
+                    action: CanvasTool.redo),
               ],
             ),
     );
@@ -290,7 +307,12 @@ class _ModeToggle extends ConsumerWidget {
 // ─────────────────────────────────────────────────────────────────
 class _ToolButton extends ConsumerWidget {
   final _ToolDef def;
-  const _ToolButton({super.key, required this.def});
+  final bool emphasized;
+  const _ToolButton({
+    super.key,
+    required this.def,
+    this.emphasized = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -337,7 +359,9 @@ class _ToolButton extends ConsumerWidget {
         onLongPress: def.tool == CanvasTool.shape
             ? () => showShapeLibrary(context)
             : null,
-        child: AnimatedContainer(
+        child: emphasized
+            ? _SmeltToolVisual(isActive: isActive)
+            : AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -357,7 +381,9 @@ class _ToolButton extends ConsumerWidget {
                   _toolGlyph(
                     def,
                     size: 22,
-                    color: isActive ? ScrapTheme.accent : ScrapTheme.secondaryText,
+                    color: isActive
+                        ? ScrapTheme.accent
+                        : ScrapTheme.secondaryText,
                   ),
                   // Highlighter-swipe underline under active tool
                   AnimatedContainer(
@@ -389,6 +415,160 @@ class _ToolButton extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Isolated Smelt control — accent sparkle at rest; on selection a one-shot
+/// spark burst plays, then it settles into a static warm gold halo.
+class _SmeltToolVisual extends StatefulWidget {
+  final bool isActive;
+  const _SmeltToolVisual({required this.isActive});
+
+  @override
+  State<_SmeltToolVisual> createState() => _SmeltToolVisualState();
+}
+
+class _SmeltToolVisualState extends State<_SmeltToolVisual>
+    with TickerProviderStateMixin {
+  static const _goldLight = Color(0xFFD9B87C);
+  static const _goldDeep = Color(0xFFAE8A54);
+
+  late final AnimationController _burst;
+  late final AnimationController _spin;
+  late final Animation<double> _angle;
+
+  @override
+  void initState() {
+    super.initState();
+    _burst = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+      // Start settled so a persisted active state shows no burst.
+      value: 1.0,
+    );
+    _spin = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
+    _angle = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 0.22)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.22, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeOutBack)),
+        weight: 55,
+      ),
+    ]).animate(_spin);
+  }
+
+  @override
+  void didUpdateWidget(_SmeltToolVisual old) {
+    super.didUpdateWidget(old);
+    if (widget.isActive && !old.isActive) {
+      _spin.forward(from: 0);
+      _burst.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _burst.dispose();
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 42,
+      height: 42,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_burst, _angle]),
+        builder: (context, _) {
+          return Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              if (widget.isActive)
+                CustomPaint(
+                  size: const Size(42, 42),
+                  painter: _SmeltHaloPainter(_burst.value),
+                ),
+              Transform.rotate(
+                angle: _angle.value,
+                child: widget.isActive
+                    ? ShaderMask(
+                        blendMode: BlendMode.srcIn,
+                        shaderCallback: (rect) => const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [_goldLight, _goldDeep],
+                        ).createShader(rect),
+                        child: const Icon(
+                          Icons.auto_awesome,
+                          size: 22,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.auto_awesome,
+                        size: 22,
+                        color: ScrapTheme.accent,
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Static warm halo plus a one-shot ignition burst (expanding ring and a few
+/// sparks) driven by [burstT]; at 1.0 the burst has fully faded and only the
+/// halo remains.
+class _SmeltHaloPainter extends CustomPainter {
+  final double burstT;
+  const _SmeltHaloPainter(this.burstT);
+
+  static const _gold = Color(0xFFC4A06A);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final haloR = size.shortestSide * 0.5;
+    final haloPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          _gold.withValues(alpha: 0.28),
+          _gold.withValues(alpha: 0.10),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromCircle(center: c, radius: haloR));
+    canvas.drawCircle(c, haloR, haloPaint);
+
+    if (burstT >= 1.0) return;
+    final fade = 1.0 - burstT;
+
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * fade + 0.5
+      ..color = _gold.withValues(alpha: 0.55 * fade);
+    canvas.drawCircle(c, 9 + 15 * burstT, ringPaint);
+
+    final sparkPaint = Paint()..color = _gold.withValues(alpha: 0.8 * fade);
+    for (final angle in const [-1.9, -0.5, 0.9, 2.4]) {
+      final dist = 8 + 14 * burstT;
+      final p = c + Offset(math.cos(angle), math.sin(angle)) * dist;
+      canvas.drawCircle(p, 1.6 * fade + 0.4, sparkPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SmeltHaloPainter old) => old.burstT != burstT;
 }
 
 Widget _toolGlyph(_ToolDef def, {required double size, required Color color}) {

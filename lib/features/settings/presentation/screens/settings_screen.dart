@@ -13,6 +13,7 @@ import '../../../ai_chat/presentation/widgets/model_picker_sheet.dart';
 import '../../../ai_engine/data/api_key_service.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../feedback/presentation/widgets/feedback_dialog.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import 'privacy_policy_screen.dart';
 
@@ -250,6 +251,24 @@ class SettingsScreen extends ConsumerWidget {
                   builder: (_) => const PrivacyPolicyScreen(),
                 ),
               );
+            },
+          ),
+          const Divider(color: ScrapTheme.dividers),
+          ListTile(
+            title: Text('Send feedback', style: ScrapTextStyles.body),
+            subtitle: Text(
+              'Beta — bugs, ideas, or whatever is stuck',
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.mutedText,
+              ),
+            ),
+            trailing: const Icon(
+              Icons.chevron_right,
+              color: ScrapTheme.mutedText,
+            ),
+            onTap: () {
+              ScrapFeedback.tap();
+              showFeedbackDialog(context);
             },
           ),
           const Divider(color: ScrapTheme.dividers),

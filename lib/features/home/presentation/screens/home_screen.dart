@@ -34,6 +34,7 @@ import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../canvas/presentation/widgets/pending_scrap_flow.dart';
 import '../../../ai_engine/presentation/providers/smelt_provider.dart';
 import '../../../ai_engine/presentation/widgets/api_key_dialog.dart';
+import '../../../feedback/presentation/widgets/feedback_dialog.dart';
 import '../../../onboarding/presentation/screens/onboarding_screen.dart';
 import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../../../onboarding/presentation/smelt_guide_keys.dart';
@@ -627,6 +628,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         showPaperToast(context, message);
       },
       onGuide: () => context.push('/guide'),
+      onFeedback: () => showFeedbackDialog(context),
     );
   }
 

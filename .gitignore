@@ -53,3 +53,10 @@ app.*.map.json
 *.jks
 *.keystore
 android/key.properties
+
+# Feedback API secrets — Resend key never belongs in Dart or git
+feedback-api/.env
+feedback-api/.env.*
+!feedback-api/.env.example
+feedback-api/node_modules/
+feedback-api/.vercel/

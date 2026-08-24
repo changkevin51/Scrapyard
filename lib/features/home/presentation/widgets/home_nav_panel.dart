@@ -22,6 +22,7 @@ class HomeNavActions {
   final VoidCallback onLooseScrap;
   final VoidCallback onImport;
   final VoidCallback onGuide;
+  final VoidCallback onFeedback;
 
   const HomeNavActions({
     required this.currentFolder,
@@ -35,6 +36,7 @@ class HomeNavActions {
     required this.onLooseScrap,
     required this.onImport,
     required this.onGuide,
+    required this.onFeedback,
   });
 
   bool get inTrash => currentFolder == trashFolderId;
@@ -147,6 +149,10 @@ class HomeNavPanel extends StatelessWidget {
                   label: '?  Guide',
                   onTap: () => _go(actions.onGuide),
                 ),
+                _CreateLink(
+                  label: '*  Feedback',
+                  onTap: () => _go(actions.onFeedback),
+                ),
               ],
             ),
           );
@@ -251,6 +257,12 @@ class HomeIndexStrip extends StatelessWidget {
                         isSelected: false,
                         horizontal: true,
                         onTap: actions.onGuide,
+                      ),
+                      HomeNavItem(
+                        title: 'Feedback',
+                        isSelected: false,
+                        horizontal: true,
+                        onTap: actions.onFeedback,
                       ),
                     ],
                   ),

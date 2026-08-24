@@ -1,16 +1,16 @@
 # Privacy Policy for Scrapyard
 
-Last updated: 20 August 2026
+Last updated: 24 August 2026
 
 Scrapyard is a local note-taking app with optional AI features (Smelt and Ask) powered by Google Gemini. You bring your own Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
 ## Who we are
 
-Scrapyard is developed as an open-source project ([github.com/changkevin51/Scrapyard](https://github.com/changkevin51/Scrapyard)). We do not operate a Scrapyard backend. We do not create accounts, and we do not collect analytics.
+Scrapyard is developed as an open-source project ([github.com/changkevin51/Scrapyard](https://github.com/changkevin51/Scrapyard)). We do not create accounts, and we do not collect analytics. Notes stay on your device. The only Scrapyard-operated endpoint is an optional beta feedback form (see below).
 
 ## Data stored on your device
 
-The following stay on your device unless you use an AI feature or share/export them yourself:
+The following stay on your device unless you use an AI feature, send feedback, or share/export them yourself:
 
 - Handwritten scraps, typed text, tables, and canvas settings
 - Imported PDFs and PDF annotations
@@ -22,7 +22,7 @@ Chat history and notes are stored in local databases. Android Auto Backup is dis
 
 ## Data sent off the device
 
-**Only when you use Smelt or Ask** (and only if you have saved an API key):
+**Smelt and Ask** (only if you have saved an API key):
 
 1. **Your Gemini API key** is sent to Google (`generativelanguage.googleapis.com`) with the request so Gemini can authenticate you. The key is stored on-device; it is not kept by Scrapyard on a server.
 2. **Content you select or send** — circled handwriting (as an image), typed selection text, PDF page crops, chat messages, and previously attached chat images — is sent to Google Gemini so the model can reply.
@@ -31,6 +31,10 @@ Chat history and notes are stored in local databases. Android Auto Backup is dis
 We do not send your scraps to our own servers. We cannot delete data Google has already received; see [Google’s Gemini API terms](https://ai.google.dev/gemini-api/terms) and Google’s privacy policy. Unpaid (free-tier) AI Studio keys are typically covered by Google’s unpaid-services terms, under which prompts may be used to improve Google products.
 
 **On-device math (Quick calc)** runs locally on your device. It does not use your API key and does not send handwriting to Google.
+
+**Beta feedback** (only if you tap Send on the in-app form):
+
+The message you typed, the kind you picked (Bug / Idea / Other), an optional reply email, and basic app/device metadata (app version and platform) are sent to a small Scrapyard function and emailed to the developer via Resend. This does not include your notes, PDFs, chats, or Gemini API key. You can close the form without sending anything.
 
 ## What we do not do
 
@@ -49,7 +53,8 @@ Scrapyard is not directed at children under 13 and is not part of Google Play’
 - Remove the API key in Settings at any time.
 - Delete chat history in Settings (this only deletes the local copy).
 - Crush scraps and empty Recently Deleted to remove local files.
+- Close the feedback form without sending.
 
 ## Contact
 
-Open an issue on [the Scrapyard GitHub repository](https://github.com/changkevin51/Scrapyard/issues).
+Use **Send feedback** in the app (Home sidebar, below Guide, or Settings), or open an issue on [the Scrapyard GitHub repository](https://github.com/changkevin51/Scrapyard/issues).

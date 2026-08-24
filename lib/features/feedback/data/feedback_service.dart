@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 /// server (Vercel env `RESEND_API_KEY`, or `feedback-api/.env.local` for
 /// `vercel dev`). Replace this after deploying `feedback-api`.
 const kFeedbackEndpoint =
-    'https://scrapyard-feedback.vercel.app/api/feedback';
+    'https://scrapyard-inky-eight.vercel.app/api/feedback';
 
 const kFeedbackAppVersion = '1.0.0';
 const kFeedbackMinMessageLength = 8;

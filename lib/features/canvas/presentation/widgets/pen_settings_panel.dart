@@ -103,6 +103,7 @@ class PenSettingsPanel extends ConsumerWidget {
               final tool = toolFor(f);
               ref.read(activeCanvasToolProvider.notifier).state = tool;
               restoreToolColor(ref, tool);
+              restoreToolThickness(ref, tool);
             },
           ),
           const SizedBox(height: 20),
@@ -125,6 +126,7 @@ class PenSettingsPanel extends ConsumerWidget {
                 final tool = toolFor(s.family);
                 ref.read(activeCanvasToolProvider.notifier).state = tool;
                 restoreToolColor(ref, tool);
+                restoreToolThickness(ref, tool);
               },
             ),
             const SizedBox(height: 24),

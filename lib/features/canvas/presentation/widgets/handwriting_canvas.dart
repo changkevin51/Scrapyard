@@ -679,6 +679,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
       }
       ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.eraser;
       ref.read(isPenModeActiveProvider.notifier).state = true;
+      restoreToolThickness(ref, CanvasTool.eraser);
     } else {
       _toolBeforeSPenEraser = null;
     }
@@ -702,6 +703,7 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     if (prev != null &&
         ref.read(activeCanvasToolProvider) == CanvasTool.eraser) {
       ref.read(activeCanvasToolProvider.notifier).state = prev;
+      restoreToolThickness(ref, prev);
     }
   }
 

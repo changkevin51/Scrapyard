@@ -181,9 +181,13 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
     if (tool == AnnotationTool.pen) {
       ref.read(activeInkFamilyProvider.notifier).state = InkFamily.pen;
       restoreToolColor(ref, CanvasTool.pen);
+      restoreToolThickness(ref, CanvasTool.pen);
     } else if (tool == AnnotationTool.highlighter) {
       ref.read(activeInkFamilyProvider.notifier).state = InkFamily.highlighter;
       restoreToolColor(ref, CanvasTool.highlighter);
+      restoreToolThickness(ref, CanvasTool.highlighter);
+    } else if (tool == AnnotationTool.eraser) {
+      restoreToolThickness(ref, CanvasTool.eraser);
     }
   }
 

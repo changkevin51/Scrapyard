@@ -138,6 +138,28 @@ final toolPaletteIndexProvider = StateProvider<Map<CanvasTool, int>>(
   },
 );
 
+bool isThicknessTool(CanvasTool tool) =>
+    tool == CanvasTool.pen ||
+    tool == CanvasTool.brush ||
+    tool == CanvasTool.highlighter ||
+    tool == CanvasTool.eraser ||
+    tool == CanvasTool.shape ||
+    tool == CanvasTool.straightLine ||
+    tool == CanvasTool.tape;
+
+/// Last thickness multiplier used by each drawing tool.
+final toolThicknessProvider = StateProvider<Map<CanvasTool, double>>(
+  (ref) => {
+    CanvasTool.pen: 1.0,
+    CanvasTool.brush: 1.0,
+    CanvasTool.highlighter: 1.0,
+    CanvasTool.eraser: 1.0,
+    CanvasTool.shape: 1.0,
+    CanvasTool.straightLine: 1.0,
+    CanvasTool.tape: 1.0,
+  },
+);
+
 // Active ink colour (defaults to pen black).
 final canvasColorProvider = StateProvider<Color>((ref) => inkBlack);
 
@@ -165,6 +187,7 @@ void ensureCanvasToolForColorSelect(WidgetRef ref) {
     ref.read(penSettingsProvider.notifier).state =
         settings.copyWith(penStyle: PenStyle.pen);
   }
+  restoreToolThickness(ref, CanvasTool.pen);
 }
 
 /// Apply an ink colour to the canvas, current tool memory, and optional swatch.
@@ -216,6 +239,22 @@ void selectPenTool(WidgetRef ref) {
         settings.copyWith(penStyle: PenStyle.pen);
   }
   restoreToolColor(ref, CanvasTool.pen);
+  restoreToolThickness(ref, CanvasTool.pen);
+}
+
+void applyStrokeWidth(WidgetRef ref, double width) {
+  ref.read(strokeWidthModifierProvider.notifier).state = width;
+  final tool = ref.read(activeCanvasToolProvider);
+  if (isThicknessTool(tool)) {
+    ref.read(toolThicknessProvider.notifier).update((m) => {...m, tool: width});
+  }
+}
+
+/// Restore the thickness last used by [tool].
+void restoreToolThickness(WidgetRef ref, CanvasTool tool) {
+  if (!isThicknessTool(tool)) return;
+  final w = ref.read(toolThicknessProvider)[tool] ?? 1.0;
+  ref.read(strokeWidthModifierProvider.notifier).state = w;
 }
 
 /// Restore the colour last used by [tool] into the active ink + toolbar slot.

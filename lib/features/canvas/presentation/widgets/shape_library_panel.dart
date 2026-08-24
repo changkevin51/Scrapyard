@@ -72,6 +72,7 @@ class ShapeLibraryPanel extends ConsumerWidget {
                   // Ensure shape tool is active
                   ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.shape;
                   ref.read(isPenModeActiveProvider.notifier).state = true;
+                  restoreToolThickness(ref, CanvasTool.shape);
                   Navigator.pop(context);
                 },
                 child: AnimatedContainer(

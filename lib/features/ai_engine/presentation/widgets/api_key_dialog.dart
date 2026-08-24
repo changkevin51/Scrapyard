@@ -395,7 +395,7 @@ class _ApiKeyDialogState extends ConsumerState<ApiKeyDialog> {
           _step(
             '3',
             Text(
-              'Tap “Create API key” and pick or create a project.',
+              'Tap “Create API key” and come up with a name for the key and project.',
               style: ScrapTextStyles.body.copyWith(fontSize: 14),
             ),
           ),

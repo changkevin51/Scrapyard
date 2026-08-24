@@ -261,6 +261,7 @@ class _ModeToggle extends ConsumerWidget {
           final tool = ref.read(activeCanvasToolProvider);
           if (!newMode && (tool == CanvasTool.lasso || tool == CanvasTool.smelt)) {
             ref.read(activeCanvasToolProvider.notifier).state = CanvasTool.pen;
+            restoreToolThickness(ref, CanvasTool.pen);
           }
         },
         child: AnimatedContainer(
@@ -314,6 +315,7 @@ class _ToolButton extends ConsumerWidget {
                   settings.copyWith(penStyle: PenStyle.pen);
             }
             restoreToolColor(ref, CanvasTool.pen);
+            restoreToolThickness(ref, CanvasTool.pen);
           } else if (def.tool == CanvasTool.brush) {
             ref.read(activeInkFamilyProvider.notifier).state = InkFamily.brush;
             final settings = ref.read(penSettingsProvider);
@@ -322,10 +324,14 @@ class _ToolButton extends ConsumerWidget {
                   settings.copyWith(penStyle: PenStyle.calligraphy);
             }
             restoreToolColor(ref, CanvasTool.brush);
+            restoreToolThickness(ref, CanvasTool.brush);
           } else if (def.tool == CanvasTool.highlighter) {
             ref.read(activeInkFamilyProvider.notifier).state =
                 InkFamily.highlighter;
             restoreToolColor(ref, CanvasTool.highlighter);
+            restoreToolThickness(ref, CanvasTool.highlighter);
+          } else {
+            restoreToolThickness(ref, def.tool);
           }
         },
         onLongPress: def.tool == CanvasTool.shape
@@ -442,7 +448,7 @@ class _ThicknessDots extends ConsumerWidget {
       children: [
         for (final (size, val) in _sizes)
           _ToolPressable(
-            onTap: () => ref.read(strokeWidthModifierProvider.notifier).state = val,
+            onTap: () => applyStrokeWidth(ref, val),
             child: Tooltip(
               message: 'Thickness $val×',
               child: AnimatedContainer(
@@ -697,7 +703,10 @@ class _CanvasSettingsSheet extends ConsumerWidget {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              children: ToolbarPosition.values.map((p) {
+              children: [
+                ToolbarPosition.top,
+                ToolbarPosition.bottom,
+              ].map((p) {
                 final sel = p == pos;
                 return GestureDetector(
                   onTap: () {

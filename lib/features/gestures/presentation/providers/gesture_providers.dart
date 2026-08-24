@@ -1,24 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../domain/models/gesture_action.dart';
-
-class GestureActionNotifier extends StateNotifier<GestureAction> {
-  GestureActionNotifier() : super(GestureAction.none);
-
-  void dispatch(GestureAction action) {
-    state = action;
-    Future.microtask(() => state = GestureAction.none);
-  }
-}
-
-final gestureActionProvider =
-    StateNotifierProvider<GestureActionNotifier, GestureAction>((ref) {
-  return GestureActionNotifier();
-});
-
-final edgeSwipesEnabledProvider = StateProvider<bool>((ref) => true);
-final tapHoldExpandEnabledProvider = StateProvider<bool>((ref) => true);
-final multiFingerEnabledProvider = StateProvider<bool>((ref) => true);
 
 class _BoolPrefNotifier extends StateNotifier<bool> {
   _BoolPrefNotifier(this._key, this._defaultValue) : super(_defaultValue) {

@@ -1,6 +1,5 @@
-import 'package:flutter/foundation.dart';
-import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import '../../../core/data/local_database.dart';
 import '../domain/models/chat_conversation.dart';
 import '../domain/models/chat_message.dart';
 
@@ -16,13 +15,7 @@ class ChatRepository {
   }
 
   Future<Database> _initDB() async {
-    String path;
-    if (kIsWeb) {
-      path = 'koto_chat.db';
-    } else {
-      final dbPath = await getDatabasesPath();
-      path = join(dbPath, 'koto_chat.db');
-    }
+    final path = await resolveLocalDatabasePath('scrapyard_chat.db');
 
     return openDatabase(
       path,

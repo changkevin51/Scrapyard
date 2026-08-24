@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
-import 'package:flutter/foundation.dart';
+import '../../../core/data/local_database.dart';
 import '../domain/models/home_node.dart';
 import 'note_artifacts.dart';
 
@@ -15,13 +14,7 @@ class HomeRepository {
   }
 
   Future<Database> _initDB() async {
-    String path;
-    if (kIsWeb) {
-      path = 'koto_home_v2.db';
-    } else {
-      final dbPath = await getDatabasesPath();
-      path = join(dbPath, 'koto_home_v2.db');
-    }
+    final path = await resolveLocalDatabasePath('scrapyard_home_v2.db');
 
     return await openDatabase(
       path,

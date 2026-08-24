@@ -2206,7 +2206,7 @@ class _NewScrapButtonState extends State<_NewScrapButton> {
                           if (!compact) ...[
                           const SizedBox(height: 2),
                           Text(
-                            'Scribble freely — vanishes when you leave',
+                            'Scribble freely and forget it when you leave',
                             style: ScrapTextStyles.caption.copyWith(
                               fontSize: 12,
                               color: ScrapTheme.mutedText,

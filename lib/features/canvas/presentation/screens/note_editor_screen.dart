@@ -3157,7 +3157,7 @@ class _FreshScrapHintState extends State<_FreshScrapHint> {
             Text(
               widget.ephemeral
                   ? 'scribble freely — this sheet won\'t be filed'
-                  : 'scribble anything — finger or stylus',
+                  : 'scribble anything',
               textAlign: TextAlign.center,
               style: ScrapTextStyles.stamp.copyWith(
                 fontSize: 11,

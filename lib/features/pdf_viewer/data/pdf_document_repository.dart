@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 import 'package:uuid/uuid.dart';
+import '../../../core/data/local_database.dart';
 import '../domain/models/annotation_record.dart';
 
 class PDFDocumentRepository {
@@ -9,13 +9,12 @@ class PDFDocumentRepository {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('koto_pdf.db');
+    _database = await _initDB();
     return _database!;
   }
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
+  Future<Database> _initDB() async {
+    final path = await resolveLocalDatabasePath('scrapyard_pdf.db');
 
     return await openDatabase(
       path,
@@ -113,10 +112,5 @@ class PDFDocumentRepository {
         whereArgs: [documentId],
       );
     });
-  }
-
-  Future<void> exportPdfWithAnnotations(String documentId, String outPath) async {
-    // Placeholder: Need a native PDF manipulation library to truly flatten custom annotations.
-    // For now, this is a mocked endpoint.
   }
 }

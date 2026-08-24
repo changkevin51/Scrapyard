@@ -23,10 +23,10 @@ fun putEnv(key: String, value: String) {
     }
 }
 
-val kotoRepoRoot = settings.rootDir.parentFile
+val repoRoot = settings.rootDir.parentFile
 // Keep app.zip in sync with python/mathreader_app/*.py without re-pip.
-val pythonAppDir = File(kotoRepoRoot, "build/python-app")
-val pythonSrcDir = File(kotoRepoRoot, "python/mathreader_app")
+val pythonAppDir = File(repoRoot, "build/python-app")
+val pythonSrcDir = File(repoRoot, "python/mathreader_app")
 if (pythonAppDir.isDirectory && pythonSrcDir.isDirectory) {
     listOf("main.py", "mathreader_tflite.py").forEach { name ->
         val src = File(pythonSrcDir, name)
@@ -36,9 +36,9 @@ if (pythonAppDir.isDirectory && pythonSrcDir.isDirectory) {
 putEnv("SERIOUS_PYTHON_VERSION", "3.12")
 putEnv(
     "SERIOUS_PYTHON_SITE_PACKAGES",
-    File(kotoRepoRoot, "build/site-packages").absolutePath,
+    File(repoRoot, "build/site-packages").absolutePath,
 )
-putEnv("SERIOUS_PYTHON_APP", File(kotoRepoRoot, "build/python-app").absolutePath)
+putEnv("SERIOUS_PYTHON_APP", File(repoRoot, "build/python-app").absolutePath)
 putEnv("SERIOUS_PYTHON_ANDROID_EXTRACT_PACKAGES", "mathreader")
 putEnv("SERIOUS_PYTHON_BUNDLE_ID", "dev.changkevin.scrapyard")
 

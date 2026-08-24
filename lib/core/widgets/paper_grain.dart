@@ -120,29 +120,3 @@ class _TiledGrainPainter extends CustomPainter {
   bool shouldRepaint(covariant _TiledGrainPainter oldDelegate) =>
       oldDelegate.tile != tile;
 }
-
-/// Convenience wrapper that paints [child] over a grain layer.
-class PaperGrainBackdrop extends StatelessWidget {
-  final Widget child;
-  final double opacity;
-  final Color? color;
-
-  const PaperGrainBackdrop({
-    super.key,
-    required this.child,
-    this.opacity = 0.035,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        ColoredBox(color: color ?? ScrapTheme.background),
-        PaperGrain(opacity: opacity),
-        child,
-      ],
-    );
-  }
-}

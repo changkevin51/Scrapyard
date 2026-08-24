@@ -1,25 +1,19 @@
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+import '../../../core/data/local_database.dart';
 import '../domain/models/stroke.dart';
 import '../domain/models/canvas_text_item.dart';
 import '../domain/models/canvas_smart_models.dart';
 
 Future<Database>? _strokesDbFuture;
 
-/// Single connection to `koto_strokes.db` for ink, text, tables, and settings.
+/// Single connection to `scrapyard_strokes.db` for ink, text, tables, and settings.
 Future<Database> openStrokesDatabase() {
   return _strokesDbFuture ??= _openStrokesDatabase();
 }
 
 Future<Database> _openStrokesDatabase() async {
-  final String path;
-  if (kIsWeb) {
-    path = 'koto_strokes.db';
-  } else {
-    final dbPath = await getDatabasesPath();
-    path = join(dbPath, 'koto_strokes.db');
-  }
+  final path = await resolveLocalDatabasePath('scrapyard_strokes.db');
 
   return openDatabase(
     path,

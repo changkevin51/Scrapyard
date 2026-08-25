@@ -13,6 +13,7 @@ import '../../../ai_chat/presentation/widgets/chat_suggestion_chips.dart';
 import '../../../canvas/presentation/providers/canvas_providers.dart';
 import '../../../onboarding/presentation/providers/smelt_guide_provider.dart';
 import '../../../onboarding/presentation/smelt_guide_keys.dart';
+import '../../../feedback/presentation/widgets/feedback_dialog.dart';
 import '../../smelt_timing.dart';
 import '../../domain/models/smelt_response.dart';
 import '../../data/smelt_service.dart';
@@ -547,6 +548,27 @@ class SmeltPopupState extends ConsumerState<SmeltPopup>
                 onPressed: canTape
                     ? _tapeOntoScrap
                     : () => _shakeController.forward(from: 0),
+              ),
+            if (!live.isLoading && live.response != null)
+              PaperIconButton(
+                icon: Icons.flag_outlined,
+                tooltip: 'Report this reply',
+                size: 32,
+                iconSize: 18,
+                onPressed: () {
+                  final response = live.response!;
+                  final body = [
+                    if (response.answer.trim().isNotEmpty)
+                      'Answer:\n${response.answer.trim()}',
+                    if (response.steps.trim().isNotEmpty)
+                      'Steps:\n${response.steps.trim()}',
+                  ].join('\n\n');
+                  showReportAiContentDialog(
+                    context,
+                    source: 'Smelt',
+                    content: body,
+                  );
+                },
               ),
             if (!ref.watch(smeltGuideProvider).locksSmeltPopup)
               PaperIconButton(

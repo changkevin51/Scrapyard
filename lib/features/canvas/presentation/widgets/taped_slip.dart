@@ -220,15 +220,19 @@ class _TapedSlipOverlayState extends ConsumerState<TapedSlipOverlay> {
                 Positioned(
                   top: 2,
                   right: 2,
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (e) => _delete(e.pointer),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.close,
-                        size: 14,
-                        color: ScrapTheme.mutedText,
+                  child: Semantics(
+                    button: true,
+                    label: 'Delete taped slip',
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (e) => _delete(e.pointer),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close,
+                          size: 14,
+                          color: ScrapTheme.mutedText,
+                        ),
                       ),
                     ),
                   ),

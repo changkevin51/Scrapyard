@@ -410,21 +410,25 @@ class _CanvasTextStickerState extends ConsumerState<CanvasTextSticker>
                 top: 0,
                 right: 0,
                 child: TextFieldTapRegion(
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (_) => _delete(),
-                    child: Container(
-                      width: _handleSize,
-                      height: _handleSize,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: ScrapTheme.cardSurface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ScrapTheme.dividers),
-                        boxShadow: ScrapTheme.subtleShadow,
+                  child: Semantics(
+                    button: true,
+                    label: 'Delete text',
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (_) => _delete(),
+                      child: Container(
+                        width: _handleSize,
+                        height: _handleSize,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: ScrapTheme.cardSurface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: ScrapTheme.dividers),
+                          boxShadow: ScrapTheme.subtleShadow,
+                        ),
+                        child: const Icon(Icons.close,
+                            size: 14, color: ScrapTheme.secondaryText),
                       ),
-                      child: const Icon(Icons.close,
-                          size: 14, color: ScrapTheme.secondaryText),
                     ),
                   ),
                 ),

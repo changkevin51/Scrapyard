@@ -44,7 +44,17 @@ void selectInkColor(
   }
 }
 
-/// Colour dots — ink-well ring, no blur glow.
+/// Accessible name for a toolbar ink swatch.
+String inkColorLabel(Color color) {
+  final value = color.toARGB32();
+  if (value == inkBlack.toARGB32()) return 'Black ink';
+  if (value == inkBlue.toARGB32()) return 'Blue ink';
+  if (value == inkRed.toARGB32()) return 'Red ink';
+  if (value == inkMagenta.toARGB32()) return 'Magenta ink';
+  if (value == markYellow.toARGB32()) return 'Yellow mark';
+  if (value == markGreen.toARGB32()) return 'Green mark';
+  return 'Custom ink colour';
+}
 /// Palm rejection on: pen tap selects colour; finger tap opens picker.
 /// Palm rejection off: single tap selects; double tap opens picker.
 class InkColorDot extends ConsumerStatefulWidget {
@@ -111,7 +121,7 @@ class _InkColorDotState extends ConsumerState<InkColorDot> {
     final palmReject = ref.watch(stylusOnlyModeProvider);
 
     return Tooltip(
-      message: 'Ink colour',
+      message: inkColorLabel(widget.color),
       child: Listener(
         onPointerDown: (e) {
           _pointerKind = e.kind;

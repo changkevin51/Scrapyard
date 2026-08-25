@@ -15,15 +15,56 @@ import '../../../../core/widgets/scrap_tilt.dart';
 import '../../../../core/widgets/torn_edge_clipper.dart';
 import '../../data/feedback_service.dart';
 
-Future<bool?> showFeedbackDialog(BuildContext context) {
+Future<bool?> showFeedbackDialog(
+  BuildContext context, {
+  FeedbackKind? initialKind,
+  String? initialMessage,
+  String? reportedContent,
+}) {
   return showScrapDialog<bool>(
     context: context,
-    builder: (context) => const FeedbackDialog(),
+    builder: (context) => FeedbackDialog(
+      initialKind: initialKind,
+      initialMessage: initialMessage,
+      reportedContent: reportedContent,
+    ),
+  );
+}
+
+/// Opens the feedback form as an AI-output report. The model text is
+/// attached so the report is actionable; the user is told it will be sent.
+Future<bool?> showReportAiContentDialog(
+  BuildContext context, {
+  required String source,
+  required String content,
+}) {
+  final clipped = content.trim();
+  if (clipped.isEmpty) {
+    return showFeedbackDialog(
+      context,
+      initialKind: FeedbackKind.report,
+      initialMessage: 'Reporting $source output.',
+    );
+  }
+  return showFeedbackDialog(
+    context,
+    initialKind: FeedbackKind.report,
+    initialMessage: 'Reporting $source output.',
+    reportedContent: clipped,
   );
 }
 
 class FeedbackDialog extends StatefulWidget {
-  const FeedbackDialog({super.key});
+  final FeedbackKind? initialKind;
+  final String? initialMessage;
+  final String? reportedContent;
+
+  const FeedbackDialog({
+    super.key,
+    this.initialKind,
+    this.initialMessage,
+    this.reportedContent,
+  });
 
   @override
   State<FeedbackDialog> createState() => _FeedbackDialogState();
@@ -33,16 +74,25 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
   final _service = FeedbackService();
   late final TextEditingController _message;
   late final TextEditingController _email;
-  FeedbackKind _kind = FeedbackKind.idea;
+  late FeedbackKind _kind;
   bool _sending = false;
   bool _sent = false;
   FeedbackResult? _error;
   Timer? _closeTimer;
 
+  static const _chipKinds = [
+    FeedbackKind.bug,
+    FeedbackKind.idea,
+    FeedbackKind.other,
+  ];
+
+  bool get _isReport => _kind == FeedbackKind.report;
+
   @override
   void initState() {
     super.initState();
-    _message = TextEditingController();
+    _kind = widget.initialKind ?? FeedbackKind.idea;
+    _message = TextEditingController(text: widget.initialMessage ?? '');
     _email = TextEditingController();
     _message.addListener(() {
       if (_error != null) {
@@ -83,6 +133,7 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
       kind: _kind,
       message: _message.text,
       email: _email.text,
+      reportedContent: widget.reportedContent,
     );
 
     if (!mounted) return;
@@ -145,38 +196,65 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
         const TapeStrip(label: '⟨ beta ⟩'),
         const SizedBox(height: 8),
         Text(
-          'Send a scrap of feedback',
+          _isReport
+              ? 'Flag this reply'
+              : 'Send a scrap of feedback',
           style: ScrapTextStyles.heading.copyWith(fontSize: 22),
         ),
         const SizedBox(height: 8),
         Text(
-          'Bugs, ideas, or whatever is stuck. We read every scrap.',
+          _isReport
+              ? 'Tell us what was wrong. The model output will be sent with this report so we can look at it.'
+              : 'Bugs, ideas, or whatever is stuck. We read every scrap.',
           style: ScrapTextStyles.caption.copyWith(
             color: ScrapTheme.secondaryText,
           ),
         ),
         const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final kind in FeedbackKind.values)
-              _KindChip(
-                label: kind.label,
-                selected: _kind == kind,
-                onTap: _sending
-                    ? null
-                    : () {
-                        ScrapFeedback.tap();
-                        setState(() {
-                          _kind = kind;
-                          _error = null;
-                        });
-                      },
+        if (!_isReport)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final kind in _chipKinds)
+                _KindChip(
+                  label: kind.label,
+                  selected: _kind == kind,
+                  onTap: _sending
+                      ? null
+                      : () {
+                          ScrapFeedback.tap();
+                          setState(() {
+                            _kind = kind;
+                            _error = null;
+                          });
+                        },
+                ),
+            ],
+          ),
+        if (!_isReport) const SizedBox(height: 14),
+        if (_isReport && (widget.reportedContent ?? '').trim().isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: ScrapTheme.background,
+              borderRadius:
+                  BorderRadius.circular(ScrapTheme.borderRadiusDefault),
+              border: Border.all(color: ScrapTheme.dividers),
+            ),
+            child: Text(
+              widget.reportedContent!.trim(),
+              maxLines: 6,
+              overflow: TextOverflow.ellipsis,
+              style: ScrapTextStyles.caption.copyWith(
+                color: ScrapTheme.secondaryText,
+                fontSize: 12,
               ),
-          ],
-        ),
-        const SizedBox(height: 14),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         TextField(
           controller: _message,
           enabled: !_sending,
@@ -186,7 +264,9 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
           textCapitalization: TextCapitalization.sentences,
           style: ScrapTextStyles.body.copyWith(fontSize: 15),
           decoration: _fieldDecoration(
-            hint: "What's working? What's stuck?",
+            hint: _isReport
+                ? 'What was wrong with this reply?'
+                : "What's working? What's stuck?",
           ).copyWith(
             counterText: '',
           ),
@@ -229,7 +309,9 @@ class _FeedbackDialogState extends State<FeedbackDialog> {
         ),
         const SizedBox(height: 12),
         Text(
-          'Sending posts this message, the kind you picked, optional email, and app/device info. Notes and your Gemini key stay on this device.',
+          _isReport
+              ? 'Sending posts this note, the flagged model output, optional email, and app/device info. Notes and your Gemini key stay on this device.'
+              : 'Sending posts this message, the kind you picked, optional email, and app/device info. Notes and your Gemini key stay on this device.',
           style: ScrapTextStyles.caption.copyWith(
             color: ScrapTheme.mutedText,
             fontSize: 12,

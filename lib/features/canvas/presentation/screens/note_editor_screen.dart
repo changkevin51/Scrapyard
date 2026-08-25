@@ -173,7 +173,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     _horizontalScrollController.dispose();
     _smeltPopupEntry?.remove();
     _inkCalcPopupEntry?.remove();
+    unawaited(ref.read(canvasRepositoryProvider).flush());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_refSafe) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(ref.read(canvasRepositoryProvider).flush());
+    }
   }
 
   @override
@@ -1539,13 +1550,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         bytes,
         targetWidth: targetW,
       );
-      final frame = await codec.getNextFrame();
-      final compressed = await frame.image.toByteData(
-        format: ui.ImageByteFormat.png,
-      );
-      frame.image.dispose();
-      if (compressed != null) {
-        bytes = compressed.buffer.asUint8List();
+      try {
+        final frame = await codec.getNextFrame();
+        final compressed = await frame.image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        frame.image.dispose();
+        if (compressed != null) {
+          bytes = compressed.buffer.asUint8List();
+        }
+      } finally {
+        codec.dispose();
       }
       if (logTiming) {
         SmeltTiming.step('capture_local_compress_done', extra: {
@@ -1580,6 +1595,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       math.min(crop.width, full.width - crop.left).roundToDouble(),
       math.min(crop.height, full.height - crop.top).roundToDouble(),
     );
+    ui.Picture? picture;
     try {
       if (clamped.width < 1 || clamped.height < 1) {
         throw StateError('empty crop');
@@ -1591,9 +1607,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         Rect.fromLTWH(0, 0, clamped.width, clamped.height),
         ui.Paint(),
       );
-      final picture = recorder.endRecording();
-      return picture.toImage(clamped.width.round(), clamped.height.round());
+      picture = recorder.endRecording();
+      return await picture.toImage(
+        clamped.width.round(),
+        clamped.height.round(),
+      );
     } finally {
+      picture?.dispose();
       full.dispose();
     }
   }

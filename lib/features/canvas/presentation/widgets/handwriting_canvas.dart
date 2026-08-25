@@ -46,6 +46,7 @@ class _StrokeCache {
     final canvas =
         Canvas(recorder, Rect.fromLTWH(0, 0, size.width, size.height));
     drawFn(canvas, size);
+    picture?.dispose();
     picture = recorder.endRecording();
     _strokes = strokes;
     _size = size;
@@ -53,9 +54,12 @@ class _StrokeCache {
   }
 
   void invalidate() {
+    picture?.dispose();
     picture = null;
     _strokes = null;
   }
+
+  void dispose() => invalidate();
 }
 
 /// World-space overscan picture cache for infinite canvas.
@@ -101,6 +105,7 @@ class _InfinitePictureCache {
     // Draw in world coords relative to buffer origin for a compact picture.
     canvas.translate(-buffer.left, -buffer.top);
     drawFn(canvas, buffer);
+    picture?.dispose();
     picture = recorder.endRecording();
     _strokes = strokes;
     bufferedWorld = buffer;
@@ -108,11 +113,14 @@ class _InfinitePictureCache {
   }
 
   void invalidate() {
+    picture?.dispose();
     picture = null;
     _strokes = null;
     bufferedWorld = null;
     lodTier = null;
   }
+
+  void dispose() => invalidate();
 
   void draw(Canvas canvas, CanvasViewport vp) {
     final pic = picture;
@@ -1202,6 +1210,10 @@ class _HandwritingCanvasState extends ConsumerState<HandwritingCanvas>
     _toolBeforeSPenEraser = null;
     _repaintTick.dispose();
     _panFling.dispose();
+    _hlCache.dispose();
+    _inkCache.dispose();
+    _infiniteHlCache.dispose();
+    _infiniteInkCache.dispose();
     super.dispose();
   }
 

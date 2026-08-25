@@ -798,7 +798,11 @@ class _CanvasSettingsSheet extends ConsumerWidget {
                         ref,
                         context,
                         ocrTexts: texts,
-                        ocrStrokeIds: const [],
+                        ocrStrokeIds: ref
+                            .read(strokesProvider)
+                            .where((s) => !s.isHidden)
+                            .map((s) => s.id)
+                            .toList(),
                       );
                     },
                     child: _chip('HANDWRITING → TEXT', false),

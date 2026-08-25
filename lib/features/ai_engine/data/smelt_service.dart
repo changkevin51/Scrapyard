@@ -346,6 +346,7 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
         'temperature': 0.3,
         'maxOutputTokens': 2048,
       },
+      'safetySettings': GeminiApi.safetySettings,
     };
 
     // Send request and stream the response body chunks
@@ -390,6 +391,11 @@ After any tool use, you MUST respond with ONLY a JSON object in this exact forma
       final responseBody = accumulated.toString();
       final data = jsonDecode(responseBody);
       SmeltTiming.step('http_json_decoded', extra: {'model': model});
+      if (data is Map<String, dynamic>) {
+        GeminiApi.throwIfSafetyBlocked(data);
+      } else if (data is Map) {
+        GeminiApi.throwIfSafetyBlocked(Map<String, dynamic>.from(data));
+      }
       final candidates = data['candidates'] as List?;
       if (candidates == null || candidates.isEmpty) {
         throw Exception('No response from Gemini');

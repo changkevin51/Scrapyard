@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/scrapyard_theme.dart';
@@ -53,12 +55,18 @@ class CanvasTableOverlay extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () {
-                        ref.read(canvasTablesProvider.notifier).remove(table.id);
-                      },
-                      child: const Icon(Icons.close,
-                          size: 14, color: ScrapTheme.mutedText),
+                    Semantics(
+                      button: true,
+                      label: 'Delete table',
+                      child: GestureDetector(
+                        onTap: () {
+                          ref
+                              .read(canvasTablesProvider.notifier)
+                              .remove(table.id);
+                        },
+                        child: const Icon(Icons.close,
+                            size: 14, color: ScrapTheme.mutedText),
+                      ),
                     ),
                   ],
                 ),
@@ -79,34 +87,84 @@ class CanvasTableOverlay extends ConsumerWidget {
   }
 }
 
-class _TableCell extends ConsumerWidget {
+class _TableCell extends ConsumerStatefulWidget {
   final CanvasTable table;
   final int row, col;
 
   const _TableCell({required this.table, required this.row, required this.col});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TableCell> createState() => _TableCellState();
+}
+
+class _TableCellState extends ConsumerState<_TableCell> {
+  late final TextEditingController _controller;
+  late final FocusNode _focus;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.table.cells[widget.row][widget.col],
+    );
+    _focus = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TableCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final next = widget.table.cells[widget.row][widget.col];
+    if (next != _controller.text && !_focus.hasFocus) {
+      _controller.value = TextEditingValue(
+        text: next,
+        selection: TextSelection.collapsed(offset: next.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _persist(String val) {
+    ref.read(canvasTablesProvider.notifier).upsert(
+          widget.table.copyWithCell(widget.row, widget.col, val),
+        );
+  }
+
+  void _onChanged(String val) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      _persist(val);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: table.cellWidth,
-      height: table.cellHeight,
+      width: widget.table.cellWidth,
+      height: widget.table.cellHeight,
       decoration: BoxDecoration(
         border: Border(
-          right: col < table.cols - 1
+          right: widget.col < widget.table.cols - 1
               ? const BorderSide(color: ScrapTheme.dividers)
               : BorderSide.none,
-          bottom: row < table.rows - 1
+          bottom: widget.row < widget.table.rows - 1
               ? const BorderSide(color: ScrapTheme.dividers)
               : BorderSide.none,
         ),
       ),
       child: TextField(
-        controller: TextEditingController(text: table.cells[row][col]),
-        onChanged: (val) {
-          ref.read(canvasTablesProvider.notifier).upsert(
-                table.copyWithCell(row, col, val),
-              );
-        },
+        controller: _controller,
+        focusNode: _focus,
+        onChanged: _onChanged,
+        onEditingComplete: () => _persist(_controller.text),
         style: ScrapTextStyles.body.copyWith(fontSize: 13),
         decoration: const InputDecoration(
           border: InputBorder.none,
@@ -153,26 +211,30 @@ class CanvasSmartBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final open = ref.watch(chatPanelOpenProvider);
-    return GestureDetector(
-      onTap: () {
-        ref.read(chatPanelOpenProvider.notifier).state = !open;
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: open ? ScrapTheme.accent : ScrapTheme.cardSurface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ScrapTheme.dividers),
-          boxShadow: ScrapTheme.subtleShadow,
-        ),
-        child: Center(
-          child: Text(
-            '✦',
-            style: ScrapTextStyles.body.copyWith(
-              fontSize: 18,
-              color: open ? Colors.white : ScrapTheme.accent,
+    return Semantics(
+      button: true,
+      label: open ? 'Close Ask' : 'Ask',
+      child: GestureDetector(
+        onTap: () {
+          ref.read(chatPanelOpenProvider.notifier).state = !open;
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: open ? ScrapTheme.accent : ScrapTheme.cardSurface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: ScrapTheme.dividers),
+            boxShadow: ScrapTheme.subtleShadow,
+          ),
+          child: Center(
+            child: Text(
+              '✦',
+              style: ScrapTextStyles.body.copyWith(
+                fontSize: 18,
+                color: open ? Colors.white : ScrapTheme.accent,
+              ),
             ),
           ),
         ),
@@ -251,6 +313,7 @@ class _InsertTableDialogState extends ConsumerState<InsertTableDialog> {
         Text(label, style: ScrapTextStyles.body),
         Row(children: [
           IconButton(
+            tooltip: 'Fewer $label',
             icon: const Icon(Icons.remove_circle_outline, size: 22),
             color: value > min ? ScrapTheme.accent : ScrapTheme.dividers,
             onPressed: value > min ? () => onChange(value - 1) : null,
@@ -263,6 +326,7 @@ class _InsertTableDialogState extends ConsumerState<InsertTableDialog> {
                     .copyWith(fontWeight: FontWeight.w600)),
           ),
           IconButton(
+            tooltip: 'More $label',
             icon: const Icon(Icons.add_circle_outline, size: 22),
             color: value < max ? ScrapTheme.accent : ScrapTheme.dividers,
             onPressed: value < max ? () => onChange(value + 1) : null,

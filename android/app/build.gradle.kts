@@ -72,6 +72,8 @@ android {
 
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
@@ -83,6 +85,23 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    // Inspect the task Flutter asked for, not the whole graph. APK builds
+    // (`assembleRelease`) pull in many `bundle*Release` helper tasks.
+    val requestedPlayBundle = gradle.startParameter.taskNames.any { raw ->
+        val name = raw.substringAfterLast(':')
+        name == "bundleRelease" || name.endsWith("BundleRelease")
+    }
+    if (requestedPlayBundle && !keystorePropertiesFile.exists()) {
+        throw GradleException(
+            "Play App Bundles must be signed with the upload keystore. " +
+                "Copy android/key.properties.example to android/key.properties " +
+                "and point storeFile at your .jks. Debug signing is only allowed " +
+                "for `flutter run --release`.",
+        )
     }
 }
 

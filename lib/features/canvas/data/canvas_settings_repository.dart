@@ -60,7 +60,7 @@ class CanvasSettingsRepository {
   );
 
   /// Shared DB schema version (must match [StrokeRepository.dbVersion]).
-  static const int dbVersion = 6;
+  static const int dbVersion = 7;
 
   Future<Database> get database => openStrokesDatabase();
 

@@ -1,7 +1,13 @@
 # Copy to android/key.properties (gitignored) and fill in your upload keystore.
-# Generate once, then back up the .jks off this machine:
+# Generate once, then back up the .jks AND this file off this machine:
 #   keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# storeFile is resolved from android/app/, so a keystore sitting in android/ is:
+#   storeFile=../upload-keystore.jks
+#
+# `flutter build appbundle` refuses to run without this file.
+# `flutter run --release` may still fall back to the debug key for local testing.
 storePassword=
 keyPassword=
 keyAlias=upload
-storeFile=upload-keystore.jks
+storeFile=../upload-keystore.jks

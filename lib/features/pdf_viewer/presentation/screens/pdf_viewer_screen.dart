@@ -266,21 +266,25 @@ class _PdfViewerScreenState extends ConsumerState<PdfViewerScreen>
         ),
         iconTheme: const IconThemeData(color: ScrapTheme.primaryText),
         actions: [
-          ScrapPressable(
-            scale: 0.9,
-            onTap: () {
-              ScrapFeedback.tap();
-              ref.read(isSplitScreenProvider.notifier).state = !isSplitScreen;
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Icon(
-                isSplitScreen
-                    ? Icons.vertical_split
-                    : Icons.vertical_split_outlined,
-                color: isSplitScreen
-                    ? ScrapTheme.accent
-                    : ScrapTheme.secondaryText,
+          Semantics(
+            button: true,
+            label: isSplitScreen ? 'Hide split scrap' : 'Show split scrap',
+            child: ScrapPressable(
+              scale: 0.9,
+              onTap: () {
+                ScrapFeedback.tap();
+                ref.read(isSplitScreenProvider.notifier).state = !isSplitScreen;
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Icon(
+                  isSplitScreen
+                      ? Icons.vertical_split
+                      : Icons.vertical_split_outlined,
+                  color: isSplitScreen
+                      ? ScrapTheme.accent
+                      : ScrapTheme.secondaryText,
+                ),
               ),
             ),
           ),

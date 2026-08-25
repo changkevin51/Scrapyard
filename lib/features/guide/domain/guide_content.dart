@@ -65,7 +65,7 @@ class GuideSection {
         title: 'Tape it onto the scrap',
         stamp: '⟨ taped ⟩',
         body:
-            'On a finished Smelt card, tap the paste icon to tape a kraft slip onto the page. The answer and steps stays with the note. You can drag it or delete it later. Tapes are saved on the scrap even when you close it.',
+            'On a finished Smelt card, tap the paste icon to tape a kraft slip onto the page. The answer and steps stay with the note. You can drag it or delete it later. Tapes are saved on the scrap even when you close it.',
       ),
       GuideTip(
         icon: Icons.swap_horiz,

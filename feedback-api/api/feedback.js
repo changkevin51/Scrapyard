@@ -7,7 +7,8 @@ const CORS = {
 };
 
 const MAX_MESSAGE = 4000;
-const KINDS = new Set(['bug', 'idea', 'other']);
+const KINDS = new Set(['bug', 'idea', 'other', 'report']);
+const MAX_REPORTED = 4000;
 const TO = 'changkevin51@gmail.com';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -95,6 +96,9 @@ export default async function handler(req, res) {
   const version = sanitizeLine(body.version, 32) || 'unknown';
   const platform = sanitizeLine(body.platform, 64) || 'unknown';
   const kindLabel = kind.charAt(0).toUpperCase() + kind.slice(1);
+  const reportedRaw =
+    typeof body.reportedContent === 'string' ? body.reportedContent.trim() : '';
+  const reported = reportedRaw.slice(0, MAX_REPORTED);
 
   const text = [
     `Kind: ${kindLabel}`,
@@ -103,7 +107,8 @@ export default async function handler(req, res) {
     replyTo ? `Reply-to: ${replyTo}` : 'Reply-to: (none)',
     '',
     message,
-  ].join('\n');
+    reported ? `\n--- Reported AI output ---\n${reported}` : '',
+  ].filter(Boolean).join('\n');
 
   try {
     const resend = new Resend(apiKey);

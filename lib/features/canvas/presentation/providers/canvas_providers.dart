@@ -292,7 +292,9 @@ class DefaultPageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
   final CanvasSettingsRepository _repo;
 
   Future<void> _load() async {
-    state = await _repo.loadDefaultPageConfig();
+    final config = await _repo.loadDefaultPageConfig();
+    if (!mounted) return;
+    state = config;
   }
 
   Future<void> set(PageCanvasConfig config) async {
@@ -396,12 +398,14 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
     if (!_ephemeral) _onContentChanged?.call(_noteId);
   }
 
+  void _touch() => _mutatedSinceLoad = true;
+
   Future<void> _load() async {
     final gen = ++_loadGen;
     _history?.ignoreChanges = true;
     try {
       final loaded = await _repository.loadTextNodes(_noteId);
-      if (gen != _loadGen) return;
+      if (!mounted || gen != _loadGen) return;
       if (_mutatedSinceLoad) {
         final existingIds = {for (final n in state) n.id};
         state = [
@@ -414,11 +418,12 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
     } catch (e) {
       debugPrint('load text nodes failed: $e');
     } finally {
-      if (gen == _loadGen) _history?.ignoreChanges = false;
+      if (mounted && gen == _loadGen) _history?.ignoreChanges = false;
     }
   }
 
   void restore(List<CanvasTextItem> items) {
+    _touch();
     state = List.from(items);
     if (!_ephemeral) {
       _repository.replaceTextNodes(_noteId, items);
@@ -442,6 +447,7 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
       add(item);
       return;
     }
+    _touch();
     _history?.ignoreChanges = true;
     final next = List<CanvasTextItem>.from(state);
     next[idx] = item;
@@ -459,6 +465,7 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
 
   void updateMany(List<CanvasTextItem> updates) {
     if (updates.isEmpty) return;
+    _touch();
     final map = {for (final u in updates) u.id: u};
     state = [for (final n in state) map[n.id] ?? n];
     if (!_ephemeral) {
@@ -473,6 +480,7 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   }
 
   void replaceAll(List<CanvasTextItem> items) {
+    _touch();
     state = List<CanvasTextItem>.from(items);
     if (!_ephemeral) {
       _repository.saveTextNodes(_noteId, items);
@@ -483,6 +491,7 @@ class TextNodesNotifier extends StateNotifier<List<CanvasTextItem>> {
   void deleteIds(Iterable<String> ids) {
     final idSet = ids.toSet();
     if (idSet.isEmpty) return;
+    _touch();
     state = state.where((n) => !idSet.contains(n.id)).toList();
     if (!_ephemeral) {
       _repository.deleteTextNodes(idSet.toList());
@@ -569,12 +578,14 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
     if (!_ephemeral) _onContentChanged?.call(_noteId);
   }
 
+  void _touch() => _mutatedSinceLoad = true;
+
   Future<void> _load() async {
     final gen = ++_loadGen;
     _history?.ignoreChanges = true;
     try {
       final loaded = await _repository.loadTables(_noteId);
-      if (gen != _loadGen) return;
+      if (!mounted || gen != _loadGen) return;
       if (_mutatedSinceLoad) {
         final existingIds = {for (final t in state) t.id};
         state = [
@@ -587,7 +598,7 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
     } catch (e) {
       debugPrint('load tables failed: $e');
     } finally {
-      if (gen == _loadGen) _history?.ignoreChanges = false;
+      if (mounted && gen == _loadGen) _history?.ignoreChanges = false;
     }
   }
 
@@ -606,6 +617,7 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
       add(table);
       return;
     }
+    _touch();
     if (!checkpoint) _history?.ignoreChanges = true;
     final next = List<CanvasTable>.from(state);
     next[idx] = table;
@@ -618,6 +630,7 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
   }
 
   void remove(String id) {
+    _touch();
     state = state.where((t) => t.id != id).toList();
     if (!_ephemeral) {
       _repository.deleteTables([id]);
@@ -626,6 +639,7 @@ class CanvasTablesNotifier extends StateNotifier<List<CanvasTable>> {
   }
 
   void restore(List<CanvasTable> tables) {
+    _touch();
     state = List.from(tables);
     if (!_ephemeral) {
       _repository.replaceTables(_noteId, tables);
@@ -663,6 +677,8 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     if (!_ephemeral) _onContentChanged?.call(_noteId);
   }
 
+  void _touch() => _mutatedSinceLoad = true;
+
   void _beginSilent() => _history?.ignoreChanges = true;
   void _endSilent() => _history?.ignoreChanges = false;
 
@@ -671,7 +687,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     _beginSilent();
     try {
       final loaded = await _repository.loadStrokes(_noteId);
-      if (gen != _loadGen) return;
+      if (!mounted || gen != _loadGen) return;
       if (_mutatedSinceLoad) {
         final existingIds = {for (final s in state) s.id};
         state = [
@@ -684,11 +700,12 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     } catch (e) {
       debugPrint('load strokes failed: $e');
     } finally {
-      if (gen == _loadGen) _endSilent();
+      if (mounted && gen == _loadGen) _endSilent();
     }
   }
 
   void restore(List<Stroke> strokes) {
+    _touch();
     state = List.from(strokes);
     if (!_ephemeral) {
       _repository.replaceStrokes(_noteId, strokes);
@@ -716,12 +733,14 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
 
   /// Replace a stroke in-place (e.g. after shape snapping)
   void replaceStroke(Stroke updated) {
+    _touch();
     state = state.map((s) => s.id == updated.id ? updated : s).toList();
   }
 
   /// Hide strokes by id (e.g. after OCR → text node conversion)
   void hideStrokes(List<String> ids, {bool pushUndo = true}) {
     if (ids.isEmpty) return;
+    _touch();
     if (!pushUndo) _beginSilent();
     final idSet = ids.toSet();
     final updated = <Stroke>[];
@@ -741,6 +760,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   void updateStrokes(List<Stroke> updatedStrokes, {bool pushUndo = true}) {
     if (updatedStrokes.isEmpty) return;
 
+    _touch();
     if (!pushUndo) _beginSilent();
     state = state.map((stroke) {
       final replacement = updatedStrokes.where((updated) => updated.id == stroke.id).toList();
@@ -757,6 +777,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
   void deleteStrokes(List<String> ids, {bool pushUndo = true}) {
     if (ids.isEmpty) return;
 
+    _touch();
     if (!pushUndo) _beginSilent();
     state = state.where((stroke) => !ids.contains(stroke.id)).toList();
     if (!_ephemeral) {
@@ -781,6 +802,7 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
         additions.isEmpty) {
       return;
     }
+    _touch();
     if (!pushUndo) _beginSilent();
     final hideSet = hideIds.toSet();
     final deleteSet = deleteIds.toSet();
@@ -808,15 +830,12 @@ class StrokesNotifier extends StateNotifier<List<Stroke>> {
     state = next;
 
     if (!_ephemeral) {
-      if (persistedUpdates.isNotEmpty) {
-        _repository.updateStrokes(_noteId, persistedUpdates);
-      }
-      if (additions.isNotEmpty) {
-        _repository.saveStrokes(_noteId, additions);
-      }
-      if (deleteIds.isNotEmpty) {
-        _repository.deleteStrokes(deleteIds);
-      }
+      _repository.applyEraserPersist(
+        noteId: _noteId,
+        updates: persistedUpdates,
+        additions: additions,
+        deleteIds: deleteIds,
+      );
       if (persistedUpdates.isNotEmpty ||
           additions.isNotEmpty ||
           deleteIds.isNotEmpty) {
@@ -1092,6 +1111,10 @@ final canvasHistoryCoordinatorProvider = Provider<void>((ref) {
         tables: List.from(ref.read(canvasTablesProvider)),
       ),
     );
+    final prune = hist.hiddenIdsSafeToPrune(next);
+    if (prune.isNotEmpty) {
+      ref.read(strokesProvider.notifier).deleteStrokes(prune, pushUndo: false);
+    }
   });
   ref.listen<List<CanvasTextItem>>(canvasTextNodesProvider, (prev, next) {
     if (prev == null || hist.suppressPush) return;

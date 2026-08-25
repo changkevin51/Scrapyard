@@ -590,23 +590,27 @@ class _AiChatPanelState extends ConsumerState<AiChatPanel>
                   ),
                 ),
                 const SizedBox(width: 8),
-                ScrapPressable(
-                  scale: 0.9,
-                  onTap: isStreaming
-                      ? () => ref.read(activeChatProvider.notifier).stop()
-                      : () => _send(),
-                  child: AnimatedContainer(
-                    duration: ScrapMotion.fast,
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: ScrapTheme.accent,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
-                      color: Colors.white,
-                      size: 20,
+                Semantics(
+                  button: true,
+                  label: isStreaming ? 'Stop generating' : 'Send',
+                  child: ScrapPressable(
+                    scale: 0.9,
+                    onTap: isStreaming
+                        ? () => ref.read(activeChatProvider.notifier).stop()
+                        : () => _send(),
+                    child: AnimatedContainer(
+                      duration: ScrapMotion.fast,
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: ScrapTheme.accent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        isStreaming ? Icons.stop_rounded : Icons.arrow_upward,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
@@ -648,17 +652,21 @@ class _AttachmentChip extends StatelessWidget {
         Positioned(
           top: -6,
           right: -6,
-          child: GestureDetector(
-            onTap: onClear,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: ScrapTheme.secondaryText,
-                shape: BoxShape.circle,
-                border: Border.all(color: ScrapTheme.cardSurface, width: 1.5),
+          child: Semantics(
+            button: true,
+            label: 'Remove attachment',
+            child: GestureDetector(
+              onTap: onClear,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: ScrapTheme.secondaryText,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ScrapTheme.cardSurface, width: 1.5),
+                ),
+                child: const Icon(Icons.close, size: 12, color: Colors.white),
               ),
-              child: const Icon(Icons.close, size: 12, color: Colors.white),
             ),
           ),
         ),

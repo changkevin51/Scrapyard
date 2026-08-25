@@ -18,7 +18,7 @@ class HomeRepository {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $_tableName (
@@ -32,6 +32,9 @@ class HomeRepository {
             starred INTEGER NOT NULL DEFAULT 0
           )
         ''');
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_home_nodes_parent_deleted ON $_tableName(parent_id, deleted_at)',
+        );
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -42,6 +45,11 @@ class HomeRepository {
         if (oldVersion < 3) {
           await db.execute(
             'ALTER TABLE $_tableName ADD COLUMN starred INTEGER NOT NULL DEFAULT 0',
+          );
+        }
+        if (oldVersion < 4) {
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_home_nodes_parent_deleted ON $_tableName(parent_id, deleted_at)',
           );
         }
       },

@@ -14,7 +14,7 @@ const kFeedbackAppVersion = '1.0.0';
 const kFeedbackMinMessageLength = 8;
 const kFeedbackMaxMessageLength = 4000;
 
-enum FeedbackKind { bug, idea, other }
+enum FeedbackKind { bug, idea, other, report }
 
 extension FeedbackKindLabel on FeedbackKind {
   String get id => name;
@@ -23,6 +23,7 @@ extension FeedbackKindLabel on FeedbackKind {
         FeedbackKind.bug => 'Bug',
         FeedbackKind.idea => 'Idea',
         FeedbackKind.other => 'Other',
+        FeedbackKind.report => 'Report',
       };
 }
 
@@ -43,6 +44,7 @@ class FeedbackService {
     required FeedbackKind kind,
     required String message,
     String? email,
+    String? reportedContent,
   }) async {
     final trimmed = message.trim();
     if (trimmed.length < kFeedbackMinMessageLength) {
@@ -73,6 +75,8 @@ class FeedbackService {
       'platform': feedbackPlatformLabel(),
       'website': '',
       if (reply.isNotEmpty) 'email': reply,
+      if (reportedContent != null && reportedContent.trim().isNotEmpty)
+        'reportedContent': reportedContent.trim(),
     };
 
     try {

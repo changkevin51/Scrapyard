@@ -156,6 +156,7 @@ class _AnnotationToolbarState extends ConsumerState<AnnotationToolbar> {
               const SizedBox(width: 8),
               PaperIconButton(
                 icon: Icons.close,
+                tooltip: 'Collapse tools',
                 color: ScrapTheme.mutedText,
                 iconSize: 20,
                 onPressed: () {

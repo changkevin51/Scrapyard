@@ -23,6 +23,55 @@ class GeminiApi {
         'x-goog-api-key': apiKey,
       };
 
+  /// Block medium-and-above harm on the four standard Gemini categories.
+  static const List<Map<String, String>> safetySettings = [
+    {
+      'category': 'HARM_CATEGORY_HARASSMENT',
+      'threshold': 'BLOCK_MEDIUM_AND_ABOVE',
+    },
+    {
+      'category': 'HARM_CATEGORY_HATE_SPEECH',
+      'threshold': 'BLOCK_MEDIUM_AND_ABOVE',
+    },
+    {
+      'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+      'threshold': 'BLOCK_MEDIUM_AND_ABOVE',
+    },
+    {
+      'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+      'threshold': 'BLOCK_MEDIUM_AND_ABOVE',
+    },
+  ];
+
+  static const safetyBlockedMessage =
+      'Gemini blocked this reply for safety. Try a different selection, or report it if you think that was a mistake.';
+
+  /// Throws when Gemini refused the prompt or finished for a safety reason.
+  static void throwIfSafetyBlocked(Map<String, dynamic> data) {
+    final prompt = data['promptFeedback'];
+    if (prompt is Map) {
+      final reason = prompt['blockReason']?.toString();
+      if (reason != null &&
+          reason.isNotEmpty &&
+          reason != 'BLOCK_REASON_UNSPECIFIED') {
+        throw Exception('Gemini safety block: $reason');
+      }
+    }
+    final candidates = data['candidates'];
+    if (candidates is List && candidates.isNotEmpty) {
+      final candidate = candidates.first;
+      if (candidate is Map) {
+        final finish = candidate['finishReason']?.toString();
+        if (finish == 'SAFETY' ||
+            finish == 'PROHIBITED_CONTENT' ||
+            finish == 'BLOCKLIST' ||
+            finish == 'SPII') {
+          throw Exception('Gemini safety block: $finish');
+        }
+      }
+    }
+  }
+
   static FlutterSecureStorage secureStorage() => const FlutterSecureStorage(
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
         iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
@@ -52,6 +101,9 @@ class GeminiApi {
         lower.contains('connection refused') ||
         lower.contains('network is unreachable')) {
       return "Couldn't reach Gemini. Check your connection.";
+    }
+    if (lower.contains('safety block')) {
+      return safetyBlockedMessage;
     }
     if (lower.contains('parse')) {
       return "Couldn't read Gemini's reply. Try Smelt again.";

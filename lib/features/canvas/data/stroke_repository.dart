@@ -25,9 +25,27 @@ Future<Database> _openStrokesDatabase() async {
 
 class StrokeRepository {
   /// Shared schema version — keep in sync with [CanvasSettingsRepository.dbVersion].
-  static const int dbVersion = 6;
+  static const int dbVersion = 7;
+
+  final List<Future<void>> _inflight = [];
 
   Future<Database> get database => openStrokesDatabase();
+
+  Future<void> _enqueue(Future<void> Function() op) {
+    late final Future<void> future;
+    future = op().whenComplete(() {
+      _inflight.remove(future);
+    });
+    _inflight.add(future);
+    return future;
+  }
+
+  /// Wait for every in-flight write so a background kill does not drop ink.
+  Future<void> flush() async {
+    while (_inflight.isNotEmpty) {
+      await Future.wait(List<Future<void>>.from(_inflight));
+    }
+  }
 
   static Future<void> createDb(Database db, int version) async {
     await db.execute('''
@@ -41,6 +59,7 @@ class StrokeRepository {
     await _createNoteSettings(db);
     await _createTextNodes(db);
     await _createCanvasTables(db);
+    await _createNoteIdIndexes(db);
   }
 
   static Future<void> upgradeDb(
@@ -63,6 +82,21 @@ class StrokeRepository {
     if (oldVersion < 6) {
       await db.execute('DROP TABLE IF EXISTS canvas_stickers');
     }
+    if (oldVersion < 7) {
+      await _createNoteIdIndexes(db);
+    }
+  }
+
+  static Future<void> _createNoteIdIndexes(Database db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_strokes_note_id ON strokes(note_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_text_nodes_note_id ON text_nodes(note_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_canvas_tables_note_id ON canvas_tables(note_id)',
+    );
   }
 
   static Future<void> _createNoteSettings(Database db) async {
@@ -118,26 +152,28 @@ class StrokeRepository {
     ''');
   }
 
-  Future<void> saveStrokes(String noteId, List<Stroke> newStrokes) async {
-    if (newStrokes.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
+  Future<void> saveStrokes(String noteId, List<Stroke> newStrokes) {
+    if (newStrokes.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
+      final now = DateTime.now().millisecondsSinceEpoch;
 
-    for (final stroke in newStrokes) {
-      batch.insert(
-        'strokes',
-        {
-          'id': stroke.id,
-          'note_id': noteId,
-          'data': stroke.toJson(),
-          'created_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
+      for (final stroke in newStrokes) {
+        batch.insert(
+          'strokes',
+          {
+            'id': stroke.id,
+            'note_id': noteId,
+            'data': stroke.toJson(),
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
 
-    await batch.commit(noResult: true);
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<void> updateStrokes(String noteId, List<Stroke> updatedStrokes) async {
@@ -164,37 +200,77 @@ class StrokeRepository {
     return strokes;
   }
 
-  Future<void> deleteStrokes(List<String> strokeIds) async {
-    final db = await database;
-    final batch = db.batch();
-    for (final id in strokeIds) {
-      batch.delete(
-        'strokes',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
-    await batch.commit(noResult: true);
+  Future<void> deleteStrokes(List<String> strokeIds) {
+    if (strokeIds.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
+      for (final id in strokeIds) {
+        batch.delete(
+          'strokes',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
-  Future<void> saveTextNodes(String noteId, List<CanvasTextItem> nodes) async {
-    if (nodes.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
-    for (final node in nodes) {
-      batch.insert(
-        'text_nodes',
-        {
-          'id': node.id,
-          'note_id': noteId,
-          'data': node.toJson(),
-          'created_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+  /// Hide / rewrite / insert / delete eraser fragments in one transaction.
+  Future<void> applyEraserPersist({
+    required String noteId,
+    List<Stroke> updates = const [],
+    List<Stroke> additions = const [],
+    List<String> deleteIds = const [],
+  }) {
+    if (updates.isEmpty && additions.isEmpty && deleteIds.isEmpty) {
+      return Future.value();
     }
-    await batch.commit(noResult: true);
+    return _enqueue(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batch = txn.batch();
+        for (final stroke in [...updates, ...additions]) {
+          batch.insert(
+            'strokes',
+            {
+              'id': stroke.id,
+              'note_id': noteId,
+              'data': stroke.toJson(),
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        for (final id in deleteIds) {
+          batch.delete('strokes', where: 'id = ?', whereArgs: [id]);
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  Future<void> saveTextNodes(String noteId, List<CanvasTextItem> nodes) {
+    if (nodes.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final node in nodes) {
+        batch.insert(
+          'text_nodes',
+          {
+            'id': node.id,
+            'note_id': noteId,
+            'data': node.toJson(),
+            'created_at': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    });
   }
 
   Future<List<CanvasTextItem>> loadTextNodes(String noteId) async {
@@ -216,60 +292,88 @@ class StrokeRepository {
     return nodes;
   }
 
-  Future<void> deleteTextNodes(List<String> ids) async {
-    if (ids.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final id in ids) {
-      batch.delete(
-        'text_nodes',
-        where: 'id = ?',
-        whereArgs: [id],
-      );
-    }
-    await batch.commit(noResult: true);
-  }
-
-  Future<void> replaceStrokes(String noteId, List<Stroke> strokes) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
-      if (strokes.isEmpty) return;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final batch = txn.batch();
-      for (final stroke in strokes) {
-        batch.insert(
-          'strokes',
-          {
-            'id': stroke.id,
-            'note_id': noteId,
-            'data': stroke.toJson(),
-            'created_at': now,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
+  Future<void> deleteTextNodes(List<String> ids) {
+    if (ids.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
+      for (final id in ids) {
+        batch.delete(
+          'text_nodes',
+          where: 'id = ?',
+          whereArgs: [id],
         );
       }
       await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> replaceStrokes(String noteId, List<Stroke> strokes) {
+    return _enqueue(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
+        if (strokes.isEmpty) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batch = txn.batch();
+        for (final stroke in strokes) {
+          batch.insert(
+            'strokes',
+            {
+              'id': stroke.id,
+              'note_id': noteId,
+              'data': stroke.toJson(),
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
     });
   }
 
   Future<void> replaceTextNodes(
     String noteId,
     List<CanvasTextItem> nodes,
-  ) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
-      if (nodes.isEmpty) return;
+  ) {
+    return _enqueue(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
+        if (nodes.isEmpty) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batch = txn.batch();
+        for (final node in nodes) {
+          batch.insert(
+            'text_nodes',
+            {
+              'id': node.id,
+              'note_id': noteId,
+              'data': node.toJson(),
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
+  Future<void> saveTables(String noteId, List<CanvasTable> tables) {
+    if (tables.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
       final now = DateTime.now().millisecondsSinceEpoch;
-      final batch = txn.batch();
-      for (final node in nodes) {
+      for (final table in tables) {
         batch.insert(
-          'text_nodes',
+          'canvas_tables',
           {
-            'id': node.id,
+            'id': table.id,
             'note_id': noteId,
-            'data': node.toJson(),
+            'data': table.toJson(),
             'created_at': now,
           },
           conflictAlgorithm: ConflictAlgorithm.replace,
@@ -277,26 +381,6 @@ class StrokeRepository {
       }
       await batch.commit(noResult: true);
     });
-  }
-
-  Future<void> saveTables(String noteId, List<CanvasTable> tables) async {
-    if (tables.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
-    for (final table in tables) {
-      batch.insert(
-        'canvas_tables',
-        {
-          'id': table.id,
-          'note_id': noteId,
-          'data': table.toJson(),
-          'created_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
-    await batch.commit(noResult: true);
   }
 
   Future<List<CanvasTable>> loadTables(String noteId) async {
@@ -318,50 +402,56 @@ class StrokeRepository {
     return tables;
   }
 
-  Future<void> deleteTables(List<String> ids) async {
-    if (ids.isEmpty) return;
-    final db = await database;
-    final batch = db.batch();
-    for (final id in ids) {
-      batch.delete('canvas_tables', where: 'id = ?', whereArgs: [id]);
-    }
-    await batch.commit(noResult: true);
-  }
-
-  Future<void> replaceTables(String noteId, List<CanvasTable> tables) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn
-          .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
-      if (tables.isEmpty) return;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final batch = txn.batch();
-      for (final table in tables) {
-        batch.insert(
-          'canvas_tables',
-          {
-            'id': table.id,
-            'note_id': noteId,
-            'data': table.toJson(),
-            'created_at': now,
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+  Future<void> deleteTables(List<String> ids) {
+    if (ids.isEmpty) return Future.value();
+    return _enqueue(() async {
+      final db = await database;
+      final batch = db.batch();
+      for (final id in ids) {
+        batch.delete('canvas_tables', where: 'id = ?', whereArgs: [id]);
       }
       await batch.commit(noResult: true);
     });
   }
 
+  Future<void> replaceTables(String noteId, List<CanvasTable> tables) {
+    return _enqueue(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn
+            .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
+        if (tables.isEmpty) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batch = txn.batch();
+        for (final table in tables) {
+          batch.insert(
+            'canvas_tables',
+            {
+              'id': table.id,
+              'note_id': noteId,
+              'data': table.toJson(),
+              'created_at': now,
+            },
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
+    });
+  }
+
   /// Remove every canvas row for a scrap (used by discard and trash).
-  Future<void> deleteAllForNote(String noteId) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
-      await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
-      await txn
-          .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
-      await txn
-          .delete('note_settings', where: 'note_id = ?', whereArgs: [noteId]);
+  Future<void> deleteAllForNote(String noteId) {
+    return _enqueue(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.delete('strokes', where: 'note_id = ?', whereArgs: [noteId]);
+        await txn.delete('text_nodes', where: 'note_id = ?', whereArgs: [noteId]);
+        await txn
+            .delete('canvas_tables', where: 'note_id = ?', whereArgs: [noteId]);
+        await txn
+            .delete('note_settings', where: 'note_id = ?', whereArgs: [noteId]);
+      });
     });
   }
 }

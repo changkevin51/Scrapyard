@@ -27,6 +27,7 @@ Chat history and notes are stored in local databases. Android Auto Backup is dis
 1. **Your Gemini API key** is sent to Google (`generativelanguage.googleapis.com`) with the request so Gemini can authenticate you. The key is stored on-device; it is not kept by Scrapyard on a server.
 2. **Content you select or send** — circled handwriting (as an image), typed selection text, PDF page crops, chat messages, and previously attached chat images — is sent to Google Gemini so the model can reply.
 3. If you use Smelt’s optional **code execution**, problem text/images may be processed in Google’s code-execution sandbox.
+4. Requests include Gemini **safety settings** so Google can block replies that match harassment, hate, sexual, or dangerous-content categories. Blocked replies stay on your device as an error message.
 
 We do not send your scraps to our own servers. We cannot delete data Google has already received; see [Google’s Gemini API terms](https://ai.google.dev/gemini-api/terms) and Google’s privacy policy. Unpaid (free-tier) AI Studio keys are typically covered by Google’s unpaid-services terms, under which prompts may be used to improve Google products.
 
@@ -34,7 +35,7 @@ We do not send your scraps to our own servers. We cannot delete data Google has 
 
 **Beta feedback** (only if you tap Send on the in-app form):
 
-The message you typed, the kind you picked (Bug / Idea / Other), an optional reply email, and basic app/device metadata (app version and platform) are sent to a small Scrapyard function and emailed to the developer via Resend. This does not include your notes, PDFs, chats, or Gemini API key. You can close the form without sending anything.
+The message you typed, the kind you picked (Bug / Idea / Other / Report), an optional reply email, and basic app/device metadata (app version and platform) are sent to a small Scrapyard function and emailed to the developer via Resend. This does not include your notes, PDFs, chats, or Gemini API key, except when you use **Report** on a Smelt or Ask reply — then the flagged model output is attached so we can look at it. You can close the form without sending anything.
 
 ## What we do not do
 
@@ -54,6 +55,7 @@ Scrapyard is not directed at children under 13 and is not part of Google Play’
 - Delete chat history in Settings (this only deletes the local copy).
 - Crush scraps and empty Recently Deleted to remove local files.
 - Close the feedback form without sending.
+- Report a Smelt or Ask reply from the card or message itself.
 
 ## Contact
 

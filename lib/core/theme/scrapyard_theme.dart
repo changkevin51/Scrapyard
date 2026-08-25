@@ -7,7 +7,7 @@ class ScrapTheme {
   static const Color primaryText = Color(0xFF1C1C1C); // Fountain pen black
   static const Color bodyText = Color(0xFF3A3835); // Softer ink
   static const Color secondaryText = Color(0xFF4A4A4A); // Pencil grey
-  static const Color mutedText = Color(0xFF9A9590); // Light pencil
+  static const Color mutedText = Color(0xFF6F6B66); // Pencil grey (AA on paper)
   static const Color accent = Color(0xFF6B4C3B); // Warm modern brown
   static const Color accentSurface = Color(0xFFF0EAE5); // Pale brown tint
   static const Color dividers = Color(0xFFE0DDD8); // Warm eraser-grey
@@ -195,7 +195,7 @@ class ScrapTextStyles {
   /// Typewriter stamp style for filing tags and ⟨ ⟩ chrome.
   static TextStyle get stamp => const TextStyle(
         fontFamily: _serif,
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
         color: ScrapTheme.accent,
         letterSpacing: 1.4,

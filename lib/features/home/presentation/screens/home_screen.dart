@@ -316,6 +316,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       currentFolder == trashFolderId ||
                                       currentFolder == savedFolderId,
                                   child: IconButton(
+                                    tooltip: 'Back',
                                     padding: EdgeInsets.zero,
                                     icon: const Icon(
                                       Icons.arrow_back,

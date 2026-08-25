@@ -32,6 +32,27 @@ class CanvasHistoryNotifier {
     _redo.clear();
   }
 
+  /// Hidden strokes that no remaining undo/redo snapshot still shows.
+  List<String> hiddenIdsSafeToPrune(List<Stroke> current) {
+    final neededVisible = <String>{};
+    void scan(Iterable<Stroke> strokes) {
+      for (final s in strokes) {
+        if (!s.isHidden) neededVisible.add(s.id);
+      }
+    }
+
+    for (final snap in _undo) {
+      scan(snap.strokes);
+    }
+    for (final snap in _redo) {
+      scan(snap.strokes);
+    }
+    return [
+      for (final s in current)
+        if (s.isHidden && !neededVisible.contains(s.id)) s.id,
+    ];
+  }
+
   CanvasLayerSnapshot? popUndo(CanvasLayerSnapshot current) {
     if (_undo.isEmpty) return null;
     _redo.add(current);

@@ -107,8 +107,7 @@ class ScrapyardWordmark extends StatelessWidget {
       opacity: state.blockOpacity.clamp(0.0, 1.0),
       child: SelectionContainer.disabled(
         child: Semantics(
-          // Keep browser spell-check / Grammarly off the animated wordmark.
-          excludeSemantics: true,
+          label: 'Scrapyard',
           child: Stack(
         clipBehavior: Clip.none,
         children: [

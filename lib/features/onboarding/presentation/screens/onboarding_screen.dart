@@ -59,7 +59,7 @@ class OnboardingScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 14),
                       Text(
-                        'Smelt send the scraps you select to Google Gemini, using your own API key. You may learn more about this app in the guide.',
+                        'Smelt sends the scraps you select to Google Gemini, using your own API key. You may learn more about this app in the guide.',
                         style: ScrapTextStyles.body.copyWith(
                           color: ScrapTheme.secondaryText,
                           height: 1.45,

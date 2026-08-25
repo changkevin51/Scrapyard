@@ -177,6 +177,7 @@ Rules for that line:
         'temperature': 0.7,
         'maxOutputTokens': 2048,
       },
+      'safetySettings': GeminiApi.safetySettings,
     };
 
     final request = http.Request('POST', url)
@@ -210,6 +211,7 @@ Rules for that line:
 
         try {
           final data = jsonDecode(payload) as Map<String, dynamic>;
+          GeminiApi.throwIfSafetyBlocked(data);
           final candidates = data['candidates'] as List?;
           if (candidates == null || candidates.isEmpty) continue;
           final content = candidates[0]['content'] as Map<String, dynamic>?;
@@ -225,7 +227,10 @@ Rules for that line:
             visibleEmitted = visible.length;
             yield delta;
           }
-        } catch (_) {
+        } on FormatException {
+          // skip malformed SSE frames
+        } catch (e) {
+          if (e.toString().toLowerCase().contains('safety block')) rethrow;
           // skip malformed SSE frames
         }
       }
@@ -237,6 +242,7 @@ Rules for that line:
       if (payload.isNotEmpty && payload != '[DONE]') {
         try {
           final data = jsonDecode(payload) as Map<String, dynamic>;
+          GeminiApi.throwIfSafetyBlocked(data);
           final candidates = data['candidates'] as List?;
           if (candidates != null && candidates.isNotEmpty) {
             final content = candidates[0]['content'] as Map<String, dynamic>?;
@@ -248,7 +254,11 @@ Rules for that line:
               buffer.write(text);
             }
           }
-        } catch (_) {}
+        } on FormatException {
+          // skip malformed trailing frame
+        } catch (e) {
+          if (e.toString().toLowerCase().contains('safety block')) rethrow;
+        }
       }
     }
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,14 +11,27 @@ import 'core/router/app_router.dart';
 import 'features/onboarding/presentation/widgets/smelt_guide_overlay.dart';
 import 'features/splash/presentation/widgets/splash_gate.dart';
 
+void _reportError(Object error, StackTrace stack, {String? context}) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'scrapyard',
+      context: context == null ? null : ErrorDescription(context),
+    ),
+  );
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
+    FlutterError.dumpErrorToConsole(details, forceReport: true);
   };
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
-    debugPrint('Uncaught: $error');
-    return true;
+    _reportError(error, stack, context: 'platform dispatcher');
+    // false = let the engine's default handler also see it (Play vitals / logcat).
+    return false;
   };
   if (kIsWeb) {
     databaseFactory = databaseFactoryFfiWeb;
@@ -27,10 +42,17 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   }
 
-  runApp(
-    const ProviderScope(
-      child: ScrapyardApp(),
-    ),
+  runZonedGuarded(
+    () {
+      runApp(
+        const ProviderScope(
+          child: ScrapyardApp(),
+        ),
+      );
+    },
+    (error, stack) {
+      _reportError(error, stack, context: 'uncaught zone');
+    },
   );
 }
 

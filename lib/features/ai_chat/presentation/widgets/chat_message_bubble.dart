@@ -4,6 +4,7 @@ import '../../../../core/theme/scrapyard_theme.dart';
 import '../../../../core/widgets/paper_surfaces.dart';
 import '../../../../core/widgets/scrap_overlays.dart';
 import '../../../ai_engine/presentation/widgets/latex_markdown_view.dart';
+import '../../../feedback/presentation/widgets/feedback_dialog.dart';
 import '../../domain/models/chat_message.dart';
 import '../../domain/models/gemini_model.dart';
 import 'chat_suggestion_chips.dart';
@@ -112,15 +113,38 @@ class ChatMessageBubble extends StatelessWidget {
                             ),
                           ),
                         const Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: content));
-                            showPaperToast(context, 'Copied');
-                          },
-                          child: const Icon(
-                            Icons.copy_outlined,
-                            size: 14,
-                            color: ScrapTheme.mutedText,
+                        Semantics(
+                          button: true,
+                          label: 'Copy message',
+                          child: GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: content));
+                              showPaperToast(context, 'Copied');
+                            },
+                            child: const Icon(
+                              Icons.copy_outlined,
+                              size: 14,
+                              color: ScrapTheme.mutedText,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Semantics(
+                          button: true,
+                          label: 'Report this reply',
+                          child: GestureDetector(
+                            onTap: () {
+                              showReportAiContentDialog(
+                                context,
+                                source: 'Ask',
+                                content: content,
+                              );
+                            },
+                            child: const Icon(
+                              Icons.flag_outlined,
+                              size: 14,
+                              color: ScrapTheme.mutedText,
+                            ),
                           ),
                         ),
                       ],
@@ -168,6 +192,7 @@ class _MessageImageThumbnail extends StatelessWidget {
               top: 8,
               right: 8,
               child: IconButton(
+                tooltip: 'Close',
                 onPressed: () => Navigator.of(ctx).pop(),
                 icon: const Icon(Icons.close, color: Colors.white),
               ),

@@ -71,6 +71,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
   final GlobalKey<SmeltPopupState> _smeltPopupKey = GlobalKey<SmeltPopupState>();
 
   Timer? _ocrDebounce;
+  Timer? _pendingAutosaveTimer;
   int _textRevealGen = 0;
   OverlayEntry? _smeltPopupEntry;
   OverlayEntry? _inkCalcPopupEntry;
@@ -165,6 +166,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     WidgetsBinding.instance.removeObserver(this);
     _ocrDebounce?.cancel();
     _ocrDebounce = null;
+    _pendingAutosaveTimer?.cancel();
+    _pendingAutosaveTimer = null;
     _manualHintTimer?.cancel();
     _smeltHintTimer?.cancel();
     _selectionEdgeScrollTimer?.cancel();
@@ -183,8 +186,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      unawaited(ref.read(canvasRepositoryProvider).flush());
+      unawaited(autosavePendingNewScraps(ref));
     }
+  }
+
+  void _schedulePendingAutosave() {
+    if (!_refSafe) return;
+    if (ref.read(pendingNewScrapsProvider).isEmpty) return;
+    _pendingAutosaveTimer?.cancel();
+    _pendingAutosaveTimer = Timer(const Duration(seconds: 2), () {
+      if (!_refSafe) return;
+      unawaited(autosavePendingNewScraps(ref));
+    });
   }
 
   @override
@@ -2109,6 +2122,16 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
       }
     });
 
+    ref.listen(strokesProvider, (previous, next) {
+      if (previous != null) _schedulePendingAutosave();
+    });
+    ref.listen(canvasTextNodesProvider, (previous, next) {
+      if (previous != null) _schedulePendingAutosave();
+    });
+    ref.listen(canvasTablesProvider, (previous, next) {
+      if (previous != null) _schedulePendingAutosave();
+    });
+
     final isPenMode       = ref.watch(isPenModeActiveProvider);
     final stylusOnly      = ref.watch(stylusOnlyModeProvider);
     final activeTool      = ref.watch(activeCanvasToolProvider);
@@ -2128,6 +2151,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
     final textNodes = ref.watch(canvasTextNodesProvider);
     final tables = ref.watch(canvasTablesProvider);
     final storedPageH = ref.watch(finitePageHeightProvider);
+    final storedPageW = ref.watch(finitePageWidthProvider);
     final storedPageCount = ref.watch(finitePageCountProvider);
 
     final activeNoteId = ref.watch(activeNoteIdProvider);
@@ -2491,8 +2515,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
         builder: (context, constraints) {
           final viewportW = constraints.maxWidth;
           final zoom = canvasZoom;
+          final contentRight = finiteContentRight(
+            strokes: strokes,
+            texts: textNodes,
+            tables: tables,
+          );
+          final pageW = math.max(
+            math.max(storedPageW, viewportW),
+            contentRight + 24,
+          );
           final proposedH = suggestedFinitePageHeight(
-            canvasWidth: viewportW,
+            canvasWidth: pageW,
             viewportHeight: constraints.maxHeight,
           );
           final pageH = math.max(storedPageH, proposedH);
@@ -2506,19 +2539,29 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             finitePagesForBottom(contentBottom, pageH),
           );
           final sheetH = pageH * pageCount;
-          if (pageH > storedPageH + 0.5 || pageCount > storedPageCount) {
+          if (pageH > storedPageH + 0.5 ||
+              pageW > storedPageW + 0.5 ||
+              pageCount > storedPageCount) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               if (pageH > ref.read(finitePageHeightProvider)) {
                 ref.read(finitePageHeightProvider.notifier).state = pageH;
+              }
+              if (pageW > ref.read(finitePageWidthProvider)) {
+                ref.read(finitePageWidthProvider.notifier).state = pageW;
               }
               if (pageCount > ref.read(finitePageCountProvider)) {
                 ref.read(finitePageCountProvider.notifier).state = pageCount;
               }
             });
           }
-          final scaledW = viewportW * zoom;
-          final scaledH = sheetH * zoom;
+          // Zoomed out (or Ask squeezing the editor): keep the full sheet
+          // visible instead of clipping the right edge.
+          final displayScale = zoom <= 1.0 && pageW > 0
+              ? math.min(zoom, viewportW / pageW)
+              : zoom;
+          final scaledW = pageW * displayScale;
+          final scaledH = sheetH * displayScale;
           final contentW = math.max(viewportW, scaledW);
 
           final page = SizedBox(
@@ -2526,19 +2569,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             height: scaledH,
             child: OverflowBox(
               alignment: Alignment.topLeft,
-              minWidth: viewportW,
-              maxWidth: viewportW,
+              minWidth: pageW,
+              maxWidth: pageW,
               minHeight: sheetH,
               maxHeight: sheetH,
               child: Transform.scale(
-                scale: zoom,
+                scale: displayScale,
                 alignment: Alignment.topLeft,
                 child: DecoratedBox(
-                  decoration: zoom <= 1.0
+                  decoration: displayScale <= 1.0
                       ? const BoxDecoration(boxShadow: ScrapTheme.subtleShadow)
                       : const BoxDecoration(),
                   child: SizedBox(
-                    width: viewportW,
+                    width: pageW,
                     height: sheetH,
                     child: Listener(
                       onPointerDown:
@@ -2573,7 +2616,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
             controller: _scrollController,
             physics: scrollPhysics,
             child: ColoredBox(
-              color: zoom <= 1.0
+              color: displayScale <= 1.0
                   ? ScrapTheme.codeSurface
                   : ScrapTheme.background,
               child: SingleChildScrollView(
@@ -2583,7 +2626,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen>
                 child: SizedBox(
                   width: contentW,
                   height: scaledH,
-                  child: zoom < 1.0
+                  child: displayScale < 1.0
                       ? Align(
                           alignment: Alignment.topCenter,
                           child: page,

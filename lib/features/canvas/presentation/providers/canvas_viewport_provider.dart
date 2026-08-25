@@ -50,9 +50,22 @@ class CanvasViewportNotifier extends StateNotifier<CanvasViewport> {
   Size get viewportSize => _viewportSize;
 
   void setViewportSize(Size size) {
-    if (size == _viewportSize || size.isEmpty) return;
+    if (size.isEmpty) return;
+    if (size == _viewportSize) return;
+    final old = _viewportSize;
     _viewportSize = size;
-    state = _clamp(state);
+    // Keep the same world-width in view when the editor is squished (Ask
+    // opening) or restored, instead of cropping the right of the paper.
+    if (old.width > 1 && (size.width - old.width).abs() > 0.5) {
+      final factor = size.width / old.width;
+      final newScale = (state.scale * factor).clamp(
+        CanvasViewport.minScaleInfinite,
+        CanvasViewport.maxScaleInfinite,
+      );
+      state = _clamp(CanvasViewport(pan: state.pan, scale: newScale));
+    } else {
+      state = _clamp(state);
+    }
   }
 
   Future<void> _loadForNote(String noteId) async {

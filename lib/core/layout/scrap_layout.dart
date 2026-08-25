@@ -24,7 +24,6 @@ class ScrapLayout {
   static const double sidebarWidth = 232;
   static const double minFileCell = 160;
   static const int maxColumns = 3;
-  static const double chatOverlayMaxWidth = 720;
 
   final Size size;
   final ScrapLayoutMode mode;
@@ -63,9 +62,9 @@ class ScrapLayout {
 
   bool get showCtaCaptions => mode == ScrapLayoutMode.desk;
 
-  /// Side chat cannot sit beside the editor on compact or sub-720 widths.
-  bool get usesChatOverlay =>
-      mode == ScrapLayoutMode.compact || size.width < chatOverlayMaxWidth;
+  /// Overlay Ask only on narrow windows. Wider ones — including short
+  /// landscape and resized desktop — reflow the paper beside the panel.
+  bool get usesChatOverlay => size.width < indexMinWidth;
 
   /// PDF | scrap stacks instead of a horizontal split.
   bool get stackSplitVertically => mode == ScrapLayoutMode.compact;

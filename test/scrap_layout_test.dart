@@ -27,6 +27,7 @@ void main() {
       expect(layout.fileColumns, 2);
       expect(layout.deskPadding, 24);
       expect(layout.compactCta, isTrue);
+      expect(layout.usesChatOverlay, isFalse);
       expect(layout.stackSplitVertically, isFalse);
     });
 
@@ -48,7 +49,7 @@ void main() {
       expect(layout.mode, ScrapLayoutMode.compact);
       expect(layout.showSidebar, isFalse);
       expect(layout.pileColumns, 1);
-      expect(layout.usesChatOverlay, isTrue);
+      expect(layout.usesChatOverlay, isFalse);
     });
 
     test('360×640 phone portrait uses 1 file column', () {
@@ -71,6 +72,13 @@ void main() {
       final layout = ScrapLayout.fromSize(const Size(1280, 480));
       expect(layout.mode, ScrapLayoutMode.compact);
       expect(layout.showSidebar, isFalse);
+      expect(layout.usesChatOverlay, isFalse);
+    });
+
+    test('700×1000 index window splits Ask beside the paper', () {
+      final layout = ScrapLayout.fromSize(const Size(700, 1000));
+      expect(layout.mode, ScrapLayoutMode.indexStrip);
+      expect(layout.usesChatOverlay, isFalse);
     });
 
     test('column counts never exceed 3', () {

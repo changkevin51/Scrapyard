@@ -26,6 +26,10 @@ enum CanvasTool { pen, brush, highlighter, eraser, shape, straightLine, tape, la
 /// shrinks with the keyboard.
 final finitePageHeightProvider = StateProvider<double>((ref) => 900);
 
+/// World-space width of the finite sheet. Grows with the editor, never
+/// shrinks when Ask opens — the sheet is scaled to fit instead of clipped.
+final finitePageWidthProvider = StateProvider<double>((ref) => 0);
+
 /// How many finite sheets are stacked. Always keeps a blank page under ink
 /// on the last used page.
 final finitePageCountProvider = StateProvider<int>((ref) => 1);
@@ -37,6 +41,32 @@ double suggestedFinitePageHeight({
   required double viewportHeight,
 }) {
   return math.max(viewportHeight, math.max(canvasWidth * 1.15, 720.0));
+}
+
+double finiteContentRight({
+  required List<Stroke> strokes,
+  required List<CanvasTextItem> texts,
+  required List<CanvasTable> tables,
+}) {
+  var maxX = 0.0;
+  for (final s in strokes) {
+    if (s.isHidden || s.points.isEmpty) continue;
+    var strokeMax = s.points.first.x;
+    for (final p in s.points) {
+      if (p.x > strokeMax) strokeMax = p.x;
+    }
+    strokeMax += s.baseWidth;
+    if (strokeMax > maxX) maxX = strokeMax;
+  }
+  for (final t in texts) {
+    final right = t.position.dx + (t.taped ? 280.0 : t.fontSize * 8);
+    if (right > maxX) maxX = right;
+  }
+  for (final t in tables) {
+    final right = t.position.dx + t.cols * t.cellWidth;
+    if (right > maxX) maxX = right;
+  }
+  return maxX;
 }
 
 double finiteContentBottom({
@@ -316,6 +346,7 @@ class PageLayoutNotifier extends StateNotifier<PageCanvasConfig> {
     _ref.listen<String>(activeNoteIdProvider, (_, __) {
       _ref.read(finitePageCountProvider.notifier).state = 1;
       _ref.read(finitePageHeightProvider.notifier).state = 900;
+      _ref.read(finitePageWidthProvider.notifier).state = 0;
       _loadForActiveNote();
     });
   }
@@ -505,7 +536,7 @@ final canvasTextNodesProvider =
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
   final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
-  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
+  final cached = ref.read(ephemeralCanvasCacheProvider)[noteId];
   return TextNodesNotifier(
     repo,
     noteId,
@@ -538,7 +569,7 @@ final canvasTablesProvider =
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
   final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
-  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
+  final cached = ref.read(ephemeralCanvasCacheProvider)[noteId];
   return CanvasTablesNotifier(
     repo,
     noteId,
@@ -865,7 +896,7 @@ final strokesProvider = StateNotifierProvider<StrokesNotifier, List<Stroke>>((re
   final repo = ref.watch(canvasRepositoryProvider);
   final noteId = ref.watch(activeNoteIdProvider);
   final ephemeral = ref.watch(activeNoteIsEphemeralProvider);
-  final cached = ephemeral ? ref.read(ephemeralCanvasCacheProvider)[noteId] : null;
+  final cached = ref.read(ephemeralCanvasCacheProvider)[noteId];
   return StrokesNotifier(
     repo,
     noteId,

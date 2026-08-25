@@ -46,6 +46,29 @@ void openLooseScrapInTab(WidgetRef ref) {
   openNoteTab(ref, id, 'Loose scrap', ephemeral: true);
 }
 
+final _filingPendingIds = <String>{};
+final _discardedWhileFiling = <String>{};
+
+/// Persist any pending (non-loose) scraps that have ink, using their current
+/// title or [defaultNewScrapTitle]. Survives app kill / process reset.
+Future<void> autosavePendingNewScraps(WidgetRef ref) async {
+  stashActiveEphemeralCanvas(ref);
+  final pending = Map<String, HomeNode>.from(ref.read(pendingNewScrapsProvider));
+  if (pending.isEmpty) {
+    await ref.read(canvasRepositoryProvider).flush();
+    return;
+  }
+
+  for (final entry in pending.entries) {
+    if (!scrapIdHasInk(ref, entry.key)) continue;
+    final title = isUnnamedScrapTitle(entry.value.title)
+        ? defaultNewScrapTitle
+        : entry.value.title;
+    await filePendingNewScrap(ref, entry.key, title);
+  }
+  await ref.read(canvasRepositoryProvider).flush();
+}
+
 /// File a pending scrap under [title] and persist in-memory canvas data.
 Future<void> filePendingNewScrap(
   WidgetRef ref,
@@ -55,8 +78,23 @@ Future<void> filePendingNewScrap(
   final trimmed = title.trim();
   if (trimmed.isEmpty) return;
 
+  if (!_filingPendingIds.add(id)) return;
+  try {
+    await _filePendingNewScrapBody(ref, id, trimmed);
+  } finally {
+    _filingPendingIds.remove(id);
+  }
+}
+
+Future<void> _filePendingNewScrapBody(
+  WidgetRef ref,
+  String id,
+  String trimmed,
+) async {
   final meta = ref.read(pendingNewScrapsProvider)[id];
   if (meta == null) return;
+
+  stashActiveEphemeralCanvas(ref);
 
   final node = meta.copyWith(title: trimmed, updatedAt: DateTime.now());
 
@@ -94,12 +132,17 @@ Future<void> filePendingNewScrap(
 
   await ref.read(homeRepositoryProvider).insertNode(node);
 
+  if (_discardedWhileFiling.remove(id)) {
+    await ref.read(homeRepositoryProvider).softDeleteNode(id);
+    await NoteArtifacts.deleteForNoteId(id);
+    return;
+  }
+
   // Refresh the visible folder list if it's currently being watched.
   ref.invalidate(currentHomeNodesProvider);
 
   ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m}..remove(id));
   ref.read(ephemeralNoteIdsProvider.notifier).update((s) => {...s}..remove(id));
-  ref.read(ephemeralCanvasCacheProvider.notifier).update((m) => {...m}..remove(id));
   ref.read(dirtyNoteIdsProvider.notifier).update((s) => {...s, id});
 
   final tabs = ref.read(openedTabsProvider);
@@ -116,12 +159,20 @@ Future<void> filePendingNewScrap(
             : t,
       )
       .toList();
+  // Drop the stash after notifiers have rebuilt from it.
+  ref.read(ephemeralCanvasCacheProvider.notifier).update((m) => {...m}..remove(id));
 }
 
 void discardPendingNewScrap(WidgetRef ref, String id) {
+  if (_filingPendingIds.contains(id)) {
+    _discardedWhileFiling.add(id);
+  }
   ref.read(pendingNewScrapsProvider.notifier).update((m) => {...m}..remove(id));
   discardEphemeralNote(ref, id);
-  unawaited(NoteArtifacts.deleteForNoteId(id));
+  unawaited(() async {
+    await ref.read(homeRepositoryProvider).softDeleteNode(id);
+    await NoteArtifacts.deleteForNoteId(id);
+  }());
 }
 
 /// Prompt to name or discard a single pending scrap. Returns false if cancelled.
